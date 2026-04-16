@@ -1,0 +1,57 @@
+import { Role } from "@prisma/client";
+import { NextFunction, Request, Response } from "express";
+import jwt, { JwtPayload } from "jsonwebtoken";
+
+export interface AuthTokenPayload extends JwtPayload {
+  userId: string;
+  role: Role;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthTokenPayload;
+    }
+  }
+}
+
+const getAccessSecret = (): string => {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) {
+    throw new Error("JWT_ACCESS_SECRET is not set");
+  }
+  return secret;
+};
+
+export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
+  const token = req.cookies?.accessToken as string | undefined;
+
+  if (!token) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, getAccessSecret()) as AuthTokenPayload;
+    req.user = decoded;
+    next();
+  } catch (_error) {
+    res.status(401).json({ message: "Invalid or expired access token" });
+  }
+};
+
+export const authorizeRoles =
+  (...allowedRoles: Role[]) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      res.status(403).json({ message: "Forbidden" });
+      return;
+    }
+
+    next();
+  };
