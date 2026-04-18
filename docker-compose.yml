@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nucare-db
+    environment:
+      POSTGRES_DB: nucare
+      POSTGRES_USER: nucare
+      POSTGRES_PASSWORD: nucare_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nucare -d nucare"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: nucare-server
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./server/.env.local
+    environment:
+      DATABASE_URL: postgresql://nucare:nucare_password@db:5432/nucare?schema=public
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        NEXT_API_URL: http://localhost:5000
+    container_name: nucare-client
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

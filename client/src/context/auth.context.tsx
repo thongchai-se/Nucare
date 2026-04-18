@@ -9,22 +9,17 @@ import {
   useState,
 } from "react";
 import type { AxiosError } from "axios";
-import type { Role, User } from "@/types/auth";
+import type { User } from "@/types/auth";
 import api from "@/lib/axios";
 
-type RegisterPayload = {
-  role: Role;
-  name: string;
-  identifier: string;
-  password: string;
-};
+const AUTH_EXPIRED_EVENT = "nucare:auth-expired";
+const SESSION_CHECK_INTERVAL_MS = 60 * 1000;
 
 type AuthContextValue = {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
   login: (identifier: string, password: string) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
 };
@@ -71,21 +66,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void hydrateAuth();
   }, [refreshAuth]);
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setUser(null);
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const runSessionCheck = () => {
+      void refreshAuth();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        runSessionCheck();
+      }
+    };
+
+    const intervalId = window.setInterval(runSessionCheck, SESSION_CHECK_INTERVAL_MS);
+    window.addEventListener("focus", runSessionCheck);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", runSessionCheck);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [user, refreshAuth]);
+
   const login = useCallback(async (identifier: string, password: string) => {
     try {
       const response = await api.post<{ user: User }>("/api/auth/login", {
         identifier,
         password,
       });
-      setUser(response.data.user);
-    } catch (error) {
-      throw new Error(getErrorMessage(error));
-    }
-  }, []);
-
-  const register = useCallback(async (payload: RegisterPayload) => {
-    try {
-      const response = await api.post<{ user: User }>("/api/auth/register", payload);
       setUser(response.data.user);
     } catch (error) {
       throw new Error(getErrorMessage(error));
@@ -106,11 +129,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isAuthenticated: Boolean(user),
       login,
-      register,
       logout,
       refreshAuth,
     }),
-    [user, loading, login, register, logout, refreshAuth]
+    [user, loading, login, logout, refreshAuth]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
