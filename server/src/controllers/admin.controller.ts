@@ -4,6 +4,62 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 
+const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
+const DEFAULT_IMPORT_CONCURRENCY = 12;
+
+const parsePositiveIntFromEnv = (value: string | undefined, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
+const IMPORT_BCRYPT_ROUNDS = parsePositiveIntFromEnv(
+  process.env.STUDENT_IMPORT_BCRYPT_ROUNDS,
+  DEFAULT_IMPORT_BCRYPT_ROUNDS
+);
+
+const IMPORT_CONCURRENCY = Math.max(
+  1,
+  Math.min(
+    parsePositiveIntFromEnv(process.env.STUDENT_IMPORT_CONCURRENCY, DEFAULT_IMPORT_CONCURRENCY),
+    32
+  )
+);
+
+const runWithConcurrency = async <T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> => {
+  if (items.length === 0) {
+    return;
+  }
+
+  let nextIndex = 0;
+
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      await worker(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(runners);
+};
+
 const importStudentRowSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
@@ -466,26 +522,28 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
 
     const existingStudentIdSet = new Set(existingUsers.map((user) => user.studentId).filter(Boolean));
 
-    let created = 0;
-    let existing = 0;
-    let failed = 0;
-
-    const failures: Array<{ studentId: string; reason: string }> = [];
     const existingStudents: Array<{ studentId: string; reason: string }> = [];
+    const rowsToCreate: Array<{ studentId: string; name: string; email: string | null }> = [];
 
     for (const row of normalizedRows) {
-      try {
-        if (existingStudentIdSet.has(row.studentId)) {
-          existing += 1;
-          existingStudents.push({
-            studentId: row.studentId,
-            reason: "มีข้อมูลอยู่แล้วในระบบ",
-          });
-          continue;
-        }
+      if (existingStudentIdSet.has(row.studentId)) {
+        existingStudents.push({
+          studentId: row.studentId,
+          reason: "มีข้อมูลอยู่แล้วในระบบ",
+        });
+        continue;
+      }
 
+      rowsToCreate.push(row);
+    }
+
+    let created = 0;
+    const failures: Array<{ studentId: string; reason: string }> = [];
+
+    await runWithConcurrency(rowsToCreate, IMPORT_CONCURRENCY, async (row) => {
+      try {
         const initialPassword = `Nu${row.studentId}`;
-        const passwordHash = await bcrypt.hash(initialPassword, 12);
+        const passwordHash = await bcrypt.hash(initialPassword, IMPORT_BCRYPT_ROUNDS);
 
         await prisma.user.create({
           data: {
@@ -498,17 +556,14 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
           },
         });
 
-        existingStudentIdSet.add(row.studentId);
         created += 1;
       } catch (error) {
-        failed += 1;
-
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
           failures.push({
             studentId: row.studentId,
             reason: "ข้อมูลซ้ำกับ unique field (เช่น email) ในระบบ",
           });
-          continue;
+          return;
         }
 
         failures.push({
@@ -516,7 +571,10 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
           reason: "ไม่สามารถบันทึกข้อมูลได้",
         });
       }
-    }
+    });
+
+    const existing = existingStudents.length;
+    const failed = failures.length;
 
     res.status(200).json({
       message: "นำเข้าข้อมูลนักศึกษาเสร็จสิ้น",

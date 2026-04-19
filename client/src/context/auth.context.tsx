@@ -45,12 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await getMe();
       setUser(currentUser);
       return;
-    } catch (_error) {
+    } catch {
       try {
         await api.post("/api/auth/refresh");
         const refreshedUser = await getMe();
         setUser(refreshedUser);
-      } catch (_refreshError) {
+      } catch {
         setUser(null);
       }
     }

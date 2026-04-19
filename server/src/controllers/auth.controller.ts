@@ -16,17 +16,6 @@ const LOGIN_FAILED_MESSAGE = "ชื่อบัญชีหรือรหั�
 const PASSWORD_RESET_REQUEST_FAILED_MESSAGE = "ไม่พบบัญชีอีเมลนี้ในระบบ";
 const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุ";
 
-const passwordResetTokenDelegate = (
-  prisma as unknown as {
-    passwordResetToken: {
-      create: (args: any) => Promise<any>;
-      findFirst: (args: any) => Promise<any>;
-      update: (args: any) => Promise<any>;
-      deleteMany: (args: any) => Promise<any>;
-    };
-  }
-).passwordResetToken;
-
 const loginSchema = z
   .object({
     identifier: z
@@ -127,9 +116,15 @@ const sendPasswordResetEmail = async (email: string, resetLink: string): Promise
         <h2 style="margin-bottom: 8px;">NUCARE - เปลี่ยนรหัสผ่าน</h2>
         <p>คุณได้ทำรายการลืมรหัสผ่าน</p>
         <p>
-          กดลิงก์ด้านล่างเพื่อเปลี่ยนรหัสผ่าน:
-          <br />
-          <a href="${resetLink}">${resetLink}</a>
+          กดปุ่มด้านล่างเพื่อเปลี่ยนรหัสผ่าน:
+        </p>
+        <p style="margin: 24px 0;">
+          <a
+            href="${resetLink}"
+            style="display: inline-block; border-radius: 10px; background: #2563eb; padding: 11px 18px; color: #ffffff; text-decoration: none; font-weight: 700;"
+          >
+            เปลี่ยนรหัสผ่าน
+          </a>
         </p>
         <p>หากคุณไม่ได้ร้องขอ กรุณาเพิกเฉยอีเมลฉบับนี้</p>
       </div>
@@ -230,7 +225,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const { identifier, password } = parsed.data;
     const user = await findUserByIdentifier(identifier);
 
-    if (!user) {
+    if (!user || !user.isActive) {
       res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
       return;
     }
@@ -244,6 +239,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     const accessToken = createAccessToken(user);
     const refreshToken = createRefreshToken(user);
+
+    await prisma.refreshToken.deleteMany({
+      where: {
+        userId: user.id,
+        expiresAt: { lt: new Date() },
+      },
+    });
 
     await prisma.refreshToken.create({
       data: {
@@ -308,7 +310,14 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + getPasswordResetExpiryMinutes() * 60 * 1000);
 
-    await passwordResetTokenDelegate.create({
+    await prisma.passwordResetToken.deleteMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+      },
+    });
+
+    await prisma.passwordResetToken.create({
       data: {
         tokenHash,
         userId: user.id,
@@ -326,6 +335,39 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   }
 };
 
+export const validateResetPasswordToken = async (req: Request, res: Response): Promise<void> => {
+  const token = typeof req.query?.token === "string" ? req.query.token.trim() : "";
+
+  if (!token) {
+    res.status(400).json({ message: INVALID_RESET_TOKEN_MESSAGE });
+    return;
+  }
+
+  try {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const resetToken = await prisma.passwordResetToken.findFirst({
+      where: {
+        tokenHash,
+        usedAt: null,
+      },
+      select: {
+        id: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!resetToken || resetToken.expiresAt.getTime() < Date.now()) {
+      res.status(400).json({ message: INVALID_RESET_TOKEN_MESSAGE });
+      return;
+    }
+
+    res.status(200).json({ message: "Reset token is valid" });
+  } catch (error) {
+    console.error("Validate reset token error:", error);
+    res.status(500).json({ message: "ไม่สามารถตรวจสอบลิงก์เปลี่ยนรหัสผ่านได้" });
+  }
+};
+
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   const parsed = resetPasswordSchema.safeParse(req.body);
 
@@ -337,7 +379,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
   try {
     const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
-    const resetToken = await passwordResetTokenDelegate.findFirst({
+    const resetToken = await prisma.passwordResetToken.findFirst({
       where: {
         tokenHash,
         usedAt: null,
@@ -365,12 +407,12 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       where: { userId: resetToken.userId },
     });
 
-    await passwordResetTokenDelegate.update({
+    await prisma.passwordResetToken.update({
       where: { id: resetToken.id },
       data: { usedAt: new Date() },
     });
 
-    await passwordResetTokenDelegate.deleteMany({
+    await prisma.passwordResetToken.deleteMany({
       where: {
         userId: resetToken.userId,
         id: { not: resetToken.id },
@@ -447,6 +489,13 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
       await prisma.refreshToken.delete({ where: { token: refreshToken } });
       clearAuthCookies(res);
       res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (!user.isActive) {
+      await prisma.refreshToken.delete({ where: { token: refreshToken } });
+      clearAuthCookies(res);
+      res.status(401).json({ message: "Invalid refresh token" });
       return;
     }
 

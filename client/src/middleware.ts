@@ -14,7 +14,7 @@ const decodeJwtPayload = (token: string): { exp?: number } | null => {
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
     const decoded = atob(padded);
     return JSON.parse(decoded) as { exp?: number };
-  } catch (_error) {
+  } catch {
     return null;
   }
 };
@@ -36,12 +36,15 @@ const hasValidAccessToken = (token: string | undefined): boolean => {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const accessToken = request.cookies.get("accessToken")?.value;
-  const isAuthenticated = hasValidAccessToken(accessToken);
+  const refreshToken = request.cookies.get("refreshToken")?.value;
+  const hasValidAccess = hasValidAccessToken(accessToken);
+  const hasRefreshSession = Boolean(refreshToken);
 
   const isProtectedRoute = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
-  if (isProtectedRoute && !isAuthenticated) {
+  // Allow protected pages when refresh token exists so client can refresh access token.
+  if (isProtectedRoute && !hasValidAccess && !hasRefreshSession) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     const response = NextResponse.redirect(loginUrl);
@@ -49,7 +52,7 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  if (isAuthRoute && isAuthenticated) {
+  if (isAuthRoute && hasValidAccess) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

@@ -19,7 +19,7 @@ import { useAuth } from "@/context/auth.context";
 type CsvStudentRow = {
   studentId: string;
   name: string;
-  email?: string;
+  email: string;
   isIncomplete: boolean;
   rowError?: string;
 };
@@ -27,7 +27,8 @@ type CsvStudentRow = {
 type ImportSummary = {
   total: number;
   created: number;
-  existing: number;
+  updated: number;
+  skipped: number;
   failed: number;
 };
 
@@ -36,7 +37,8 @@ type ImportResponse = {
   summary: ImportSummary;
   initialPasswordRule: string;
   failures: Array<{ studentId: string; reason: string }>;
-  existingStudents: Array<{ studentId: string; reason: string }>;
+  updatedStudents: Array<{ studentId: string; reason: string }>;
+  skippedStudents: Array<{ studentId: string; reason: string }>;
 };
 
 type ExistingCheckResponse = {
@@ -46,7 +48,7 @@ type ExistingCheckResponse = {
     available: number;
   };
   existingStudents: Array<{
-    studentId: string;
+    studentId: string | null;
     name: string;
     email: string | null;
     reason: string;
@@ -54,6 +56,7 @@ type ExistingCheckResponse = {
 };
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const IMPORT_CHUNK_SIZE = 100;
 
 const normalizeHeader = (value: string): string =>
   value
@@ -105,6 +108,8 @@ const normalizeStudentId = (raw: string): string => {
   return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
 };
 
+const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
 const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: string[] } => {
   const lines = csvText
     .split(/\r?\n/)
@@ -120,10 +125,10 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
   const nameIndex = findHeaderIndex(headers, ["name", "fullname", "ชื่อ", "ชื่อสกุล", "ชื่อ-นามสกุล"]);
   const emailIndex = findHeaderIndex(headers, ["email", "mail", "อีเมล"]);
 
-  if (studentIdIndex === -1 || nameIndex === -1) {
+  if (studentIdIndex === -1 || nameIndex === -1 || emailIndex === -1) {
     return {
       rows: [],
-      errors: ["หัวตารางต้องมีอย่างน้อย studentId และ name"],
+      errors: ["หัวตารางต้องมี studentId, name และ email"],
     };
   }
 
@@ -134,10 +139,10 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
     const cols = parseCsvLine(lines[i]);
     const studentIdRaw = cols[studentIdIndex] || "";
     const nameRaw = cols[nameIndex] || "";
-    const emailRaw = emailIndex >= 0 ? cols[emailIndex] || "" : "";
+    const emailRaw = cols[emailIndex] || "";
 
     const name = nameRaw.trim();
-    const email = emailRaw.trim() || undefined;
+    const email = emailRaw.trim();
 
     let normalizedStudentId = "";
     let rowError = "";
@@ -150,8 +155,12 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
       }
     }
 
-    if (!studentIdRaw.trim() || !name) {
-      rowError = "ข้อมูล studentId หรือ name ว่าง";
+    if (!rowError && (!studentIdRaw.trim() || !name || !email)) {
+      rowError = "ข้อมูล studentId, name หรือ email ว่าง";
+    }
+
+    if (!rowError && !isValidEmail(email)) {
+      rowError = "รูปแบบอีเมลไม่ถูกต้อง";
     }
 
     parsedRows.push({
@@ -167,6 +176,9 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
 };
 
 const formatFileSize = (sizeInBytes: number): string => `${(sizeInBytes / 1024).toFixed(1)} KB`;
+
+const normalizeComparableEmail = (value: string | null | undefined): string =>
+  (value || "").trim().toLowerCase();
 
 export default function ImportStudentsPage() {
   const router = useRouter();
@@ -188,6 +200,11 @@ export default function ImportStudentsPage() {
   const [showImportSuccessModal, setShowImportSuccessModal] = useState(false);
   const [successAnimationKey, setSuccessAnimationKey] = useState(0);
   const [successImportedCount, setSuccessImportedCount] = useState(0);
+  const [successUpdatedCount, setSuccessUpdatedCount] = useState(0);
+  const [showImportProgressOverlay, setShowImportProgressOverlay] = useState(false);
+  const [importProgressPercent, setImportProgressPercent] = useState(0);
+  const [importProgressCurrent, setImportProgressCurrent] = useState(0);
+  const [importProgressTotal, setImportProgressTotal] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [previewExistingStudents, setPreviewExistingStudents] = useState<
@@ -223,13 +240,130 @@ export default function ImportStudentsPage() {
   const isAdmin = useMemo(() => user?.role === "ADMIN", [user]);
 
   const previewExistingStudentIdSet = useMemo(
-    () => new Set(previewExistingStudents.map((row) => row.studentId)),
+    () => new Set(previewExistingStudents.map((row) => row.studentId).filter((value): value is string => Boolean(value))),
     [previewExistingStudents]
   );
 
+  const previewExistingByStudentId = useMemo(
+    () =>
+      new Map(
+        previewExistingStudents
+          .filter((row): row is ExistingCheckResponse["existingStudents"][number] & { studentId: string } =>
+            Boolean(row.studentId)
+          )
+          .map((row) => [row.studentId, row] as const)
+      ),
+    [previewExistingStudents]
+  );
+
+  const previewEmailOwnerByEmail = useMemo(
+    () =>
+      new Map(
+        previewExistingStudents
+          .filter((row) => Boolean(row.email))
+          .map((row) => [normalizeComparableEmail(row.email), row.studentId] as const)
+      ),
+    [previewExistingStudents]
+  );
+
+  const unchangedRowsCount = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (row.isIncomplete) {
+          return false;
+        }
+
+        const existing = previewExistingByStudentId.get(row.studentId);
+        if (!existing) {
+          return false;
+        }
+
+        return (
+          existing.name.trim() === row.name &&
+          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
+        );
+      }).length,
+    [rows, previewExistingByStudentId]
+  );
+
+  const updateRowsCount = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (row.isIncomplete) {
+          return false;
+        }
+
+        const existing = previewExistingByStudentId.get(row.studentId);
+        if (!existing) {
+          return false;
+        }
+
+        return !(
+          existing.name.trim() === row.name &&
+          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
+        );
+      }).length,
+    [rows, previewExistingByStudentId]
+  );
+
   const availableRowsCount = useMemo(
-    () => rows.filter((row) => !row.isIncomplete && !previewExistingStudentIdSet.has(row.studentId)).length,
-    [rows, previewExistingStudentIdSet]
+    () =>
+      rows.filter((row) => {
+        if (row.isIncomplete) {
+          return false;
+        }
+
+        if (previewExistingStudentIdSet.has(row.studentId)) {
+          return false;
+        }
+
+        const emailOwnerStudentId = previewEmailOwnerByEmail.get(normalizeComparableEmail(row.email));
+        return !(emailOwnerStudentId !== undefined && emailOwnerStudentId !== row.studentId);
+      }).length,
+    [rows, previewEmailOwnerByEmail, previewExistingStudentIdSet]
+  );
+
+  const emailConflictRowsCount = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (row.isIncomplete) {
+          return false;
+        }
+
+        const emailOwnerStudentId = previewEmailOwnerByEmail.get(normalizeComparableEmail(row.email));
+        return emailOwnerStudentId !== undefined && emailOwnerStudentId !== row.studentId;
+      }).length,
+    [rows, previewEmailOwnerByEmail]
+  );
+
+  const importableRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (row.isIncomplete) {
+          return false;
+        }
+
+        const emailOwnerStudentId = previewEmailOwnerByEmail.get(normalizeComparableEmail(row.email));
+        if (emailOwnerStudentId !== undefined && emailOwnerStudentId !== row.studentId) {
+          return false;
+        }
+
+        const existing = previewExistingByStudentId.get(row.studentId);
+        if (!existing) {
+          return true;
+        }
+
+        return !(
+          existing.name.trim() === row.name &&
+          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
+        );
+      }),
+    [rows, previewEmailOwnerByEmail, previewExistingByStudentId]
+  );
+
+  const importableRowsCount = useMemo(
+    () => importableRows.length,
+    [importableRows]
   );
 
   const duplicateRowsCount = useMemo(
@@ -246,10 +380,11 @@ export default function ImportStudentsPage() {
     () =>
       rows.length > 0 &&
       incompleteRowsCount === 0 &&
-      availableRowsCount > 0 &&
+      emailConflictRowsCount === 0 &&
+      importableRowsCount > 0 &&
       !existingCheckLoading &&
       !importing,
-    [rows.length, availableRowsCount, incompleteRowsCount, existingCheckLoading, importing]
+    [rows.length, incompleteRowsCount, emailConflictRowsCount, importableRowsCount, existingCheckLoading, importing]
   );
 
   const toggleSidebar = () => {
@@ -278,6 +413,10 @@ export default function ImportStudentsPage() {
     setCsvFileName("");
     setCsvFileSize("");
     setServerError("");
+    setShowImportProgressOverlay(false);
+    setImportProgressPercent(0);
+    setImportProgressCurrent(0);
+    setImportProgressTotal(0);
     resetParsedState();
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -307,9 +446,15 @@ export default function ImportStudentsPage() {
     setExistingCheckError("");
     setPreviewExistingStudents([]);
 
-    const validStudentIds = csvRows
+    const validRows = csvRows
       .filter((row) => !row.isIncomplete && row.studentId.length > 0)
-      .map((row) => row.studentId);
+      .map((row) => ({
+        studentId: row.studentId,
+        email: normalizeComparableEmail(row.email),
+      }));
+
+    const validStudentIds = validRows.map((row) => row.studentId);
+    const validEmails = validRows.map((row) => row.email);
 
     if (validStudentIds.length === 0) {
       setExistingCheckLoading(false);
@@ -319,9 +464,10 @@ export default function ImportStudentsPage() {
     try {
       const response = await api.post<ExistingCheckResponse>("/api/admin/students/check-existing", {
         studentIds: validStudentIds,
+        emails: validEmails,
       });
       setPreviewExistingStudents(response.data.existingStudents);
-    } catch (_error) {
+    } catch {
       setExistingCheckError("ไม่สามารถตรวจสอบข้อมูลซ้ำกับฐานข้อมูลได้");
     } finally {
       setExistingCheckLoading(false);
@@ -349,7 +495,7 @@ export default function ImportStudentsPage() {
       }
 
       setShowPreviewSection(true);
-    } catch (_error) {
+    } catch {
       setServerError("ไม่สามารถอ่านไฟล์ CSV ได้");
     } finally {
       setPreviewing(false);
@@ -392,32 +538,71 @@ export default function ImportStudentsPage() {
     if (!canImport) {
       if (incompleteRowsCount > 0) {
         setServerError("กรุณาแก้ข้อมูลไม่ครบก่อน จึงจะนำเข้าระบบได้");
+      } else if (emailConflictRowsCount > 0) {
+        setServerError("พบอีเมลซ้ำกับข้อมูลในระบบ กรุณาแก้ไขในไฟล์ CSV ก่อนนำเข้า");
       } else {
-        setServerError("ไม่พบข้อมูลใหม่ที่นำเข้าได้ (ข้อมูลซ้ำทั้งหมด)");
+        setServerError("ไม่พบข้อมูลที่มีการเปลี่ยนแปลง จึงไม่ต้องอัปเดต");
       }
       return;
     }
 
-    const rowsToImport = rows.filter(
-      (row) => !row.isIncomplete && !previewExistingStudentIdSet.has(row.studentId)
-    );
+    const rowsToImport = importableRows;
+    const totalRows = rowsToImport.length;
+
+    if (totalRows === 0) {
+      setServerError("ไม่พบข้อมูลที่ต้องนำเข้าจริง");
+      return;
+    }
 
     setImporting(true);
     setServerError("");
+    setImportProgressTotal(totalRows);
+    setImportProgressCurrent(0);
+    setImportProgressPercent(0);
+    setShowImportProgressOverlay(true);
 
     try {
-      const response = await api.post<ImportResponse>("/api/admin/students/import", {
-        rows: rowsToImport,
-      });
+      let totalCreated = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      const mergedFailures: ImportResponse["failures"] = [];
+      let processedRows = 0;
 
-      if (response.data.summary.failed > 0) {
+      for (let index = 0; index < rowsToImport.length; index += IMPORT_CHUNK_SIZE) {
+        const chunk = rowsToImport.slice(index, index + IMPORT_CHUNK_SIZE);
+        const response = await api.post<ImportResponse>("/api/admin/students/import", {
+          rows: chunk,
+        });
+
+        totalCreated += response.data.summary.created;
+        totalUpdated += response.data.summary.updated;
+        totalSkipped += response.data.summary.skipped;
+        totalFailed += response.data.summary.failed;
+        mergedFailures.push(...response.data.failures);
+
+        processedRows = Math.min(totalRows, processedRows + chunk.length);
+        setImportProgressCurrent(processedRows);
+        setImportProgressPercent(Math.min(99, Math.floor((processedRows / totalRows) * 100)));
+      }
+
+      setImportProgressCurrent(totalRows);
+      setImportProgressPercent(100);
+
+      if (totalFailed > 0) {
+        const failurePreview = mergedFailures
+          .slice(0, 3)
+          .map((item) => `${item.studentId}: ${item.reason}`)
+          .join(" | ");
+
         setServerError(
-          `นำเข้าได้บางส่วน (เพิ่มใหม่ ${response.data.summary.created} รายการ, ไม่สำเร็จ ${response.data.summary.failed} รายการ)`
+          `นำเข้าได้บางส่วน (เพิ่มใหม่ ${totalCreated} รายการ, อัปเดต ${totalUpdated} รายการ, ข้าม ${totalSkipped} รายการ, ไม่สำเร็จ ${totalFailed} รายการ)${failurePreview ? ` | ตัวอย่างปัญหา: ${failurePreview}` : ""}`
         );
         return;
       }
 
-      setSuccessImportedCount(response.data.summary.created);
+      setSuccessImportedCount(totalCreated);
+      setSuccessUpdatedCount(totalUpdated);
       setSuccessAnimationKey((current) => current + 1);
       setShowImportSuccessModal(true);
       removeFile();
@@ -429,6 +614,9 @@ export default function ImportStudentsPage() {
       }
     } finally {
       setImporting(false);
+      setTimeout(() => {
+        setShowImportProgressOverlay(false);
+      }, 350);
     }
   };
 
@@ -438,6 +626,10 @@ export default function ImportStudentsPage() {
         <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
       </main>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   if (!isAdmin) {
@@ -462,7 +654,7 @@ export default function ImportStudentsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-800">
+    <main className="min-h-screen bg-gray-50 text-gray-800 [scrollbar-gutter:stable]">
       <div
         className={`fixed inset-0 z-40 bg-gray-900/50 transition-opacity duration-300 lg:hidden ${
           sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -487,13 +679,13 @@ export default function ImportStudentsPage() {
             </button>
           </div>
           <nav className="flex-1 space-y-2 px-4 py-6">
-            <Link href="/dashboard" onClick={closeSidebar} className="block rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
+            <Link href="/dashboard" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
               หน้าหลัก
             </Link>
-            <Link href="/dashboard/admin/manage-students" onClick={closeSidebar} className="block rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
+            <Link href="/dashboard/admin/manage-students" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
               จัดการข้อมูลนักศึกษา
             </Link>
-            <span className="block rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">
+            <span className="block truncate rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">
               นำเข้านักศึกษา (CSV)
             </span>
           </nav>
@@ -532,28 +724,30 @@ export default function ImportStudentsPage() {
               <p className="text-lg font-medium tracking-wide text-gray-800">
                 นำเข้าข้อมูลนักศึกษาสำเร็จ!
                 <span className="mt-1 block text-sm font-normal text-gray-500">
-                  เพิ่มข้อมูลใหม่ {successImportedCount} รายการ
+                  เพิ่มใหม่ {successImportedCount} รายการ และอัปเดต {successUpdatedCount} รายการ
                 </span>
               </p>
             </div>
           </div>
 
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 sm:px-6 md:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
-                onClick={toggleSidebar}
-              >
-                <Menu className="h-6 w-6" />
-              </button>
-              <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">นำเข้าข้อมูลนักศึกษาเป็นกลุ่ม (Batch Onboard)</h1>
-            </div>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
-              AD
+          <header className="sticky top-0 z-30 border-b border-gray-200 bg-white">
+            <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 md:px-8">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <button
+                  type="button"
+                  className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
+                  onClick={toggleSidebar}
+                >
+                  <Menu className="h-6 w-6" />
+                </button>
+                <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">นำเข้าข้อมูลนักศึกษาเป็นกลุ่ม (Batch Onboard)</h1>
+              </div>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
+                AD
+              </div>
             </div>
           </header>
-          <div className="relative mx-auto w-full max-w-5xl flex-1 p-4 sm:p-6 md:p-8">
+          <div className="relative mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 md:p-8">
 
             {!showPreviewSection && (
               <>
@@ -565,7 +759,7 @@ export default function ImportStudentsPage() {
                     <div className="w-full">
                       <h3 className="mb-2 text-lg font-medium text-gray-800">รูปแบบไฟล์ CSV ที่รองรับ</h3>
                       <p className="mb-4 text-sm leading-relaxed text-gray-600">
-                        กรุณาอัปโหลดไฟล์ .csv โดยต้องมีหัวตารางอย่างน้อย studentId และ name ส่วน email ไม่บังคับ
+                        กรุณาอัปโหลดไฟล์ .csv โดยต้องมีหัวตาราง studentId, name และ email ครบทุกช่อง
                       </p>
 
                       <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs sm:hidden">
@@ -579,8 +773,8 @@ export default function ImportStudentsPage() {
                             <p className="mt-1 text-gray-800">สมชาย ใจดี</p>
                           </div>
                           <div className="rounded-md border border-gray-200 bg-white p-2.5">
-                            <p className="font-semibold text-gray-500">email (optional)</p>
-                            <p className="mt-1 break-all text-gray-500">somchai.j@university.ac.th</p>
+                            <p className="font-semibold text-gray-500">email *</p>
+                            <p className="mt-1 break-all text-gray-800">somchai.j@university.ac.th</p>
                           </div>
                         </div>
                       </div>
@@ -591,7 +785,7 @@ export default function ImportStudentsPage() {
                             <tr>
                               <th className="border-b border-gray-200 px-4 py-2 font-medium">studentId *</th>
                               <th className="border-b border-gray-200 px-4 py-2 font-medium">name *</th>
-                              <th className="border-b border-gray-200 px-4 py-2 font-medium">email (optional)</th>
+                              <th className="border-b border-gray-200 px-4 py-2 font-medium">email *</th>
                             </tr>
                           </thead>
                           <tbody className="font-mono text-xs text-gray-600">
@@ -609,7 +803,7 @@ export default function ImportStudentsPage() {
 
                 <section className="rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-sm sm:p-8">
                   <div
-                    className={`relative cursor-pointer rounded-xl border-2 border-dashed p-6 transition-all duration-200 sm:p-12 ${
+                    className={`relative flex min-h-[280px] cursor-pointer items-center justify-center rounded-xl border-2 border-dashed p-6 transition-all duration-200 sm:min-h-[340px] sm:p-12 lg:min-h-[400px] ${
                       isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:bg-gray-50"
                     }`}
                     onClick={() => {
@@ -670,10 +864,9 @@ export default function ImportStudentsPage() {
                       type="button"
                       onClick={processPreview}
                       disabled={!selectedFile || previewing}
-                      className="relative inline-flex items-center justify-center rounded-xl bg-gray-900 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-gray-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex min-h-11 min-w-[150px] items-center justify-center rounded-xl bg-gray-900 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-gray-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <span className="mx-auto text-center">{previewing ? "กำลังตรวจสอบ..." : "ตรวจสอบข้อมูล"}</span>
-                      {previewing && <span className="spinner absolute right-3.5" />}
+                      {previewing ? <Loader2 className="h-5 w-5 animate-spin" /> : "ตรวจสอบข้อมูล"}
                     </button>
                   </div>
                 </section>
@@ -681,7 +874,32 @@ export default function ImportStudentsPage() {
             )}
 
             {showPreviewSection && (
-              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-8">
+              <section className="relative flex h-[calc(100dvh-9.5rem)] min-h-[520px] flex-col rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:h-[calc(100dvh-11rem)] sm:p-8">
+                <div
+                  className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/95 px-6 backdrop-blur-sm transition-all duration-300 ${
+                    showImportProgressOverlay ? "opacity-100" : "pointer-events-none opacity-0"
+                  }`}
+                >
+                  <div className="w-full max-w-md text-center">
+                    <h3 className="text-xl font-semibold text-gray-800">กำลังบันทึกข้อมูลเข้าระบบ...</h3>
+                    <p className="mt-2 text-sm text-gray-500">กรุณารอสักครู่ ห้ามปิดหน้าต่างนี้</p>
+
+                    <div className="relative mt-8 h-3 w-full overflow-hidden rounded-full bg-gray-100 shadow-inner">
+                      <div
+                        className="progress-bar-animated absolute inset-y-0 left-0 rounded-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${importProgressPercent}%` }}
+                      />
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between px-1 text-sm">
+                      <span className="text-gray-500">
+                        <span className="font-medium text-gray-700">{importProgressCurrent}</span> / {importProgressTotal} รายการ
+                      </span>
+                      <span className="text-lg font-bold text-blue-600">{importProgressPercent}%</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <h2 className="text-xl font-semibold text-gray-800">พรีวิวข้อมูลก่อนนำเข้า</h2>
@@ -690,12 +908,22 @@ export default function ImportStudentsPage() {
                   <div className="flex flex-wrap gap-3 text-sm">
                     <div className="flex items-center gap-2 rounded-lg border border-green-100 bg-green-50 px-3 py-1.5 text-green-800">
                       <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-                      พร้อมนำเข้า: <span className="font-bold">{availableRowsCount}</span> รายการ
+                        เพิ่มใหม่: <span className="font-bold">{availableRowsCount}</span> รายการ
                     </div>
                     <div className="flex items-center gap-2 rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-orange-800">
                       <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-                      ข้อมูลซ้ำ: <span className="font-bold">{duplicateRowsCount}</span> รายการ
+                        อัปเดต: <span className="font-bold">{updateRowsCount}</span> รายการ
                     </div>
+                    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-100 px-3 py-1.5 text-gray-700">
+                      <span className="h-2.5 w-2.5 rounded-full bg-gray-500" />
+                      ไม่เปลี่ยนแปลง: <span className="font-bold">{unchangedRowsCount}</span> รายการ
+                    </div>
+                    {emailConflictRowsCount > 0 && (
+                      <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-1.5 text-red-700">
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                        อีเมลซ้ำในระบบ: <span className="font-bold">{emailConflictRowsCount}</span> รายการ
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -707,7 +935,13 @@ export default function ImportStudentsPage() {
 
                 {incompleteRowsCount === 0 && duplicateRowsCount > 0 && (
                   <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
-                    พบข้อมูลซ้ำ {duplicateRowsCount} รายการ ระบบจะข้ามรายการซ้ำและนำเข้าเฉพาะรายการใหม่
+                    พบข้อมูลเดิมในระบบ {duplicateRowsCount} รายการ: อัปเดต {updateRowsCount} รายการ และข้าม {unchangedRowsCount} รายการที่ไม่เปลี่ยนแปลง
+                  </div>
+                )}
+
+                {emailConflictRowsCount > 0 && (
+                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    พบอีเมลซ้ำกับข้อมูลที่มีอยู่ในระบบ {emailConflictRowsCount} รายการ กรุณาแก้ไขอีเมลในไฟล์ CSV ก่อนนำเข้า
                   </div>
                 )}
 
@@ -728,7 +962,7 @@ export default function ImportStudentsPage() {
                   </div>
                 )}
 
-                <div className="mb-6 max-h-80 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
+                <div className="mb-6 min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead className="sticky top-0 border-b border-gray-200 bg-gray-50 text-gray-600">
                       <tr>
@@ -742,6 +976,18 @@ export default function ImportStudentsPage() {
                     <tbody className="divide-y divide-gray-100 text-gray-700">
                       {rows.map((row, index) => {
                         const duplicated = !row.isIncomplete && previewExistingStudentIdSet.has(row.studentId);
+                        const existing = duplicated ? previewExistingByStudentId.get(row.studentId) : undefined;
+                        const unchanged =
+                          Boolean(existing) &&
+                          existing!.name.trim() === row.name &&
+                          normalizeComparableEmail(existing!.email) === normalizeComparableEmail(row.email);
+                        const emailOwnerStudentId = previewEmailOwnerByEmail.get(
+                          normalizeComparableEmail(row.email)
+                        );
+                        const emailConflict =
+                          !row.isIncomplete &&
+                          emailOwnerStudentId !== undefined &&
+                          emailOwnerStudentId !== row.studentId;
 
                         return (
                           <tr key={`${row.studentId}-${index}`} className="transition-colors hover:bg-gray-50">
@@ -754,9 +1000,17 @@ export default function ImportStudentsPage() {
                                 <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
                                   ข้อมูลไม่ครบ
                                 </span>
+                              ) : emailConflict ? (
+                                <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                                  อีเมลซ้ำในระบบ
+                                </span>
+                              ) : unchanged ? (
+                                <span className="inline-flex rounded-md border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                                  ไม่เปลี่ยนแปลง (ข้าม)
+                                </span>
                               ) : duplicated ? (
                                 <span className="inline-flex rounded-md border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700">
-                                  ข้อมูลซ้ำ (ข้าม)
+                                  พบในระบบ (อัปเดต)
                                 </span>
                               ) : (
                                 <span className="inline-flex rounded-md border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
@@ -783,6 +1037,7 @@ export default function ImportStudentsPage() {
                   <button
                     type="button"
                     onClick={removeFile}
+                    disabled={importing}
                     className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 font-medium text-gray-600 transition-colors hover:bg-gray-50"
                   >
                     อัปโหลดไฟล์ใหม่
@@ -790,13 +1045,13 @@ export default function ImportStudentsPage() {
                   <button
                     type="button"
                     onClick={handleImport}
-                    disabled={!canImport}
-                    className="relative inline-flex items-center justify-center rounded-xl bg-green-600 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-green-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canImport || importing}
+                    className="inline-flex min-h-11 min-w-[170px] items-center justify-center rounded-xl bg-green-600 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-green-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <span className="mx-auto text-center">{importing ? "กำลังบันทึกข้อมูล..." : "ยืนยันนำเข้าข้อมูล"}</span>
-                    {importing && <span className="spinner absolute right-3.5" />}
-                    {existingCheckLoading && !importing && (
-                      <Loader2 className="absolute right-3.5 h-4 w-4 animate-spin" />
+                    {importing || existingCheckLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      "ยืนยันนำเข้าข้อมูล"
                     )}
                   </button>
                 </div>
@@ -842,21 +1097,28 @@ export default function ImportStudentsPage() {
           animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
         }
 
-        .spinner {
-          border: 3px solid rgba(255, 255, 255, 0.3);
-          border-radius: 9999px;
-          border-top: 3px solid #ffffff;
-          width: 20px;
-          height: 20px;
-          animation: spin 1s linear infinite;
+        .progress-bar-animated {
+          background-image: linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent
+          );
+          background-size: 1rem 1rem;
+          animation: progress-stripes 1s linear infinite;
         }
 
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
+        @keyframes progress-stripes {
+          from {
+            background-position: 1rem 0;
           }
-          100% {
-            transform: rotate(360deg);
+
+          to {
+            background-position: 0 0;
           }
         }
 

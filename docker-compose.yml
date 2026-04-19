@@ -38,7 +38,7 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        NEXT_API_URL: http://localhost:5000
+        NEXT_PUBLIC_API_URL: http://localhost:5000
     container_name: nucare-client
     ports:
       - "3000:3000"

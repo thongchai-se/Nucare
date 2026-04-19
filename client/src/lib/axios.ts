@@ -9,9 +9,25 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
 }
 
 const AUTH_EXPIRED_EVENT = "nucare:auth-expired";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_API_URL || "http://localhost:5000";
+
+let refreshPromise: Promise<void> | null = null;
+
+const refreshAccessToken = async (): Promise<void> => {
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post("/api/auth/refresh")
+      .then(() => undefined)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+};
 
 const api = axios.create({
-  baseURL: process.env.NEXT_API_URL || "http://localhost:5000",
+  baseURL: API_BASE_URL,
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -36,9 +52,9 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        await api.post("/api/auth/refresh");
+        await refreshAccessToken();
         return api(originalRequest);
-      } catch (_refreshError) {
+      } catch {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
         }

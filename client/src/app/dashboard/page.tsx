@@ -62,7 +62,7 @@ export default function DashboardPage() {
 
   if (isAdmin) {
     return (
-      <main className="min-h-screen bg-gray-50 text-gray-800">
+      <main className="min-h-screen bg-gray-50 text-gray-800 [scrollbar-gutter:stable]">
         <div
           className={`fixed inset-0 z-40 bg-gray-900/50 transition-opacity duration-300 lg:hidden ${
             sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
@@ -88,18 +88,18 @@ export default function DashboardPage() {
             </div>
 
             <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
-              <span className="block rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">หน้าหลัก</span>
+              <span className="block truncate rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">หน้าหลัก</span>
               <Link
                 href="/dashboard/admin/manage-students"
                 onClick={closeSidebar}
-                className="block rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+                className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
               >
                 จัดการข้อมูลนักศึกษา
               </Link>
               <Link
                 href="/dashboard/admin/import-students"
                 onClick={closeSidebar}
-                className="block rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+                className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
               >
                 นำเข้านักศึกษา (CSV)
               </Link>
@@ -118,19 +118,21 @@ export default function DashboardPage() {
           </aside>
 
           <section className="flex min-h-screen w-full flex-1 flex-col lg:w-[calc(100%-16rem)]">
-            <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 sm:px-6 md:px-8">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
-                  onClick={toggleSidebar}
-                >
-                  <Menu className="h-6 w-6" />
-                </button>
-                <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">หน้าหลักผู้ดูแลระบบ</h1>
-              </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
-                AD
+            <header className="sticky top-0 z-30 border-b border-gray-200 bg-white">
+              <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 md:px-8">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
+                    onClick={toggleSidebar}
+                  >
+                    <Menu className="h-6 w-6" />
+                  </button>
+                  <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">หน้าหลักผู้ดูแลระบบ</h1>
+                </div>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
+                  AD
+                </div>
               </div>
             </header>
 
@@ -240,35 +242,6 @@ export default function DashboardPage() {
             หน้านี้เป็นพื้นที่ protected สำหรับผู้ใช้งานที่ผ่านการยืนยันตัวตนแล้ว ในเฟสถัดไปจะต่อยอดเป็นระบบติดตามสุขภาวะรายบุคคลและแดชบอร์ดการดูแลนักศึกษา
           </p>
         </div>
-
-        {user.role === "ADMIN" && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm md:col-span-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-emerald-900">เครื่องมือผู้ดูแลระบบ</h2>
-                <p className="mt-1 text-sm text-emerald-800">
-                  จัดการข้อมูลนักศึกษาและนำเข้ารายชื่อแบบรอบด้วยไฟล์ CSV เพื่อ onboard เข้าระบบอัตโนมัติ
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href="/dashboard/admin/manage-students"
-                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                >
-                  <Users className="h-4 w-4" />
-                  จัดการข้อมูลนักศึกษา
-                </Link>
-                <Link
-                  href="/dashboard/admin/import-students"
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  นำเข้า CSV
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
       </section>
     </main>
   );
