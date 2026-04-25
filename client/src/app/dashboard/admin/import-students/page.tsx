@@ -221,7 +221,7 @@ export default function ImportStudentsPage() {
   }, [loading, router, user]);
 
   useEffect(() => {
-    router.prefetch("/dashboard");
+    router.prefetch("/dashboard/admin");
     router.prefetch("/dashboard/admin/manage-students");
   }, [router]);
 
@@ -643,7 +643,7 @@ export default function ImportStudentsPage() {
           <h1 className="text-xl font-semibold">ไม่มีสิทธิ์เข้าถึงหน้านี้</h1>
           <p className="mt-2 text-sm">หน้านำเข้าข้อมูลนักศึกษาสำหรับผู้ดูแลระบบเท่านั้น</p>
           <Link
-            href="/dashboard"
+            href="/dashboard/admin"
             className="mt-4 inline-flex rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium"
           >
             กลับไป Dashboard
@@ -679,7 +679,7 @@ export default function ImportStudentsPage() {
             </button>
           </div>
           <nav className="flex-1 space-y-2 px-4 py-6">
-            <Link href="/dashboard" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
+            <Link href="/dashboard/admin" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
               หน้าหลัก
             </Link>
             <Link href="/dashboard/admin/manage-students" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">

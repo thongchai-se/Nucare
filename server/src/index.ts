@@ -2,6 +2,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
+import { getDefaultSeedAccounts, seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
 import adminRoutes from "./routes/admin.routes";
 import authRoutes from "./routes/auth.routes";
@@ -62,13 +63,24 @@ const startServer = async (): Promise<void> => {
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
       await prisma.$queryRaw`SELECT 1`;
+      const seedSummary = await seedDefaultUsersIfMissing(prisma);
+      console.log(
+        `[seed] Default users ready (created=${seedSummary.createdCount}, skipped=${seedSummary.skippedCount}, passwordSource=${seedSummary.passwordSource})`
+      );
+      if (seedSummary.createdCount > 0) {
+        console.log("[seed] Login accounts:");
+        for (const account of getDefaultSeedAccounts()) {
+          console.log(`- ${account.role}: ${account.email}`);
+        }
+      }
+
       app.listen(port, () => {
         console.log(`NuCare server listening on http://localhost:${port}`);
       });
       return;
     } catch (error) {
       console.error(
-        `Database connection failed (attempt ${attempt}/${maxRetries}).`,
+        `Server startup failed (attempt ${attempt}/${maxRetries}).`,
         error
       );
 
