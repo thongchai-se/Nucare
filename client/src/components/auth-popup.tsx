@@ -267,7 +267,7 @@ export default function AuthPopup({
             <>
               <div className="mb-8 text-center md:text-left">
                 <h3 className="mb-2 text-3xl font-bold text-slate-800">เข้าสู่ระบบ</h3>
-                <p className="text-sm text-slate-500">Student Wellbeing Management System</p>
+                <p className="text-sm text-slate-500">Nucare Management System</p>
               </div>
 
               <form className="space-y-5" onSubmit={handleLoginSubmit}>

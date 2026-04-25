@@ -278,7 +278,7 @@ export default function HomePage() {
       </div>
 
       <nav className="fixed z-50 w-full border-b border-slate-100 bg-white transition-all duration-300">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[116rem] px-1.5 sm:px-2 lg:px-3">
           <div className="flex h-20 items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 text-white shadow-sm">
@@ -286,38 +286,38 @@ export default function HomePage() {
               </div>
               <div className="flex flex-col justify-center">
                 <span className="mb-1 block text-xl font-bold leading-none text-blue-900">
-                  Wellbeing<span className="text-2xl leading-none text-cyan-500">.</span>
+                  Nucare<span className="text-2xl leading-none text-cyan-500">.</span>
                 </span>
                 <span className="block text-[11px] font-medium leading-none text-slate-500">คณะพยาบาลศาสตร์</span>
               </div>
             </div>
 
-            <div className="hidden items-center space-x-8 md:flex">
-              <a href="#home" className="font-medium text-slate-600 transition-colors hover:text-blue-700">
+            <div className="hidden items-center gap-5 lg:flex xl:gap-8">
+              <a href="#home" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
                 หน้าแรก
               </a>
-              <a href="#workflow" className="font-medium text-slate-600 transition-colors hover:text-blue-700">
+              <a href="#workflow" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
                 ขั้นตอนการดูแล
               </a>
-              <a href="#roles" className="font-medium text-slate-600 transition-colors hover:text-blue-700">
+              <a href="#roles" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
                 ทีมผู้เชี่ยวชาญ
               </a>
 
               <div className="mx-2 h-6 border-l border-slate-200" />
 
               {!loading && !isAuthenticated && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 xl:gap-3">
                   <button
                     type="button"
                     onClick={() => openAuthPopup("login")}
-                    className="flex items-center gap-2 rounded-lg border border-blue-700 px-5 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50"
+                    className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-blue-700 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50 xl:px-5"
                   >
                     <User className="h-4 w-4" /> เข้าสู่ระบบ
                   </button>
                   <button
                     type="button"
                     onClick={() => openAuthPopup("login")}
-                    className="flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800"
+                    className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800 xl:px-5"
                   >
                     <ClipboardCheck className="h-4 w-4" /> ทำแบบประเมิน
                   </button>
@@ -325,10 +325,10 @@ export default function HomePage() {
               )}
 
               {!loading && isAuthenticated && (
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 xl:gap-4">
                   <Link
                     href="/dashboard"
-                    className="flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800"
+                    className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800 xl:px-5"
                   >
                     ไปที่แดชบอร์ด
                   </Link>
@@ -352,7 +352,7 @@ export default function HomePage() {
               )}
             </div>
 
-            <div className="flex items-center md:hidden">
+            <div className="flex items-center lg:hidden">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -366,7 +366,7 @@ export default function HomePage() {
         </div>
 
         <div
-          className={`overflow-hidden border-t border-slate-100 bg-white transition-all duration-300 md:hidden ${
+          className={`overflow-hidden border-t border-slate-100 bg-white transition-all duration-300 lg:hidden ${
             mobileMenuOpen ? "max-h-[420px] pb-4" : "max-h-0"
           }`}
         >
@@ -439,7 +439,7 @@ export default function HomePage() {
           <div className="pointer-events-none absolute -top-16 left-0 h-64 w-64 rounded-full bg-cyan-200/40 blur-3xl" />
           <div className="pointer-events-none absolute -right-20 top-12 h-80 w-80 rounded-full bg-blue-300/30 blur-3xl" />
 
-          <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
+          <div className="relative mx-auto grid max-w-[102rem] grid-cols-1 items-center gap-12 px-3 sm:px-4 lg:grid-cols-2 lg:px-5">
             <div className="max-w-2xl">
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-100 px-4 py-1.5 text-sm font-semibold text-cyan-700">
                 <ShieldCheck className="h-4 w-4" /> พื้นที่ปลอดภัยสำหรับนักศึกษา
@@ -536,7 +536,7 @@ export default function HomePage() {
         </section>
 
         <section id="workflow" className="border-b border-slate-100 bg-white py-20">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
             <div className="mb-16 text-center">
               <h2 className="mb-4 text-3xl font-bold text-blue-900">เมื่อต้องการความช่วยเหลือ เราดูแลคุณอย่างไร?</h2>
               <p className="mx-auto max-w-2xl text-slate-600">
@@ -567,7 +567,7 @@ export default function HomePage() {
         </section>
 
         <section id="roles" className="bg-slate-50 py-20">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
             <div className="mb-16 text-center">
               <h2 className="mb-4 text-3xl font-bold text-blue-900">ใครบ้างที่พร้อมดูแลคุณ?</h2>
               <p className="mx-auto max-w-2xl text-slate-600">
@@ -593,7 +593,7 @@ export default function HomePage() {
         </section>
 
         <section id="emergency" className="bg-red-600 py-10">
-          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-8 px-4 sm:px-6 lg:flex-row lg:px-8">
+          <div className="mx-auto flex max-w-[102rem] flex-col items-center justify-between gap-8 px-3 sm:px-4 lg:flex-row lg:px-5">
             <div className="flex flex-col items-center gap-5 text-center text-white sm:flex-row sm:items-start sm:text-left lg:items-center">
               <div className="flex h-16 w-16 shrink-0 animate-pulse items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
                 <PhoneCall className="h-8 w-8" />
@@ -631,7 +631,7 @@ export default function HomePage() {
       />
 
       <footer className="border-t-4 border-cyan-500 bg-blue-900 pb-8 pt-16 text-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
           <div className="mb-12 grid grid-cols-1 gap-10 md:grid-cols-3">
             <div className="col-span-1">
               <div className="mb-5 flex items-center gap-3">
@@ -639,7 +639,7 @@ export default function HomePage() {
                   <HeartPulse className="h-6 w-6" />
                 </div>
                 <div className="flex flex-col justify-center">
-                  <span className="mb-1 block text-xl font-bold leading-none">Wellbeing Sys.</span>
+                  <span className="mb-1 block text-xl font-bold leading-none">Nucare Sys.</span>
                   <span className="block text-[11px] leading-none text-blue-200">Faculty of Nursing</span>
                 </div>
               </div>
@@ -675,7 +675,7 @@ export default function HomePage() {
               <h4 className="mb-5 inline-block border-b border-blue-700 pb-2 text-lg font-bold">ติดต่อสอบถาม</h4>
               <ul className="space-y-3 text-sm text-blue-100">
                 <li>งานพัฒนานักศึกษา คณะพยาบาลศาสตร์</li>
-                <li>wellbeing@nursing.edu</li>
+                <li>Nucare@nursing.edu</li>
                 <li>02-XXX-XXXX ต่อ 123</li>
               </ul>
             </div>
@@ -684,9 +684,9 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-between gap-4 border-t border-blue-800 pt-6 text-xs text-blue-300 md:flex-row">
             <p>© 2026 Faculty of Nursing. All rights reserved.</p>
             <div className="flex gap-4">
-              <a href="#" className="transition-colors hover:text-white">
+              <Link href="/privacy" className="transition-colors hover:text-white">
                 นโยบายความเป็นส่วนตัว (Privacy)
-              </a>
+              </Link>
               <a href="#" className="transition-colors hover:text-white">
                 ติดต่อผู้ดูแลระบบ
               </a>

@@ -26,6 +26,11 @@
     --radius: 1rem;
   }
 
+  html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+  }
+
   * {
     @apply border-border;
   }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Mitr, Noto_Sans_Thai } from "next/font/google";
 import { AuthProvider } from "@/context/auth.context";
+import CookieConsentPopup from "@/components/cookie-consent-popup";
 import "./globals.css";
 
 const notoSansThai = Noto_Sans_Thai({
@@ -28,7 +29,10 @@ export default function RootLayout({
   return (
     <html lang="th">
       <body className={`${notoSansThai.variable} ${mitr.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <CookieConsentPopup />
+        </AuthProvider>
       </body>
     </html>
   );
