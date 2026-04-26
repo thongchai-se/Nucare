@@ -159,7 +159,11 @@ export default function StudentDashboardPage() {
 
               <div className="h-7 border-l border-slate-200" />
 
-              <div className="relative">
+              <div
+                className="relative"
+                onMouseEnter={() => setProfileMenuOpen(true)}
+                onMouseLeave={() => setProfileMenuOpen(false)}
+              >
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen((prev) => !prev)}

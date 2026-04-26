@@ -140,6 +140,8 @@ const getAuthPopupViewFromUrl = (): AuthPopupView | null => {
 
 export default function HomePage() {
   const { logout, user, isAuthenticated, loading } = useAuth();
+  const showAuthenticatedActions = isAuthenticated;
+  const showGuestActions = !isAuthenticated;
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -293,19 +295,7 @@ export default function HomePage() {
             </div>
 
             <div className="hidden items-center gap-5 lg:flex xl:gap-8">
-              <a href="#home" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
-                หน้าแรก
-              </a>
-              <a href="#workflow" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
-                ขั้นตอนการดูแล
-              </a>
-              <a href="#roles" className="whitespace-nowrap font-medium text-slate-600 transition-colors hover:text-blue-700">
-                ทีมผู้เชี่ยวชาญ
-              </a>
-
-              <div className="mx-2 h-6 border-l border-slate-200" />
-
-              {!loading && !isAuthenticated && (
+              {showGuestActions && (
                 <div className="flex items-center gap-2.5 xl:gap-3">
                   <button
                     type="button"
@@ -324,7 +314,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {!loading && isAuthenticated && (
+              {showAuthenticatedActions && (
                 <div className="flex items-center gap-3 xl:gap-4">
                   <Link
                     href="/dashboard"
@@ -371,29 +361,7 @@ export default function HomePage() {
           }`}
         >
           <div className="space-y-1 px-4 pt-2">
-            <a
-              href="#home"
-              className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              หน้าแรก
-            </a>
-            <a
-              href="#workflow"
-              className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              ขั้นตอนการดูแล
-            </a>
-            <a
-              href="#roles"
-              className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              ทีมผู้เชี่ยวชาญ
-            </a>
-
-            {!loading && !isAuthenticated && (
+            {showGuestActions && (
               <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4">
                 <button
                   type="button"
@@ -412,7 +380,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {!loading && isAuthenticated && (
+            {showAuthenticatedActions && (
               <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4">
                 <Link
                   href="/dashboard"
@@ -454,7 +422,7 @@ export default function HomePage() {
                 <span className="mt-2 block font-semibold text-blue-800">ข้อมูลของคุณจะถูกเก็บเป็นความลับสูงสุด</span>
               </p>
 
-              {!loading && !isAuthenticated && (
+              {showGuestActions && (
                 <div className="flex flex-col gap-4 sm:flex-row">
                   <button
                     type="button"
@@ -473,7 +441,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {!loading && isAuthenticated && (
+              {showAuthenticatedActions && (
                 <div className="flex flex-col gap-4 sm:flex-row">
                   <Link
                     href="/dashboard"
