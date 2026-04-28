@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { Request, Response } from "express";
 import { z } from "zod";
+import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
@@ -32,6 +33,9 @@ const IMPORT_CONCURRENCY = Math.max(
     32
   )
 );
+
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
+const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
 
 const runWithConcurrency = async <T>(
   items: T[],
@@ -96,14 +100,34 @@ const updateStudentSchema = z.object({
   status: studentStatusSchema,
 });
 
-const normalizeStudentId = (raw: string): string => {
-  const digitsOnly = raw.replace(/\D/g, "");
+const assignAdvisorStudentsSchema = z.object({
+  advisorId: z.string().trim().min(1),
+  studentIds: z.array(z.string().trim().min(1)).min(1).max(500),
+});
 
-  if (digitsOnly.length !== 10) {
-    throw new Error("รหัสนักศึกษาต้องมี 10 หลัก");
+const normalizeStudentId = (raw: string): string => {
+  const normalized = raw.trim();
+  if (!STUDENT_ID_PATTERN.test(normalized)) {
+    throw new Error(STUDENT_ID_FORMAT_MESSAGE);
   }
 
-  return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
+  return normalized;
+};
+
+const formatStudentIdForResponse = (studentId: string | null): string | null => {
+  if (!studentId) {
+    return null;
+  }
+
+  if (STUDENT_ID_PATTERN.test(studentId)) {
+    return studentId;
+  }
+
+  if (/^\d{10}$/.test(studentId)) {
+    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+  }
+
+  return studentId;
 };
 
 const normalizeEmail = (raw?: string): string | null => {
@@ -125,12 +149,26 @@ const mapStudent = (user: {
   updatedAt: Date;
 }) => ({
   id: user.id,
-  studentId: user.studentId,
+  studentId: formatStudentIdForResponse(user.studentId),
   name: user.name,
   email: user.email,
   status: user.isActive ? "active" : "inactive",
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
+});
+
+const mapStaff = (user: {
+  id: string;
+  name: string;
+  email: string | null;
+  employeeId: string | null;
+  role: Role;
+}) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  employeeId: user.employeeId,
+  role: user.role,
 });
 
 export const listStudents = async (req: Request, res: Response): Promise<void> => {
@@ -591,5 +629,150 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error("Import students error:", error);
     res.status(500).json({ message: "Failed to import students" });
+  }
+};
+
+export const listStaffUsers = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const staffUsers = await prisma.user.findMany({
+      where: {
+        role: {
+          in: [Role.ADMIN, Role.ADVISOR, Role.INSTRUCTOR, Role.MENTAL_HEALTH, Role.EXECUTIVE],
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        employeeId: true,
+        role: true,
+      },
+      orderBy: [
+        { role: "asc" },
+        { name: "asc" },
+      ],
+    });
+
+    res.status(200).json({
+      staff: staffUsers.map(mapStaff),
+    });
+  } catch (error) {
+    console.error("List staff users error:", error);
+    res.status(500).json({ message: "Failed to list staff users" });
+  }
+};
+
+export const assignAdvisorStudents = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const parsed = assignAdvisorStudentsSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  try {
+    const advisor = await prisma.user.findFirst({
+      where: {
+        id: parsed.data.advisorId,
+        role: Role.ADVISOR,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!advisor) {
+      res.status(404).json({ message: "ไม่พบอาจารย์ที่ปรึกษา" });
+      return;
+    }
+
+    const students = await prisma.user.findMany({
+      where: {
+        id: {
+          in: parsed.data.studentIds,
+        },
+        role: Role.STUDENT,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (students.length !== parsed.data.studentIds.length) {
+      res.status(400).json({ message: "มี studentId บางรายการไม่ถูกต้อง" });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.studentAdvisorAssignment.updateMany({
+        where: {
+          studentId: {
+            in: parsed.data.studentIds,
+          },
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      }),
+      prisma.studentAdvisorAssignment.createMany({
+        data: parsed.data.studentIds.map((studentId) => ({
+          studentId,
+          advisorId: parsed.data.advisorId,
+          isActive: true,
+        })),
+      }),
+    ]);
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.advisor-assignment.assign",
+      entityType: "StudentAdvisorAssignment",
+      entityId: parsed.data.advisorId,
+      description: `กำหนดนักศึกษา ${parsed.data.studentIds.length} คนให้ advisor`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "กำหนดอาจารย์ที่ปรึกษาเรียบร้อยแล้ว",
+      advisorId: parsed.data.advisorId,
+      studentCount: parsed.data.studentIds.length,
+    });
+  } catch (error) {
+    console.error("Assign advisor students error:", error);
+    res.status(500).json({ message: "Failed to assign advisor students" });
+  }
+};
+
+export const listAuditLogs = async (req: Request, res: Response): Promise<void> => {
+  const limit = Math.min(Number.parseInt(String(req.query.limit || "100"), 10) || 100, 200);
+
+  try {
+    const auditLogs = await prisma.auditLog.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: limit,
+      include: {
+        actor: {
+          select: {
+            id: true,
+            name: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      logs: auditLogs,
+    });
+  } catch (error) {
+    console.error("List audit logs error:", error);
+    res.status(500).json({ message: "Failed to list audit logs" });
   }
 };

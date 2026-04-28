@@ -76,9 +76,11 @@ export default function PrivacyPolicyPage() {
 
   return (
     <>
+      <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_15%_20%,rgba(186,230,253,0.55),transparent_36%),radial-gradient(circle_at_82%_8%,rgba(125,211,252,0.45),transparent_32%),linear-gradient(135deg,#f8fafc_0%,#f0f9ff_40%,#eef2ff_100%)]" />
+      <div className="fixed inset-0 -z-10 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.35)_40%,transparent_80%)]" />
       <LegalTopNav active="privacy" />
 
-      <main className="min-h-screen bg-slate-50 pb-12 pt-28 sm:pt-32">
+      <main className="min-h-screen pb-12 pt-28 sm:pt-32">
         <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
           <div className="flex flex-col gap-8 lg:flex-row lg:gap-12">
             <aside className="w-full shrink-0 lg:w-1/4">
@@ -141,7 +143,7 @@ export default function PrivacyPolicyPage() {
               </div>
             </aside>
 
-            <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10 lg:w-3/4 lg:p-12">
+            <div className="w-full rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md p-6 shadow-sm sm:p-10 lg:w-3/4 lg:p-12">
               <div className="mb-10 border-b border-slate-100 pb-8">
                 <h1 className="mb-4 text-3xl font-bold leading-tight text-slate-900 sm:text-4xl">ศูนย์ข้อมูลและนโยบาย</h1>
                 <p className="mb-4 text-lg text-slate-600">ระบบจัดการและดูแลสุขภาวะนักศึกษา (Wellbeing System)</p>

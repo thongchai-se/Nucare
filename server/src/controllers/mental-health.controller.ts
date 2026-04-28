@@ -1,0 +1,259 @@
+import { AlertStatus, ReferralStatus, Role } from "@prisma/client";
+import { Request, Response } from "express";
+import { z } from "zod";
+import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { prisma } from "../lib/prisma";
+import { formatStudentIdForResponse, inferStudyYear, normalizeRiskLevel } from "../lib/user-format";
+
+const referralParamSchema = z.object({
+  referralId: z.string().trim().min(1),
+});
+
+const emergencyCaseParamSchema = z.object({
+  caseId: z.string().trim().min(1),
+});
+
+const updateReferralStatusSchema = z.object({
+  status: z.nativeEnum(ReferralStatus),
+});
+
+const createSpecializedCareRecordSchema = z.object({
+  studentId: z.string().trim().min(1),
+  referralId: z.string().trim().optional(),
+  sessionDate: z.string().trim().min(1),
+  summary: z.string().trim().min(1).max(4000),
+  interventionPlan: z.string().trim().min(1).max(4000),
+  confidentialNotes: z.string().trim().max(4000).optional(),
+});
+
+export const getMentalHealthDashboard = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const [referrals, emergencyCases, alerts] = await Promise.all([
+      prisma.caseReferral.findMany({
+        where: {
+          target: "COUNSELING_CENTER",
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: {
+          student: {
+            select: {
+              id: true,
+              studentId: true,
+              name: true,
+              studentAssessments: {
+                orderBy: { assessedAt: "desc" },
+                take: 1,
+                select: {
+                  riskLevel: true,
+                  totalScore: true,
+                  instrument: true,
+                  assessedAt: true,
+                },
+              },
+            },
+          },
+          advisor: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.emergencyCase.findMany({
+        where: {
+          status: {
+            in: ["OPEN", "IN_PROGRESS"],
+          },
+        },
+        orderBy: { openedAt: "desc" },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              studentId: true,
+            },
+          },
+        },
+      }),
+      prisma.alert.findMany({
+        where: {
+          status: AlertStatus.OPEN,
+          OR: [
+            { type: "HIGH_RISK_SCREENING" },
+            { type: "SOS_OPENED" },
+            { type: "REFERRAL_RECEIVED" },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+    ]);
+
+    res.status(200).json({
+      referrals: referrals.map((referral) => ({
+        id: referral.id,
+        status: referral.status,
+        reason: referral.reason,
+        isUrgent: referral.isUrgent,
+        createdAt: referral.createdAt,
+        advisorName: referral.advisor.name,
+        student: {
+          id: referral.student.id,
+          studentId: formatStudentIdForResponse(referral.student.studentId),
+          name: referral.student.name,
+          year: inferStudyYear(referral.student.studentId),
+          riskLevel: normalizeRiskLevel(referral.student.studentAssessments[0]?.riskLevel || "NORMAL"),
+          latestAssessment: referral.student.studentAssessments[0] || null,
+        },
+      })),
+      emergencyCases: emergencyCases.map((item) => ({
+        id: item.id,
+        summary: item.summary,
+        status: item.status,
+        openedAt: item.openedAt,
+        student: {
+          id: item.student.id,
+          name: item.student.name,
+          studentId: formatStudentIdForResponse(item.student.studentId),
+        },
+      })),
+      alerts,
+    });
+  } catch (error) {
+    console.error("Get mental health dashboard error:", error);
+    res.status(500).json({ message: "Failed to fetch mental health dashboard" });
+  }
+};
+
+export const updateReferralStatus = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedParams = referralParamSchema.safeParse(req.params);
+  const parsedBody = updateReferralStatusSchema.safeParse(req.body);
+  if (!parsedParams.success || !parsedBody.success) {
+    res.status(400).json({ message: "Invalid payload" });
+    return;
+  }
+
+  try {
+    const referral = await prisma.caseReferral.update({
+      where: { id: parsedParams.data.referralId },
+      data: { status: parsedBody.data.status },
+    });
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "mental-health.referral.update-status",
+      entityType: "CaseReferral",
+      entityId: referral.id,
+      description: `อัปเดตสถานะ referral เป็น ${parsedBody.data.status}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "อัปเดตสถานะ referral สำเร็จ",
+      referral,
+    });
+  } catch (error) {
+    console.error("Update referral status error:", error);
+    res.status(500).json({ message: "Failed to update referral status" });
+  }
+};
+
+export const createSpecializedCareRecord = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = createSpecializedCareRecordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid payload", errors: parsed.error.flatten() });
+    return;
+  }
+
+  const sessionDate = new Date(parsed.data.sessionDate);
+  if (Number.isNaN(sessionDate.getTime())) {
+    res.status(400).json({ message: "รูปแบบวันที่ไม่ถูกต้อง" });
+    return;
+  }
+
+  try {
+    const record = await prisma.specializedCareRecord.create({
+      data: {
+        studentId: parsed.data.studentId,
+        mentalHealthUserId: userId,
+        referralId: parsed.data.referralId || null,
+        sessionDate,
+        summary: parsed.data.summary,
+        interventionPlan: parsed.data.interventionPlan,
+        confidentialNotes: parsed.data.confidentialNotes || null,
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "mental-health.specialized-care.create",
+      entityType: "SpecializedCareRecord",
+      entityId: record.id,
+      description: "บันทึกการดูแลเชิงลึก",
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(201).json({
+      message: "บันทึกการดูแลเชิงลึกสำเร็จ",
+      record,
+    });
+  } catch (error) {
+    console.error("Create specialized care record error:", error);
+    res.status(500).json({ message: "Failed to create specialized care record" });
+  }
+};
+
+export const resolveEmergencyCase = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedParams = emergencyCaseParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ message: "Invalid emergency case id" });
+    return;
+  }
+
+  try {
+    const emergencyCase = await prisma.emergencyCase.update({
+      where: { id: parsedParams.data.caseId },
+      data: {
+        status: "RESOLVED",
+        resolvedAt: new Date(),
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "mental-health.emergency.resolve",
+      entityType: "EmergencyCase",
+      entityId: emergencyCase.id,
+      description: "ปิดเคสฉุกเฉิน",
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "ปิดเคสฉุกเฉินสำเร็จ",
+      emergencyCase,
+    });
+  } catch (error) {
+    console.error("Resolve emergency case error:", error);
+    res.status(500).json({ message: "Failed to resolve emergency case" });
+  }
+};

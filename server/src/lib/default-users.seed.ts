@@ -19,7 +19,7 @@ const seedUsers: SeedUser[] = [
   {
     name: "Student Demo",
     role: Role.STUDENT,
-    studentId: "6600000001",
+    studentId: "660000000-1",
     email: "student@nucare.local",
   },
   {
@@ -39,6 +39,12 @@ const seedUsers: SeedUser[] = [
     role: Role.INSTRUCTOR,
     employeeId: "INS001",
     email: "instructor@nucare.local",
+  },
+  {
+    name: "Executive Demo",
+    role: Role.EXECUTIVE,
+    employeeId: "EXE001",
+    email: "executive@nucare.local",
   },
 ];
 

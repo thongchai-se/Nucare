@@ -15,6 +15,7 @@ const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const LOGIN_FAILED_MESSAGE = "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง";
 const PASSWORD_RESET_REQUEST_FAILED_MESSAGE = "ไม่พบบัญชีอีเมลนี้ในระบบ";
 const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุ";
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 
 const loginSchema = z
   .object({
@@ -36,8 +37,7 @@ const loginSchema = z
       return;
     }
 
-    const digitsOnly = identifier.replace(/\D/g, "");
-    if (digitsOnly.length !== 10) {
+    if (!STUDENT_ID_PATTERN.test(identifier)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["identifier"],
@@ -169,6 +169,22 @@ const clearAuthCookies = (res: Response): void => {
   res.clearCookie(REFRESH_TOKEN_COOKIE, clearCookieOptions);
 };
 
+const formatStudentIdForResponse = (studentId: string | null): string | null => {
+  if (!studentId) {
+    return null;
+  }
+
+  if (STUDENT_ID_PATTERN.test(studentId)) {
+    return studentId;
+  }
+
+  if (/^\d{10}$/.test(studentId)) {
+    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+  }
+
+  return studentId;
+};
+
 const sanitizeUser = (user: {
   id: string;
   name: string;
@@ -182,7 +198,7 @@ const sanitizeUser = (user: {
 }) => ({
   id: user.id,
   name: user.name,
-  studentId: user.studentId,
+  studentId: formatStudentIdForResponse(user.studentId),
   employeeId: user.employeeId,
   email: user.email,
   role: user.role,

@@ -37,14 +37,16 @@ type StudentFormSnapshot = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
+const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
 
 const normalizeStudentId = (raw: string): string => {
-  const digitsOnly = raw.replace(/\D/g, "");
-  if (digitsOnly.length !== 10) {
-    throw new Error("รหัสนักศึกษาต้องมี 10 หลัก");
+  const normalized = raw.trim();
+  if (!STUDENT_ID_PATTERN.test(normalized)) {
+    throw new Error(STUDENT_ID_FORMAT_MESSAGE);
   }
 
-  return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
+  return normalized;
 };
 
 const formatStudentIdInput = (value: string): string => {
@@ -54,6 +56,22 @@ const formatStudentIdInput = (value: string): string => {
   }
 
   return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
+};
+
+const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
+  if (!studentId) {
+    return "-";
+  }
+
+  if (/^\d{9}-\d$/.test(studentId)) {
+    return studentId;
+  }
+
+  if (/^\d{10}$/.test(studentId)) {
+    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+  }
+
+  return studentId;
 };
 
 export default function ManageStudentsPage() {
@@ -128,7 +146,7 @@ export default function ManageStudentsPage() {
 
     return students.filter(
       (student) =>
-        student.studentId.toLowerCase().includes(keyword) ||
+        formatStudentIdDisplay(student.studentId).toLowerCase().includes(keyword) ||
         student.name.toLowerCase().includes(keyword)
     );
   }, [searchKeyword, students]);
@@ -457,7 +475,7 @@ export default function ManageStudentsPage() {
 
   const handleDeleteStudent = async (student: ManagedStudent) => {
     const shouldDelete = window.confirm(
-      `คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลนักศึกษารหัส ${student.studentId}?`
+      `คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลนักศึกษารหัส ${formatStudentIdDisplay(student.studentId)}?`
     );
 
     if (!shouldDelete) {
@@ -485,7 +503,7 @@ export default function ManageStudentsPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+        <span className="loader h-7 w-7  text-blue-600"></span>
       </main>
     );
   }
@@ -651,7 +669,7 @@ export default function ManageStudentsPage() {
               <div className="overflow-hidden">
                 {loadingStudents && (
                   <div className="flex items-center justify-center border-b border-gray-100 px-4 py-4 text-sm text-gray-500">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span className="loader mr-2 h-4 w-4 "></span>
                     กำลังโหลดข้อมูลนักศึกษา...
                   </div>
                 )}
@@ -668,7 +686,9 @@ export default function ManageStudentsPage() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs text-gray-500">ลำดับที่ {startItemIndex + index + 1}</p>
-                            <p className="mt-0.5 font-mono text-sm font-medium text-gray-900">{student.studentId}</p>
+                            <p className="mt-0.5 font-mono text-sm font-medium text-gray-900">
+                              {formatStudentIdDisplay(student.studentId)}
+                            </p>
                           </div>
                           {student.status === "active" ? (
                             <span className="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800">
@@ -761,7 +781,7 @@ export default function ManageStudentsPage() {
                         <tr key={student.id} className="h-14 transition-colors hover:bg-gray-50">
                           <td className="px-6 py-4 text-center text-gray-500">{startItemIndex + index + 1}</td>
                           <td className="px-6 py-4 font-mono text-sm text-gray-900 whitespace-nowrap">
-                            {student.studentId}
+                            {formatStudentIdDisplay(student.studentId)}
                           </td>
                           <td className="px-6 py-4 font-medium text-gray-900">
                             <p className="truncate" title={student.name}>
@@ -972,7 +992,7 @@ export default function ManageStudentsPage() {
                     disabled={submitting || !canSubmit}
                     className="inline-flex min-w-[124px] items-center justify-center rounded-xl bg-gray-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800 disabled:opacity-60"
                   >
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "บันทึกข้อมูล"}
+                    {submitting ? <span className="loader h-4 w-4 "></span> : "บันทึกข้อมูล"}
                   </button>
                 </div>
               </form>

@@ -24,12 +24,32 @@ export default function DashboardEntryPage() {
       return;
     }
 
+    if (user.role === "EXECUTIVE") {
+      router.replace("/dashboard/executive");
+      return;
+    }
+
+    if (user.role === "ADVISOR") {
+      router.replace("/dashboard/advisor");
+      return;
+    }
+
+    if (user.role === "MENTAL_HEALTH") {
+      router.replace("/dashboard/mental-health");
+      return;
+    }
+
+    if (user.role === "INSTRUCTOR") {
+      router.replace("/dashboard/instructor");
+      return;
+    }
+
     router.replace("/dashboard/student");
   }, [isAuthenticated, loading, router, user]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100">
-      <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+      <span className="loader h-7 w-7  text-blue-600"></span>
     </main>
   );
 }

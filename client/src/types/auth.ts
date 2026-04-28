@@ -3,6 +3,7 @@ export type Role =
   | "ADVISOR"
   | "MENTAL_HEALTH"
   | "INSTRUCTOR"
+  | "EXECUTIVE"
   | "ADMIN";
 
 export interface User {

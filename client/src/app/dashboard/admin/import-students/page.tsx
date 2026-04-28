@@ -57,6 +57,8 @@ type ExistingCheckResponse = {
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const IMPORT_CHUNK_SIZE = 100;
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
+const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
 
 const normalizeHeader = (value: string): string =>
   value
@@ -101,11 +103,27 @@ const parseCsvLine = (line: string): string[] => {
 };
 
 const normalizeStudentId = (raw: string): string => {
-  const digitsOnly = raw.replace(/\D/g, "");
-  if (digitsOnly.length !== 10) {
-    throw new Error("รหัสนักศึกษาต้องมี 10 หลัก");
+  const normalized = raw.trim();
+  if (!STUDENT_ID_PATTERN.test(normalized)) {
+    throw new Error(STUDENT_ID_FORMAT_MESSAGE);
   }
-  return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
+  return normalized;
+};
+
+const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
+  if (!studentId) {
+    return "-";
+  }
+
+  if (/^\d{9}-\d$/.test(studentId)) {
+    return studentId;
+  }
+
+  if (/^\d{10}$/.test(studentId)) {
+    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+  }
+
+  return studentId;
 };
 
 const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -592,7 +610,7 @@ export default function ImportStudentsPage() {
       if (totalFailed > 0) {
         const failurePreview = mergedFailures
           .slice(0, 3)
-          .map((item) => `${item.studentId}: ${item.reason}`)
+          .map((item) => `${formatStudentIdDisplay(item.studentId)}: ${item.reason}`)
           .join(" | ");
 
         setServerError(
@@ -623,7 +641,7 @@ export default function ImportStudentsPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+        <span className="loader h-7 w-7  text-blue-600"></span>
       </main>
     );
   }
@@ -866,7 +884,7 @@ export default function ImportStudentsPage() {
                       disabled={!selectedFile || previewing}
                       className="inline-flex min-h-11 min-w-[150px] items-center justify-center rounded-xl bg-gray-900 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-gray-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {previewing ? <Loader2 className="h-5 w-5 animate-spin" /> : "ตรวจสอบข้อมูล"}
+                      {previewing ? <span className="loader h-5 w-5 "></span> : "ตรวจสอบข้อมูล"}
                     </button>
                   </div>
                 </section>
@@ -992,7 +1010,9 @@ export default function ImportStudentsPage() {
                         return (
                           <tr key={`${row.studentId}-${index}`} className="transition-colors hover:bg-gray-50">
                             <td className="px-4 py-3 text-center text-gray-500">{index + 1}</td>
-                            <td className="px-4 py-3 font-mono text-xs text-gray-800">{row.studentId || "-"}</td>
+                            <td className="px-4 py-3 font-mono text-xs text-gray-800">
+                              {formatStudentIdDisplay(row.studentId)}
+                            </td>
                             <td className="px-4 py-3 text-gray-800">{row.name || "-"}</td>
                             <td className="px-4 py-3 text-xs text-gray-500">{row.email || "-"}</td>
                             <td className="px-4 py-3">
@@ -1049,7 +1069,7 @@ export default function ImportStudentsPage() {
                     className="inline-flex min-h-11 min-w-[170px] items-center justify-center rounded-xl bg-green-600 px-6 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-green-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {importing || existingCheckLoading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="loader h-5 w-5 "></span>
                     ) : (
                       "ยืนยันนำเข้าข้อมูล"
                     )}

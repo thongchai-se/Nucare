@@ -32,6 +32,15 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
+import api from "@/lib/axios";
+
+type StudentAssessmentSummary = {
+  id: string;
+  instrument: "Q2" | "ST5" | "Q9" | "Q8";
+  totalScore: number;
+  riskLevel: "NORMAL" | "MEDIUM" | "HIGH";
+  assessedAt: string;
+};
 
 export default function StudentDashboardPage() {
   const router = useRouter();
@@ -42,7 +51,10 @@ export default function StudentDashboardPage() {
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
   const [showAssessmentToast, setShowAssessmentToast] = useState(false);
   const [showPriorityBanner, setShowPriorityBanner] = useState(true);
+  const [studentServerError, setStudentServerError] = useState("");
+  const [latestAssessment, setLatestAssessment] = useState<StudentAssessmentSummary | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const profileMenuCloseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -53,6 +65,30 @@ export default function StudentDashboardPage() {
   useEffect(() => {
     if (!loading && user?.role === "ADMIN") {
       router.replace("/dashboard/admin");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "EXECUTIVE") {
+      router.replace("/dashboard/executive");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "ADVISOR") {
+      router.replace("/dashboard/advisor");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "MENTAL_HEALTH") {
+      router.replace("/dashboard/mental-health");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "INSTRUCTOR") {
+      router.replace("/dashboard/instructor");
     }
   }, [loading, router, user?.role]);
 
@@ -70,15 +106,58 @@ export default function StudentDashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (profileMenuCloseTimerRef.current !== null) {
+        window.clearTimeout(profileMenuCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading || user?.role !== "STUDENT") {
+      return;
+    }
+
+    const loadStudentDashboard = async () => {
+      try {
+        const response = await api.get<{ latestAssessments: StudentAssessmentSummary[] }>("/api/student/dashboard");
+        const nextAssessment = response.data.latestAssessments[0] || null;
+        setLatestAssessment(nextAssessment);
+        setShowPriorityBanner(!nextAssessment);
+      } catch (error) {
+        setStudentServerError(error instanceof Error ? error.message : "ไม่สามารถโหลดข้อมูลนักศึกษาได้");
+      }
+    };
+
+    void loadStudentDashboard();
+  }, [loading, user?.role]);
+
   const handleLogout = async () => {
     await logout();
     router.replace("/login");
   };
 
+  const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
+    if (!studentId) {
+      return "-";
+    }
+
+    if (/^\d{9}-\d$/.test(studentId)) {
+      return studentId;
+    }
+
+    if (/^\d{10}$/.test(studentId)) {
+      return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+    }
+
+    return studentId;
+  };
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+        <span className="loader h-7 w-7  text-blue-600"></span>
       </main>
     );
   }
@@ -87,7 +166,7 @@ export default function StudentDashboardPage() {
     return null;
   }
 
-  const identifier = user.studentId || user.employeeId || user.email || "-";
+  const identifier = formatStudentIdDisplay(user.studentId) || user.employeeId || user.email || "-";
   const userInitials = user.name
     .trim()
     .split(/\s+/)
@@ -102,20 +181,75 @@ export default function StudentDashboardPage() {
     setProfileMenuOpen(false);
   };
 
-  const handleSubmitAssessment = () => {
+  const openProfileMenu = () => {
+    if (profileMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(profileMenuCloseTimerRef.current);
+      profileMenuCloseTimerRef.current = null;
+    }
+
+    setProfileMenuOpen(true);
+  };
+
+  const closeProfileMenuWithDelay = () => {
+    if (profileMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(profileMenuCloseTimerRef.current);
+    }
+
+    profileMenuCloseTimerRef.current = window.setTimeout(() => {
+      setProfileMenuOpen(false);
+      profileMenuCloseTimerRef.current = null;
+    }, 180);
+  };
+
+  const handleSubmitAssessment = async () => {
     if (isSubmittingAssessment) {
       return;
     }
 
     setIsSubmittingAssessment(true);
+    setStudentServerError("");
 
-    window.setTimeout(() => {
+    try {
+      const response = await api.post<{ assessment: StudentAssessmentSummary }>("/api/student/assessments", {
+        instrument: "Q9",
+        answers: [
+          {
+            questionCode: "Q9_1",
+            questionText: "เบื่อ ไม่สนใจอยากทำอะไร",
+            answerValue: "เป็นบางวัน",
+            score: 1,
+          },
+          {
+            questionCode: "Q9_2",
+            questionText: "ไม่สบายใจ ซึมเศร้า หรือท้อแท้",
+            answerValue: "เป็นบางวัน",
+            score: 1,
+          },
+        ],
+      });
+
+      setLatestAssessment(response.data.assessment);
       setIsSubmittingAssessment(false);
       setAssessmentModalOpen(false);
       setShowAssessmentToast(true);
       setShowPriorityBanner(false);
       window.setTimeout(() => setShowAssessmentToast(false), 4000);
-    }, 1400);
+    } catch (error) {
+      setIsSubmittingAssessment(false);
+      setStudentServerError(error instanceof Error ? error.message : "ไม่สามารถส่งแบบประเมินได้");
+    }
+  };
+
+  const handleCreateSosCase = async () => {
+    try {
+      await api.post("/api/student/sos", {
+        summary: "นักศึกษาร้องขอความช่วยเหลือด่วนผ่านปุ่ม SOS จาก dashboard",
+      });
+      setShowAssessmentToast(true);
+      window.setTimeout(() => setShowAssessmentToast(false), 4000);
+    } catch (error) {
+      setStudentServerError(error instanceof Error ? error.message : "ไม่สามารถส่งเคส SOS ได้");
+    }
   };
 
   return (
@@ -129,6 +263,12 @@ export default function StudentDashboardPage() {
             <h4 className="text-sm font-bold text-slate-800">ส่งผลประเมินสำเร็จ</h4>
             <p className="mt-0.5 text-xs text-slate-500">ขอบคุณที่ให้เราช่วยดูแลสุขภาพใจของคุณ</p>
           </div>
+        </div>
+      )}
+
+      {studentServerError && (
+        <div className="fixed left-1/2 top-24 z-[310] w-[min(92vw,36rem)] -translate-x-1/2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
+          {studentServerError}
         </div>
       )}
 
@@ -161,12 +301,21 @@ export default function StudentDashboardPage() {
 
               <div
                 className="relative"
-                onMouseEnter={() => setProfileMenuOpen(true)}
-                onMouseLeave={() => setProfileMenuOpen(false)}
+                ref={profileMenuRef}
+                onMouseEnter={openProfileMenu}
+                onMouseLeave={closeProfileMenuWithDelay}
               >
                 <button
                   type="button"
-                  onClick={() => setProfileMenuOpen((prev) => !prev)}
+                  onClick={() => {
+                    if (profileMenuCloseTimerRef.current !== null) {
+                      window.clearTimeout(profileMenuCloseTimerRef.current);
+                      profileMenuCloseTimerRef.current = null;
+                    }
+
+                    setProfileMenuOpen((prev) => !prev);
+                  }}
+                  onFocus={openProfileMenu}
                   className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-slate-50"
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="menu"
@@ -343,16 +492,30 @@ export default function StudentDashboardPage() {
 
                     <div className="w-full flex-1 text-center sm:text-left">
                       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                        <h3 className="text-lg font-bold text-slate-800">ผลการประเมิน 9Q ล่าสุด</h3>
+                        <h3 className="text-lg font-bold text-slate-800">
+                          ผลการประเมิน {latestAssessment?.instrument || "9Q"} ล่าสุด
+                        </h3>
                         <span className="mx-auto inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 sm:mx-0">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500" /> ปกติ (สีเขียว)
+                          <span className={`h-2 w-2 rounded-full ${
+                            latestAssessment?.riskLevel === "HIGH"
+                              ? "bg-red-500"
+                              : latestAssessment?.riskLevel === "MEDIUM"
+                                ? "bg-amber-500"
+                                : "bg-emerald-500"
+                          }`} /> {latestAssessment?.riskLevel === "HIGH"
+                            ? "เสี่ยงสูง"
+                            : latestAssessment?.riskLevel === "MEDIUM"
+                              ? "เฝ้าระวัง"
+                              : "ปกติ"}
                         </span>
                       </div>
                       <p className="mb-4 text-sm text-slate-500">
-                        <Calendar className="-mt-0.5 mr-1 inline-block h-4 w-4" /> ทำประเมินเมื่อ: 10 เมษายน 2569
+                        <Calendar className="-mt-0.5 mr-1 inline-block h-4 w-4" /> ทำประเมินเมื่อ: {latestAssessment ? new Date(latestAssessment.assessedAt).toLocaleDateString("th-TH") : "ยังไม่มีข้อมูล"}
                       </p>
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
-                        สภาวะอารมณ์ของคุณอยู่ในเกณฑ์ปกติ ถือว่าจัดการความเครียดได้ดีเยี่ยม! ขอให้รักษาสุขภาพใจแบบนี้ต่อไปนะ
+                        {latestAssessment
+                          ? `คะแนนล่าสุด ${latestAssessment.totalScore} (${latestAssessment.instrument}) ระบบได้ประเมินระดับความเสี่ยงเป็น ${latestAssessment.riskLevel}`
+                          : "ยังไม่มีผลการประเมินล่าสุด กรุณาทำแบบคัดกรองเพื่อให้ระบบช่วยดูแลคุณได้เหมาะสมขึ้น"}
                       </div>
                     </div>
                   </div>
@@ -399,7 +562,11 @@ export default function StudentDashboardPage() {
                     หากรู้สึกไม่ปลอดภัย กังวลใจอย่างมาก หรือมีความคิดอยากทำร้ายตนเอง อย่าอยู่คนเดียว ติดต่อเราทันที
                   </p>
                   <div className="space-y-3">
-                    <button className="w-full rounded-xl bg-white py-3 text-sm font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50">
+                    <button
+                      type="button"
+                      onClick={handleCreateSosCase}
+                      className="w-full rounded-xl bg-white py-3 text-sm font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50"
+                    >
                       แจ้งเหตุทีมดูแลพิเศษ (SOS)
                     </button>
                     <a
@@ -603,7 +770,7 @@ export default function StudentDashboardPage() {
                 >
                   {isSubmittingAssessment ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="loader h-4 w-4 "></span>
                       กำลังส่งข้อมูล...
                     </>
                   ) : (

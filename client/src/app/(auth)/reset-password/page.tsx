@@ -262,7 +262,7 @@ function ResetPasswordForm() {
               disabled={isLoading}
               className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "ยืนยันเปลี่ยนรหัสผ่าน"}
+              {isLoading ? <span className="loader h-5 w-5 "></span> : "ยืนยันเปลี่ยนรหัสผ่าน"}
             </button>
           </form>
         )}

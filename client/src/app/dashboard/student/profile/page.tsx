@@ -26,6 +26,7 @@ export default function StudentProfilePage() {
   const [studentMobileMenuOpen, setStudentMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const profileMenuCloseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -36,6 +37,30 @@ export default function StudentProfilePage() {
   useEffect(() => {
     if (!loading && user?.role === "ADMIN") {
       router.replace("/dashboard/admin");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "EXECUTIVE") {
+      router.replace("/dashboard/executive");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "ADVISOR") {
+      router.replace("/dashboard/advisor");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "MENTAL_HEALTH") {
+      router.replace("/dashboard/mental-health");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "INSTRUCTOR") {
+      router.replace("/dashboard/instructor");
     }
   }, [loading, router, user?.role]);
 
@@ -53,9 +78,53 @@ export default function StudentProfilePage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (profileMenuCloseTimerRef.current !== null) {
+        window.clearTimeout(profileMenuCloseTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleLogout = async () => {
     await logout();
     router.replace("/login");
+  };
+
+  const openProfileMenu = () => {
+    if (profileMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(profileMenuCloseTimerRef.current);
+      profileMenuCloseTimerRef.current = null;
+    }
+
+    setProfileMenuOpen(true);
+  };
+
+  const closeProfileMenuWithDelay = () => {
+    if (profileMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(profileMenuCloseTimerRef.current);
+    }
+
+    profileMenuCloseTimerRef.current = window.setTimeout(() => {
+      setProfileMenuOpen(false);
+      profileMenuCloseTimerRef.current = null;
+    }, 180);
+  };
+
+  const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
+    if (!studentId) {
+      return "-";
+    }
+
+    if (/^\d{9}-\d$/.test(studentId)) {
+      return studentId;
+    }
+
+    if (/^\d{10}$/.test(studentId)) {
+      return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+    }
+
+    return studentId;
   };
 
   const closeStudentMobileMenu = () => {
@@ -66,7 +135,7 @@ export default function StudentProfilePage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+        <span className="loader h-7 w-7  text-blue-600"></span>
       </main>
     );
   }
@@ -75,7 +144,7 @@ export default function StudentProfilePage() {
     return null;
   }
 
-  const identifier = user.studentId || user.employeeId || user.email || "-";
+  const identifier = formatStudentIdDisplay(user.studentId) || user.employeeId || user.email || "-";
   const userInitials =
     user.name
       .trim()
@@ -117,12 +186,21 @@ export default function StudentProfilePage() {
 
               <div
                 className="relative"
-                onMouseEnter={() => setProfileMenuOpen(true)}
-                onMouseLeave={() => setProfileMenuOpen(false)}
+                ref={profileMenuRef}
+                onMouseEnter={openProfileMenu}
+                onMouseLeave={closeProfileMenuWithDelay}
               >
                 <button
                   type="button"
-                  onClick={() => setProfileMenuOpen((prev) => !prev)}
+                  onClick={() => {
+                    if (profileMenuCloseTimerRef.current !== null) {
+                      window.clearTimeout(profileMenuCloseTimerRef.current);
+                      profileMenuCloseTimerRef.current = null;
+                    }
+
+                    setProfileMenuOpen((prev) => !prev);
+                  }}
+                  onFocus={openProfileMenu}
                   className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-slate-50"
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="menu"

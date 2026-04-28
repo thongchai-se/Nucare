@@ -26,6 +26,26 @@ export default function AdminDashboardPage() {
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {
+    if (!loading && user?.role === "EXECUTIVE") {
+      router.replace("/dashboard/executive");
+      return;
+    }
+
+    if (!loading && user?.role === "MENTAL_HEALTH") {
+      router.replace("/dashboard/mental-health");
+      return;
+    }
+
+    if (!loading && user?.role === "INSTRUCTOR") {
+      router.replace("/dashboard/instructor");
+      return;
+    }
+
+    if (!loading && user?.role === "ADVISOR") {
+      router.replace("/dashboard/advisor");
+      return;
+    }
+
     if (!loading && user && user.role !== "ADMIN") {
       router.replace("/dashboard/student");
     }
@@ -55,7 +75,7 @@ export default function AdminDashboardPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+        <span className="loader h-7 w-7  text-blue-600"></span>
       </main>
     );
   }

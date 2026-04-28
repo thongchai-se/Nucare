@@ -35,7 +35,7 @@ export default function TermsPage() {
                   <span>นโยบายความเป็นส่วนตัว</span>
                 </Link>
                 <Link
-                  href="/cookies"
+                  href="/privacy#cookies"
                   className="group flex items-start gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-800"
                 >
                   <Cookie className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-blue-700" />

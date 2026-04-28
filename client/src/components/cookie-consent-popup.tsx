@@ -93,7 +93,7 @@ export default function CookieConsentPopup() {
                 <p className="max-w-3xl text-xs leading-relaxed text-slate-300">
                   ระบบ Nucare ใช้คุกกี้เพื่อจดจำการเข้าสู่ระบบและพัฒนาประสบการณ์ใช้งาน ข้อมูลของคุณจะถูกดูแลอย่างปลอดภัยตาม
                   {" "}
-                  <Link href="/cookies" className="text-cyan-300 underline transition-colors hover:text-white">
+                  <Link href="/privacy#cookies" className="text-cyan-300 underline transition-colors hover:text-white">
                     นโยบายคุกกี้
                   </Link>
                 </p>

@@ -5,7 +5,12 @@ import express, { NextFunction, Request, Response } from "express";
 import { getDefaultSeedAccounts, seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
 import adminRoutes from "./routes/admin.routes";
+import alertsRoutes from "./routes/alerts.routes";
 import authRoutes from "./routes/auth.routes";
+import advisorRoutes from "./routes/advisor.routes";
+import instructorRoutes from "./routes/instructor.routes";
+import mentalHealthRoutes from "./routes/mental-health.routes";
+import studentRoutes from "./routes/student.routes";
 
 dotenv.config();
 
@@ -46,6 +51,11 @@ app.get("/api/health", (_req: Request, res: Response) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/advisor", advisorRoutes);
+app.use("/api/student", studentRoutes);
+app.use("/api/instructor", instructorRoutes);
+app.use("/api/mental-health", mentalHealthRoutes);
+app.use("/api/alerts", alertsRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error:", err);

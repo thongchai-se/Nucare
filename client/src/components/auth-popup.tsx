@@ -28,6 +28,8 @@ type AuthPopupProps = {
 };
 
 const LOGIN_FAILED_MESSAGE = "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง";
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
+const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
 
 const KkuSsoIcon = () => (
   <svg viewBox="0 0 32 32" aria-hidden="true" className="h-5 w-5">
@@ -143,17 +145,13 @@ export default function AuthPopup({
       !normalizedIdentifier.includes("@") && /^[0-9-]+$/.test(normalizedIdentifier);
 
     if (isStudentIdInput) {
-      const digitsOnly = normalizedIdentifier.replace(/\D/g, "");
-
-      if (digitsOnly.length !== 10) {
-        setLoginError("รหัสนักศึกษาต้องมี 10 หลัก");
+      if (!STUDENT_ID_PATTERN.test(normalizedIdentifier)) {
+        setLoginError(STUDENT_ID_FORMAT_MESSAGE);
         return;
       }
     }
 
-    const loginIdentifier = isStudentIdInput
-      ? formatStudentIdentifier(normalizedIdentifier)
-      : normalizedIdentifier;
+    const loginIdentifier = normalizedIdentifier;
 
     setIsLoginLoading(true);
 
@@ -341,7 +339,7 @@ export default function AuthPopup({
                   className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed"
                 >
                   {isLoginLoading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    <span className="loader h-5 w-5"></span>
                   ) : (
                     <>
                       เข้าสู่ระบบ <ArrowRight size={18} />
@@ -418,7 +416,7 @@ export default function AuthPopup({
                   disabled={isForgotLoading}
                   className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {isForgotLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "ส่งลิงก์เปลี่ยนรหัสผ่าน"}
+                  {isForgotLoading ? <span className="loader h-5 w-5 "></span> : "ส่งลิงก์เปลี่ยนรหัสผ่าน"}
                 </button>
               </form>
 

@@ -1,6 +1,9 @@
 import { Role } from "@prisma/client";
 import { Router } from "express";
 import {
+  assignAdvisorStudents,
+  listAuditLogs,
+  listStaffUsers,
   checkExistingStudents,
   createStudent,
   deleteStudent,
@@ -17,6 +20,27 @@ router.post(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   checkExistingStudents
+);
+
+router.get(
+  "/staff",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listStaffUsers
+);
+
+router.post(
+  "/advisor-assignments",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  assignAdvisorStudents
+);
+
+router.get(
+  "/audit-logs",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listAuditLogs
 );
 
 router.get(
