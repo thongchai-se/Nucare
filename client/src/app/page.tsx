@@ -7,7 +7,6 @@ import {
   BookOpen,
   Check,
   ChevronDown,
-  ChevronRight,
   ClipboardCheck,
   ClipboardEdit,
   Headphones,
@@ -27,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import AuthPopup, { type AuthPopupView } from "@/components/auth-popup";
+import LegalFooter from "@/components/legal-footer";
 
 const getUserInitials = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -74,7 +74,7 @@ export default function HomePage() {
       return 40;
     }
 
-    return window.innerWidth < 640 ? 24 : 48;
+    return window.innerWidth < 640 ? 10 : 32;
   };
 
   const syncAuthPopupQuery = (view: AuthPopupView | null) => {
@@ -111,11 +111,12 @@ export default function HomePage() {
   };
 
   const createFloatingElement = useCallback((text: string | null, emoji: string, type: "card" | "emoji") => {
-    if (!boardRef.current) {
+    if (!boardRef.current || typeof window === "undefined") {
       return;
     }
 
     const board = boardRef.current;
+    const isMobileViewport = window.innerWidth < 640;
     const maxElements = getMaxFloatingElements();
 
     if (board.childElementCount >= maxElements) {
@@ -133,17 +134,19 @@ export default function HomePage() {
 
     if (type === "card") {
       element.className =
-        "absolute rounded-2xl border border-white/70 bg-white/90 p-3 shadow-md pointer-events-none will-change-transform";
+        "absolute rounded-2xl border border-white/70 bg-white/92 p-3 shadow-md pointer-events-none will-change-transform";
+      element.style.width = `${Math.min(isMobileViewport ? 172 : 236, Math.max(152, board.clientWidth - 24))}px`;
 
       const row = document.createElement("div");
-      row.className = "flex items-center gap-3";
+      row.className = "flex items-start gap-3";
 
       const emojiNode = document.createElement("div");
-      emojiNode.className = "text-2xl";
+      emojiNode.className = "shrink-0 pt-0.5 text-2xl";
       emojiNode.textContent = emoji;
 
       const textNode = document.createElement("p");
-      textNode.className = "max-w-[220px] text-sm font-medium leading-relaxed text-slate-700";
+      textNode.className =
+        "min-w-0 flex-1 break-words text-[13px] font-medium leading-5 text-slate-700 [overflow-wrap:anywhere] whitespace-normal";
       textNode.textContent = text ?? "";
 
       row.appendChild(emojiNode);
@@ -156,11 +159,6 @@ export default function HomePage() {
       element.style.zIndex = "1";
     }
 
-    const isLeft = Math.random() > 0.5;
-    const randomX = isLeft ? Math.random() * 15 + 5 : Math.random() * 15 + 75;
-    element.style.left = `${randomX}%`;
-    element.style.top = "0";
-
     const duration = Math.random() * 6000 + 8000;
     const scale = type === "card" ? Math.random() * 0.15 + 0.88 : Math.random() * 0.2 + 0.9;
     const opacityLevel = type === "card" ? 0.65 : 0.45;
@@ -168,6 +166,12 @@ export default function HomePage() {
     const rotateEnd = type === "emoji" ? (Math.random() - 0.5) * 80 : (Math.random() - 0.5) * 8;
 
     board.appendChild(element);
+
+    const safeInset = isMobileViewport ? 12 : 20;
+    const maxLeft = Math.max(safeInset, board.clientWidth - element.offsetWidth - safeInset);
+    const left = safeInset + Math.random() * Math.max(0, maxLeft - safeInset);
+    element.style.left = `${left}px`;
+    element.style.top = "0";
 
     const animation = element.animate(
       [
@@ -298,6 +302,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      return;
+    }
+
     const mockPhrases = [
       { text: "สู้ๆ นะตัวเรา", emoji: "💪" },
       { text: "ขึ้นวอร์ดวันนี้หนักมาก แต่ผ่านมาได้", emoji: "😮‍💨" },
@@ -383,8 +391,6 @@ export default function HomePage() {
               <a href="#emergency" className="text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
                 เหตุฉุกเฉิน
               </a>
-
-              <div className="mx-2 h-6 border-l border-slate-200" />
 
               {showGuestActions && (
                 <div className="flex items-center gap-2.5">
@@ -536,9 +542,12 @@ export default function HomePage() {
       </nav>
 
       <main className="relative flex min-h-screen flex-col justify-center">
-        <div ref={boardRef} className="pointer-events-none fixed inset-0 z-[30] overflow-hidden" />
+        <div
+          ref={boardRef}
+          className="pointer-events-none fixed inset-x-0 top-16 z-[30] h-[26rem] overflow-hidden sm:top-20 sm:h-[34rem] md:h-[38rem]"
+        />
 
-        <section className="relative mx-auto w-full max-w-5xl px-4 pb-12 pt-24 sm:px-6 sm:pb-16 sm:pt-32 lg:px-8">
+        <section className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 pb-12 pt-24 sm:px-6 sm:pb-16 sm:pt-32 lg:px-8">
           <div className="relative z-40 mb-8 text-center sm:mb-10">
             <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-semibold text-blue-800 shadow-sm backdrop-blur-md sm:mb-6 sm:px-4 sm:py-1.5 sm:text-sm">
               <Sparkles className="h-3 w-3 text-amber-500 sm:h-4 sm:w-4" />
@@ -777,78 +786,8 @@ export default function HomePage() {
         onViewChange={handleAuthPopupViewChange}
       />
 
-      <footer className="relative z-0 border-t-4 border-cyan-500 bg-blue-900 pb-8 pt-12 text-white sm:pt-16">
-        <div className="mx-auto max-w-[102rem] px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 grid grid-cols-1 gap-8 sm:mb-12 sm:gap-10 md:grid-cols-3">
-            <div className="col-span-1 text-center sm:text-left">
-              <div className="mb-4 flex flex-col items-center gap-3 sm:mb-5 sm:flex-row sm:items-start">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white">
-                  <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-                </div>
-                <div className="flex flex-col justify-center">
-                  <span className="mb-0.5 block text-lg font-bold leading-none sm:mb-1 sm:text-xl">Nucare Sys.</span>
-                  <span className="block text-[10px] leading-none text-blue-200 sm:text-[11px]">Faculty of Nursing</span>
-                </div>
-              </div>
-              <p className="text-xs leading-relaxed text-blue-100 sm:text-sm">
-                พื้นที่ปลอดภัยสำหรับนักศึกษา คณะพยาบาลศาสตร์
-                <br className="hidden sm:block" />
-                เพราะสุขภาพใจของคุณ สำคัญสำหรับเรา
-              </p>
-            </div>
-
-            <div className="text-center sm:text-left">
-              <h4 className="mb-4 inline-block border-b border-blue-700 pb-1.5 text-base font-bold sm:mb-5 sm:pb-2 sm:text-lg">
-                สำหรับนักศึกษา
-              </h4>
-              <ul className="space-y-2.5 text-xs sm:space-y-3 sm:text-sm">
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => openAuthPopup("login")}
-                    className="mx-auto flex items-center gap-2 text-blue-100 transition-colors hover:text-white sm:mx-0"
-                  >
-                    <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" /> ทำแบบประเมินสุขภาพจิต
-                  </button>
-                </li>
-                <li>
-                  <a href="#support" className="flex items-center justify-center gap-2 text-blue-100 transition-colors hover:text-white sm:justify-start">
-                    <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" /> นัดหมายอาจารย์ที่ปรึกษา
-                  </a>
-                </li>
-                <li>
-                  <a href="#resources" className="flex items-center justify-center gap-2 text-blue-100 transition-colors hover:text-white sm:justify-start">
-                    <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" /> แหล่งความรู้การจัดการความเครียด
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            <div className="text-center sm:text-left">
-              <h4 className="mb-4 inline-block border-b border-blue-700 pb-1.5 text-base font-bold sm:mb-5 sm:pb-2 sm:text-lg">
-                ติดต่อสอบถาม
-              </h4>
-              <ul className="space-y-2.5 text-xs text-blue-100 sm:space-y-3 sm:text-sm">
-                <li>งานพัฒนานักศึกษา คณะพยาบาลศาสตร์</li>
-                <li>Nucare@nursing.edu</li>
-                <li>02-XXX-XXXX ต่อ 123</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-start gap-4 border-t border-blue-800 pt-6 text-xs text-blue-300 md:flex-row md:items-center md:justify-between">
-            <p>© 2026 Faculty of Nursing. All rights reserved.</p>
-            <div className="flex gap-4">
-              <Link href="/privacy" className="transition-colors hover:text-white">
-                นโยบายความเป็นส่วนตัว
-              </Link>
-              <a href="#" className="transition-colors hover:text-white">
-                ติดต่อผู้ดูแลระบบ
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <LegalFooter />
     </>
   );
 }
+

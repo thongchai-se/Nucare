@@ -9,7 +9,6 @@ import {
   Eye,
   EyeOff,
   HeartPulse,
-  Loader2,
   Lock,
   Mail,
   User,

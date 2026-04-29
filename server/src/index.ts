@@ -2,7 +2,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
-import { getDefaultSeedAccounts, seedDefaultUsersIfMissing } from "./lib/default-users.seed";
+import { seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
 import adminRoutes from "./routes/admin.routes";
 import alertsRoutes from "./routes/alerts.routes";
@@ -16,15 +16,55 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
+const trustProxyHops = Math.max(
+  0,
+  Number.parseInt(process.env.TRUST_PROXY_HOPS || "1", 10) || 1
+);
 const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowedOriginSet = new Set(allowedOrigins);
+const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+app.disable("x-powered-by");
+app.set("trust proxy", trustProxyHops);
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-site");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  next();
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!unsafeMethods.has(req.method.toUpperCase())) {
+    next();
+    return;
+  }
+
+  const origin = req.get("origin");
+  if (!origin || allowedOriginSet.has(origin)) {
+    next();
+    return;
+  }
+
+  res.status(403).json({ message: "Invalid request origin" });
+});
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOriginSet.has(origin)) {
         callback(null, true);
         return;
       }
@@ -34,7 +74,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
 app.get("/", (_req: Request, res: Response) => {
@@ -74,14 +114,10 @@ const startServer = async (): Promise<void> => {
     try {
       await prisma.$queryRaw`SELECT 1`;
       const seedSummary = await seedDefaultUsersIfMissing(prisma);
-      console.log(
-        `[seed] Default users ready (created=${seedSummary.createdCount}, skipped=${seedSummary.skippedCount}, passwordSource=${seedSummary.passwordSource})`
-      );
-      if (seedSummary.createdCount > 0) {
-        console.log("[seed] Login accounts:");
-        for (const account of getDefaultSeedAccounts()) {
-          console.log(`- ${account.role}: ${account.email}`);
-        }
+      if (seedSummary.enabled) {
+        console.log(
+          `[seed] Default users ready (created=${seedSummary.createdCount}, skipped=${seedSummary.skippedCount})`
+        );
       }
 
       app.listen(port, () => {

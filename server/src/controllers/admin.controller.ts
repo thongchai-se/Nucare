@@ -1,5 +1,6 @@
 import { Prisma, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
@@ -7,6 +8,8 @@ import { prisma } from "../lib/prisma";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
+const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
+const STUDENT_ID_FORMAT_MESSAGE = "Student ID must be in the format 663380696-6";
 
 const parsePositiveIntFromEnv = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -34,9 +37,6 @@ const IMPORT_CONCURRENCY = Math.max(
   )
 );
 
-const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
-const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
-
 const runWithConcurrency = async <T>(
   items: T[],
   concurrency: number,
@@ -47,7 +47,6 @@ const runWithConcurrency = async <T>(
   }
 
   let nextIndex = 0;
-
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (true) {
       const currentIndex = nextIndex;
@@ -67,9 +66,7 @@ const runWithConcurrency = async <T>(
 const importStudentRowSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
-  email: z
-    .union([z.string().trim().email(), z.literal(""), z.undefined()])
-    .optional(),
+  email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
 });
 
 const importStudentsSchema = z.object({
@@ -78,6 +75,7 @@ const importStudentsSchema = z.object({
 
 const checkExistingStudentsSchema = z.object({
   studentIds: z.array(z.string().trim().min(1)).min(1).max(2000),
+  emails: z.array(z.string().trim().max(320)).max(2000).optional(),
 });
 
 const listStudentsQuerySchema = z.object({
@@ -105,6 +103,22 @@ const assignAdvisorStudentsSchema = z.object({
   studentIds: z.array(z.string().trim().min(1)).min(1).max(500),
 });
 
+type StudentRecord = {
+  id: string;
+  studentId: string | null;
+  name: string;
+  email: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type ImportStudentRow = {
+  studentId: string;
+  name: string;
+  email: string | null;
+};
+
 const normalizeStudentId = (raw: string): string => {
   const normalized = raw.trim();
   if (!STUDENT_ID_PATTERN.test(normalized)) {
@@ -130,7 +144,7 @@ const formatStudentIdForResponse = (studentId: string | null): string | null => 
   return studentId;
 };
 
-const normalizeEmail = (raw?: string): string | null => {
+const normalizeEmail = (raw?: string | null): string | null => {
   if (!raw) {
     return null;
   }
@@ -139,15 +153,17 @@ const normalizeEmail = (raw?: string): string | null => {
   return trimmed.length > 0 ? trimmed.toLowerCase() : null;
 };
 
-const mapStudent = (user: {
-  id: string;
-  studentId: string | null;
-  name: string;
-  email: string | null;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}) => ({
+const createTemporaryPassword = (): string => randomBytes(18).toString("base64url");
+
+const hasStudentProfileChanges = (
+  student: Pick<StudentRecord, "name" | "email" | "isActive">,
+  row: ImportStudentRow
+): boolean =>
+  student.name.trim() !== row.name.trim() ||
+  normalizeEmail(student.email) !== normalizeEmail(row.email) ||
+  !student.isActive;
+
+const mapStudent = (user: StudentRecord) => ({
   id: user.id,
   studentId: formatStudentIdForResponse(user.studentId),
   name: user.name,
@@ -171,6 +187,42 @@ const mapStaff = (user: {
   role: user.role,
 });
 
+const getStudentDependencyCount = async (studentUserId: string): Promise<number> => {
+  const [
+    assessments,
+    careRecords,
+    referrals,
+    behaviors,
+    emergencyCases,
+    specializedCareRecords,
+    advisorAssignments,
+    alerts,
+    auditLogs,
+  ] = await Promise.all([
+    prisma.studentAssessment.count({ where: { studentId: studentUserId } }),
+    prisma.careRecord.count({ where: { studentId: studentUserId } }),
+    prisma.caseReferral.count({ where: { studentId: studentUserId } }),
+    prisma.behaviorRecord.count({ where: { studentId: studentUserId } }),
+    prisma.emergencyCase.count({ where: { studentId: studentUserId } }),
+    prisma.specializedCareRecord.count({ where: { studentId: studentUserId } }),
+    prisma.studentAdvisorAssignment.count({ where: { studentId: studentUserId } }),
+    prisma.alert.count({ where: { studentId: studentUserId } }),
+    prisma.auditLog.count({ where: { actorUserId: studentUserId } }),
+  ]);
+
+  return (
+    assessments +
+    careRecords +
+    referrals +
+    behaviors +
+    emergencyCases +
+    specializedCareRecords +
+    advisorAssignments +
+    alerts +
+    auditLogs
+  );
+};
+
 export const listStudents = async (req: Request, res: Response): Promise<void> => {
   const parsed = listStudentsQuerySchema.safeParse(req.query);
 
@@ -191,18 +243,8 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
         ...(search
           ? {
               OR: [
-                {
-                  studentId: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  name: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
+                { studentId: { contains: search, mode: "insensitive" } },
+                { name: { contains: search, mode: "insensitive" } },
               ],
             }
           : {}),
@@ -232,6 +274,7 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
 };
 
 export const createStudent = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
   const parsed = createStudentSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -247,7 +290,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
     studentId = normalizeStudentId(parsed.data.studentId);
   } catch (error) {
     res.status(400).json({
-      message: error instanceof Error ? error.message : "ข้อมูล studentId ไม่ถูกต้อง",
+      message: error instanceof Error ? error.message : "Invalid studentId",
     });
     return;
   }
@@ -257,10 +300,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
   try {
     const conflict = await prisma.user.findFirst({
       where: {
-        OR: [
-          { studentId },
-          ...(email ? [{ email }] : []),
-        ],
+        OR: [{ studentId }, ...(email ? [{ email }] : [])],
       },
       select: {
         id: true,
@@ -268,12 +308,12 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
     });
 
     if (conflict) {
-      res.status(409).json({ message: "รหัสนักศึกษาหรืออีเมลนี้มีในระบบแล้ว" });
+      res.status(409).json({ message: "Student ID or email already exists" });
       return;
     }
 
-    const initialPassword = `Nu${studentId}`;
-    const passwordHash = await bcrypt.hash(initialPassword, 12);
+    const temporaryPassword = createTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
     const created = await prisma.user.create({
       data: {
@@ -295,14 +335,24 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.student.create",
+      entityType: "User",
+      entityId: created.id,
+      description: `Created student account ${studentId}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
     res.status(201).json({
-      message: "เพิ่มข้อมูลนักศึกษาสำเร็จ",
+      message: "Student created successfully",
       student: mapStudent(created),
-      initialPasswordRule: "Nu<studentId>",
+      temporaryPassword,
+      onboardingHint: "Use the temporary password once or reset the password via the forgot-password flow.",
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      res.status(409).json({ message: "รหัสนักศึกษาหรืออีเมลนี้มีในระบบแล้ว" });
+      res.status(409).json({ message: "Student ID or email already exists" });
       return;
     }
 
@@ -312,6 +362,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
 };
 
 export const updateStudent = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
   const studentUserId = req.params.id;
   const parsed = updateStudentSchema.safeParse(req.body);
 
@@ -328,7 +379,7 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
     studentId = normalizeStudentId(parsed.data.studentId);
   } catch (error) {
     res.status(400).json({
-      message: error instanceof Error ? error.message : "ข้อมูล studentId ไม่ถูกต้อง",
+      message: error instanceof Error ? error.message : "Invalid studentId",
     });
     return;
   }
@@ -343,23 +394,18 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
       },
       select: {
         id: true,
-        studentId: true,
-        email: true,
       },
     });
 
     if (!existing) {
-      res.status(404).json({ message: "ไม่พบข้อมูลนักศึกษา" });
+      res.status(404).json({ message: "Student not found" });
       return;
     }
 
     const conflict = await prisma.user.findFirst({
       where: {
         id: { not: studentUserId },
-        OR: [
-          { studentId },
-          ...(email ? [{ email }] : []),
-        ],
+        OR: [{ studentId }, ...(email ? [{ email }] : [])],
       },
       select: {
         id: true,
@@ -367,7 +413,7 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
     });
 
     if (conflict) {
-      res.status(409).json({ message: "รหัสนักศึกษาหรืออีเมลนี้มีในระบบแล้ว" });
+      res.status(409).json({ message: "Student ID or email already exists" });
       return;
     }
 
@@ -390,13 +436,22 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.student.update",
+      entityType: "User",
+      entityId: updated.id,
+      description: `Updated student account ${studentId}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
     res.status(200).json({
-      message: "อัปเดตข้อมูลนักศึกษาสำเร็จ",
+      message: "Student updated successfully",
       student: mapStudent(updated),
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      res.status(409).json({ message: "รหัสนักศึกษาหรืออีเมลนี้มีในระบบแล้ว" });
+      res.status(409).json({ message: "Student ID or email already exists" });
       return;
     }
 
@@ -406,6 +461,7 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
 };
 
 export const deleteStudent = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
   const studentUserId = req.params.id;
 
   try {
@@ -421,7 +477,16 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
     });
 
     if (!existing) {
-      res.status(404).json({ message: "ไม่พบข้อมูลนักศึกษา" });
+      res.status(404).json({ message: "Student not found" });
+      return;
+    }
+
+    const dependencyCount = await getStudentDependencyCount(studentUserId);
+    if (dependencyCount > 0) {
+      res.status(409).json({
+        message:
+          "This student already has related records in the system. Set the account to inactive instead of deleting it.",
+      });
       return;
     }
 
@@ -431,8 +496,17 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.student.delete",
+      entityType: "User",
+      entityId: studentUserId,
+      description: `Deleted student account ${existing.studentId ?? studentUserId}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
     res.status(200).json({
-      message: "ลบข้อมูลนักศึกษาสำเร็จ",
+      message: "Student deleted successfully",
       deletedId: studentUserId,
     });
   } catch (error) {
@@ -459,40 +533,78 @@ export const checkExistingStudents = async (req: Request, res: Response): Promis
       normalizedStudentIds.push(normalizeStudentId(parsed.data.studentIds[index]));
     } catch (error) {
       res.status(400).json({
-        message: `รายการที่ ${index + 1}: ${error instanceof Error ? error.message : "ข้อมูลไม่ถูกต้อง"}`,
+        message: `Row ${index + 1}: ${error instanceof Error ? error.message : "Invalid studentId"}`,
       });
       return;
     }
   }
 
   const uniqueStudentIds = Array.from(new Set(normalizedStudentIds));
+  const normalizedEmails = Array.from(
+    new Set(
+      (parsed.data.emails || [])
+        .map((email) => normalizeEmail(email))
+        .filter((email): email is string => Boolean(email))
+    )
+  );
 
   try {
     const existingUsers = await prisma.user.findMany({
       where: {
-        studentId: {
-          in: uniqueStudentIds,
-        },
+        role: Role.STUDENT,
+        OR: [
+          {
+            studentId: {
+              in: uniqueStudentIds,
+            },
+          },
+          ...(normalizedEmails.length > 0
+            ? [
+                {
+                  email: {
+                    in: normalizedEmails,
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
+        id: true,
         studentId: true,
         name: true,
         email: true,
       },
     });
 
+    const matchedByStudentIdCount = existingUsers.filter(
+      (user) => user.studentId && uniqueStudentIds.includes(user.studentId)
+    ).length;
+
+    const existingStudents = Array.from(
+      new Map(
+        existingUsers.map((user) => [
+          user.id,
+          {
+            studentId: user.studentId,
+            name: user.name,
+            email: user.email,
+            reason:
+              user.studentId && uniqueStudentIds.includes(user.studentId)
+                ? "Student already exists in the system"
+                : "Email is already used by another student account",
+          },
+        ])
+      ).values()
+    );
+
     res.status(200).json({
       summary: {
         total: uniqueStudentIds.length,
-        existing: existingUsers.length,
-        available: uniqueStudentIds.length - existingUsers.length,
+        existing: existingStudents.length,
+        available: Math.max(0, uniqueStudentIds.length - matchedByStudentIdCount),
       },
-      existingStudents: existingUsers.map((user) => ({
-        studentId: user.studentId,
-        name: user.name,
-        email: user.email,
-        reason: "มีข้อมูลอยู่แล้วในระบบ",
-      })),
+      existingStudents,
     });
   } catch (error) {
     console.error("Check existing students error:", error);
@@ -501,6 +613,7 @@ export const checkExistingStudents = async (req: Request, res: Response): Promis
 };
 
 export const importStudents = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
   const parsed = importStudentsSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -511,11 +624,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
     return;
   }
 
-  const normalizedRows: Array<{
-    studentId: string;
-    name: string;
-    email: string | null;
-  }> = [];
+  const normalizedRows: ImportStudentRow[] = [];
 
   for (let index = 0; index < parsed.data.rows.length; index += 1) {
     const row = parsed.data.rows[index];
@@ -528,7 +637,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
       });
     } catch (error) {
       res.status(400).json({
-        message: `แถวที่ ${index + 2}: ${error instanceof Error ? error.message : "ข้อมูลไม่ถูกต้อง"}`,
+        message: `Row ${index + 2}: ${error instanceof Error ? error.message : "Invalid data"}`,
       });
       return;
     }
@@ -540,48 +649,124 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
 
   if (duplicateInCsv) {
     res.status(400).json({
-      message: `พบรหัสนักศึกษาซ้ำในไฟล์ CSV: ${duplicateInCsv}`,
+      message: `Duplicate studentId found in CSV: ${duplicateInCsv}`,
+    });
+    return;
+  }
+
+  const duplicateEmailInCsv = normalizedRows
+    .map((row) => row.email)
+    .find(
+      (email, index, all) =>
+        Boolean(email) && all.findIndex((candidate) => candidate === email) !== index
+    );
+
+  if (duplicateEmailInCsv) {
+    res.status(400).json({
+      message: `Duplicate email found in CSV: ${duplicateEmailInCsv}`,
     });
     return;
   }
 
   try {
     const studentIds = normalizedRows.map((row) => row.studentId);
+    const emails = normalizedRows
+      .map((row) => row.email)
+      .filter((email): email is string => Boolean(email));
+
     const existingUsers = await prisma.user.findMany({
       where: {
-        studentId: {
-          in: studentIds,
-        },
+        role: Role.STUDENT,
+        OR: [
+          {
+            studentId: {
+              in: studentIds,
+            },
+          },
+          ...(emails.length > 0
+            ? [
+                {
+                  email: {
+                    in: emails,
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
+        id: true,
         studentId: true,
+        name: true,
+        email: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
-    const existingStudentIdSet = new Set(existingUsers.map((user) => user.studentId).filter(Boolean));
+    const existingByStudentId = new Map(
+      existingUsers
+        .filter((user) => Boolean(user.studentId))
+        .map((user) => [user.studentId as string, user] as const)
+    );
 
-    const existingStudents: Array<{ studentId: string; reason: string }> = [];
-    const rowsToCreate: Array<{ studentId: string; name: string; email: string | null }> = [];
-
-    for (const row of normalizedRows) {
-      if (existingStudentIdSet.has(row.studentId)) {
-        existingStudents.push({
-          studentId: row.studentId,
-          reason: "มีข้อมูลอยู่แล้วในระบบ",
-        });
-        continue;
-      }
-
-      rowsToCreate.push(row);
-    }
+    const existingByEmail = new Map(
+      existingUsers
+        .filter((user) => Boolean(user.email))
+        .map((user) => [normalizeEmail(user.email) as string, user] as const)
+    );
 
     let created = 0;
+    let updated = 0;
+    let skipped = 0;
     const failures: Array<{ studentId: string; reason: string }> = [];
+    const updatedStudents: Array<{ studentId: string; reason: string }> = [];
+    const skippedStudents: Array<{ studentId: string; reason: string }> = [];
+    const createdCredentials: Array<{ studentId: string; temporaryPassword: string }> = [];
 
-    await runWithConcurrency(rowsToCreate, IMPORT_CONCURRENCY, async (row) => {
+    await runWithConcurrency(normalizedRows, IMPORT_CONCURRENCY, async (row) => {
       try {
-        const initialPassword = `Nu${row.studentId}`;
-        const passwordHash = await bcrypt.hash(initialPassword, IMPORT_BCRYPT_ROUNDS);
+        const existingById = existingByStudentId.get(row.studentId);
+        const emailOwner = row.email ? existingByEmail.get(row.email) : undefined;
+
+        if (emailOwner && (!existingById || emailOwner.id !== existingById.id)) {
+          failures.push({
+            studentId: row.studentId,
+            reason: "Email is already used by another student account",
+          });
+          return;
+        }
+
+        if (existingById) {
+          if (!hasStudentProfileChanges(existingById, row)) {
+            skipped += 1;
+            skippedStudents.push({
+              studentId: row.studentId,
+              reason: "No changes detected",
+            });
+            return;
+          }
+
+          await prisma.user.update({
+            where: { id: existingById.id },
+            data: {
+              name: row.name,
+              email: row.email,
+              isActive: true,
+            },
+          });
+
+          updated += 1;
+          updatedStudents.push({
+            studentId: row.studentId,
+            reason: "Student profile updated",
+          });
+          return;
+        }
+
+        const temporaryPassword = createTemporaryPassword();
+        const passwordHash = await bcrypt.hash(temporaryPassword, IMPORT_BCRYPT_ROUNDS);
 
         await prisma.user.create({
           data: {
@@ -595,36 +780,49 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
         });
 
         created += 1;
+        createdCredentials.push({
+          studentId: row.studentId,
+          temporaryPassword,
+        });
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
           failures.push({
             studentId: row.studentId,
-            reason: "ข้อมูลซ้ำกับ unique field (เช่น email) ในระบบ",
+            reason: "Unique field conflict while importing student",
           });
           return;
         }
 
         failures.push({
           studentId: row.studentId,
-          reason: "ไม่สามารถบันทึกข้อมูลได้",
+          reason: "Failed to save this row",
         });
       }
     });
 
-    const existing = existingStudents.length;
-    const failed = failures.length;
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.student.import",
+      entityType: "User",
+      description: `Imported student batch (created=${created}, updated=${updated}, skipped=${skipped}, failed=${failures.length})`,
+      ipAddress: getRequestIpAddress(req),
+    });
 
     res.status(200).json({
-      message: "นำเข้าข้อมูลนักศึกษาเสร็จสิ้น",
+      message: "Student import completed",
       summary: {
         total: normalizedRows.length,
         created,
-        existing,
-        failed,
+        updated,
+        skipped,
+        failed: failures.length,
       },
-      initialPasswordRule: "Nu<studentId>",
       failures,
-      existingStudents,
+      updatedStudents,
+      skippedStudents,
+      createdCredentials,
+      onboardingHint:
+        "New accounts receive random temporary passwords. Students can also use the forgot-password flow to set a new password securely.",
     });
   } catch (error) {
     console.error("Import students error:", error);
@@ -647,10 +845,7 @@ export const listStaffUsers = async (_req: Request, res: Response): Promise<void
         employeeId: true,
         role: true,
       },
-      orderBy: [
-        { role: "asc" },
-        { name: "asc" },
-      ],
+      orderBy: [{ role: "asc" }, { name: "asc" }],
     });
 
     res.status(200).json({
@@ -686,7 +881,7 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
     });
 
     if (!advisor) {
-      res.status(404).json({ message: "ไม่พบอาจารย์ที่ปรึกษา" });
+      res.status(404).json({ message: "Advisor not found" });
       return;
     }
 
@@ -703,7 +898,7 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
     });
 
     if (students.length !== parsed.data.studentIds.length) {
-      res.status(400).json({ message: "มี studentId บางรายการไม่ถูกต้อง" });
+      res.status(400).json({ message: "One or more student ids are invalid" });
       return;
     }
 
@@ -733,12 +928,12 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
       action: "admin.advisor-assignment.assign",
       entityType: "StudentAdvisorAssignment",
       entityId: parsed.data.advisorId,
-      description: `กำหนดนักศึกษา ${parsed.data.studentIds.length} คนให้ advisor`,
+      description: `Assigned ${parsed.data.studentIds.length} students to advisor`,
       ipAddress: getRequestIpAddress(req),
     });
 
     res.status(200).json({
-      message: "กำหนดอาจารย์ที่ปรึกษาเรียบร้อยแล้ว",
+      message: "Advisor assignment updated successfully",
       advisorId: parsed.data.advisorId,
       studentCount: parsed.data.studentIds.length,
     });

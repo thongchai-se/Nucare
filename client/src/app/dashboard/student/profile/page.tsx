@@ -12,7 +12,6 @@ import {
   Edit3,
   GraduationCap,
   HeartPulse,
-  Loader2,
   LogOut,
   Menu,
   Phone,

@@ -13,7 +13,6 @@ import {
   CheckCircle,
   FileText,
   HeartPulse,
-  Loader2,
   LogOut,
   Menu,
   ShieldAlert,

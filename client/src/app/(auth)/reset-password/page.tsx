@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowLeft, Eye, EyeOff, Loader2, Lock } from "lucide-react";
+import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock } from "lucide-react";
 import api from "@/lib/axios";
 
 const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุ";

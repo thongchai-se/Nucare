@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, LogOut, Menu, Plus, Search, ShieldAlert, X } from "lucide-react";
+import { FileSpreadsheet, LayoutDashboard, LogOut, Menu, Plus, Search, ShieldAlert, Users, X } from "lucide-react";
 import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
 
@@ -563,19 +563,22 @@ export default function ManageStudentsPage() {
             <Link
               href="/dashboard/admin"
               onClick={closeSidebar}
-              className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
             >
-              หน้าหลัก
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              <span className="truncate">หน้าหลัก</span>
             </Link>
-            <span className="block truncate rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">
-              จัดการข้อมูลนักศึกษา
+            <span className="flex min-h-11 items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-white">
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate">จัดการข้อมูลนักศึกษา</span>
             </span>
             <Link
               href="/dashboard/admin/import-students"
               onClick={closeSidebar}
-              className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
             >
-              นำเข้านักศึกษา (CSV)
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />
+              <span className="truncate">นำเข้านักศึกษา (CSV)</span>
             </Link>
           </nav>
 
@@ -1045,3 +1048,4 @@ export default function ManageStudentsPage() {
     </main>
   );
 }
+

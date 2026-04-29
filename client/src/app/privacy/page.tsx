@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   ArrowRight,
   BrainCircuit,
@@ -16,9 +15,10 @@ import { type MouseEvent, useEffect, useState } from "react";
 import LegalTopNav from "@/components/legal-top-nav";
 import LegalFooter from "@/components/legal-footer";
 
+const SECTION_IDS: Array<"terms" | "privacy" | "cookies"> = ["terms", "privacy", "cookies"];
+
 export default function PrivacyPolicyPage() {
   const [activeSection, setActiveSection] = useState<"terms" | "privacy" | "cookies">("terms");
-  const sectionIds: Array<"terms" | "privacy" | "cookies"> = ["terms", "privacy", "cookies"];
 
   const handleSidebarNavigate = (
     event: MouseEvent<HTMLAnchorElement>,
@@ -40,11 +40,11 @@ export default function PrivacyPolicyPage() {
 
   useEffect(() => {
     const onScroll = () => {
-      let current: "terms" | "privacy" | "cookies" = sectionIds[0];
+      let current: "terms" | "privacy" | "cookies" = SECTION_IDS[0];
       let nearestDistance = Number.POSITIVE_INFINITY;
       const viewportAnchor = 128;
 
-      for (const id of sectionIds) {
+      for (const id of SECTION_IDS) {
         const element = document.getElementById(id);
         if (!element) {
           continue;

@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BookOpen, HeartPulse, Loader2, LogOut, Save, Search } from "lucide-react";
+import { AlertTriangle, BookOpen, HeartPulse, LogOut, Save, Search, Users } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
 
@@ -155,12 +155,28 @@ export default function InstructorDashboardPage() {
           <h1 className="text-3xl font-bold text-blue-900">การเฝ้าระวังในชั้นเรียน</h1>
           <p className="text-sm text-slate-600">บทบาทนี้ไม่แสดงคะแนน 9Q/8Q เพื่อคุ้มครองข้อมูลส่วนบุคคลของนักศึกษา</p>
         </div>
-
+        
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <a
+            href="#behavior-form"
+            className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+            <span className="truncate">บันทึกพฤติกรรม</span>
+          </a>
+          <a
+            href="#student-list"
+            className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          >
+            <Users className="h-4 w-4 shrink-0 text-blue-600" />
+            <span className="truncate">รายชื่อนักศึกษา</span>
+          </a>
+        </div>
         {serverError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>}
         {successMessage && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{successMessage}</div>}
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div id="behavior-form" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-slate-800">
               <AlertTriangle className="h-5 w-5 text-amber-500" /> บันทึกพฤติกรรมผิดปกติ
             </h2>
@@ -204,7 +220,7 @@ export default function InstructorDashboardPage() {
             </form>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div id="student-list" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
               <BookOpen className="h-5 w-5 text-blue-600" /> รายชื่อนักศึกษาที่เลือกได้
             </h2>
@@ -234,3 +250,4 @@ export default function InstructorDashboardPage() {
     </main>
   );
 }
+

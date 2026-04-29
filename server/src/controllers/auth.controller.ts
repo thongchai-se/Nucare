@@ -12,32 +12,22 @@ const ACCESS_TOKEN_COOKIE = "accessToken";
 const REFRESH_TOKEN_COOKIE = "refreshToken";
 const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const LOGIN_FAILED_MESSAGE = "ชื่อบัญชีหรือรหัสผ่านไม่ถูกต้อง";
-const PASSWORD_RESET_REQUEST_FAILED_MESSAGE = "ไม่พบบัญชีอีเมลนี้ในระบบ";
-const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุ";
+const LOGIN_FAILED_MESSAGE = "Invalid credentials";
+const PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE =
+  "If the email exists in our system, a reset link has been sent";
+const INVALID_RESET_TOKEN_MESSAGE = "Invalid or expired reset link";
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 
 const loginSchema = z
   .object({
-    identifier: z
-      .string()
-      .trim()
-      .min(3, LOGIN_FAILED_MESSAGE)
-      .max(120, LOGIN_FAILED_MESSAGE),
-    password: z
-      .string()
-      .min(8, LOGIN_FAILED_MESSAGE)
-      .max(128, LOGIN_FAILED_MESSAGE),
+    identifier: z.string().trim().min(3, LOGIN_FAILED_MESSAGE).max(120, LOGIN_FAILED_MESSAGE),
+    password: z.string().min(8, LOGIN_FAILED_MESSAGE).max(128, LOGIN_FAILED_MESSAGE),
   })
   .superRefine((data, context) => {
     const identifier = data.identifier.trim();
     const isStudentIdInput = !identifier.includes("@") && /^[0-9-]+$/.test(identifier);
 
-    if (!isStudentIdInput) {
-      return;
-    }
-
-    if (!STUDENT_ID_PATTERN.test(identifier)) {
+    if (isStudentIdInput && !STUDENT_ID_PATTERN.test(identifier)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["identifier"],
@@ -47,12 +37,12 @@ const loginSchema = z
   });
 
 const forgotPasswordSchema = z.object({
-  email: z.string().trim().email("กรุณากรอกอีเมลให้ถูกต้อง"),
+  email: z.string().trim().email("Please provide a valid email address"),
 });
 
 const resetPasswordSchema = z.object({
   token: z.string().trim().min(1, INVALID_RESET_TOKEN_MESSAGE),
-  password: z.string().min(8, "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร").max(128),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
 });
 
 const getAccessSecret = (): string => {
@@ -60,6 +50,7 @@ const getAccessSecret = (): string => {
   if (!secret) {
     throw new Error("JWT_ACCESS_SECRET is not set");
   }
+
   return secret;
 };
 
@@ -68,18 +59,22 @@ const getRefreshSecret = (): string => {
   if (!secret) {
     throw new Error("JWT_REFRESH_SECRET is not set");
   }
+
   return secret;
 };
 
-const getClientOrigin = (): string => {
-  return process.env.CLIENT_ORIGIN || "http://localhost:3000";
-};
+const getClientOrigin = (): string =>
+  (process.env.CLIENT_ORIGIN || "http://localhost:3000")
+    .split(",")
+    .map((origin) => origin.trim())
+    .find(Boolean) || "http://localhost:3000";
 
 const getPasswordResetExpiryMinutes = (): number => {
   const configured = Number(process.env.PASSWORD_RESET_TOKEN_EXPIRES_MINUTES || "30");
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
+
   return 30;
 };
 
@@ -109,24 +104,21 @@ const sendPasswordResetEmail = async (email: string, resetLink: string): Promise
   await transporter.sendMail({
     from,
     to: email,
-    subject: "NUCARE - เปลี่ยนรหัสผ่าน",
-    text: `คุณได้ทำรายการลืมรหัสผ่าน\n\nกรุณาเปลี่ยนรหัสผ่านผ่านลิงก์นี้: ${resetLink}\n\nหากคุณไม่ได้ร้องขอ กรุณาเพิกเฉยอีเมลฉบับนี้`,
+    subject: "NuCare password reset",
+    text: `Use this link to reset your password: ${resetLink}\n\nIf you did not request this, you can ignore this email.`,
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-        <h2 style="margin-bottom: 8px;">NUCARE - เปลี่ยนรหัสผ่าน</h2>
-        <p>คุณได้ทำรายการลืมรหัสผ่าน</p>
+        <h2 style="margin-bottom: 8px;">NuCare password reset</h2>
+        <p>You recently requested to reset your password.</p>
         <p>
-          กดปุ่มด้านล่างเพื่อเปลี่ยนรหัสผ่าน:
-        </p>
-        <p style="margin: 24px 0;">
           <a
             href="${resetLink}"
             style="display: inline-block; border-radius: 10px; background: #2563eb; padding: 11px 18px; color: #ffffff; text-decoration: none; font-weight: 700;"
           >
-            เปลี่ยนรหัสผ่าน
+            Reset password
           </a>
         </p>
-        <p>หากคุณไม่ได้ร้องขอ กรุณาเพิกเฉยอีเมลฉบับนี้</p>
+        <p>If you did not request this, you can safely ignore this email.</p>
       </div>
     `,
   });
@@ -147,17 +139,13 @@ const clearCookieOptions: CookieOptions = {
   path: "/",
 };
 
-const createAccessToken = (user: { id: string; role: Role }): string => {
-  return jwt.sign({ userId: user.id, role: user.role }, getAccessSecret(), {
-    expiresIn: "15m",
-  });
-};
+const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
-const createRefreshToken = (user: { id: string; role: Role }): string => {
-  return jwt.sign({ userId: user.id, role: user.role }, getRefreshSecret(), {
-    expiresIn: "7d",
-  });
-};
+const createAccessToken = (user: { id: string; role: Role }): string =>
+  jwt.sign({ userId: user.id, role: user.role }, getAccessSecret(), { expiresIn: "15m" });
+
+const createRefreshToken = (user: { id: string; role: Role }): string =>
+  jwt.sign({ userId: user.id, role: user.role }, getRefreshSecret(), { expiresIn: "7d" });
 
 const setAuthCookies = (res: Response, accessToken: string, refreshToken: string): void => {
   res.cookie(ACCESS_TOKEN_COOKIE, accessToken, buildCookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
@@ -247,7 +235,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
-
     if (!isPasswordValid) {
       res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
       return;
@@ -265,7 +252,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     await prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        token: hashToken(refreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
       },
@@ -289,12 +276,11 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
     if (refreshToken) {
       await prisma.refreshToken.deleteMany({
-        where: { token: refreshToken },
+        where: { token: hashToken(refreshToken) },
       });
     }
 
     clearAuthCookies(res);
-
     res.status(200).json({ message: "Logout successful" });
   } catch (error) {
     console.error("Logout error:", error);
@@ -306,7 +292,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   const parsed = forgotPasswordSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    res.status(400).json({ message: "กรุณากรอกอีเมลให้ถูกต้อง" });
+    res.status(400).json({ message: "Please provide a valid email address" });
     return;
   }
 
@@ -314,16 +300,16 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     const email = parsed.data.email.trim().toLowerCase();
     const user = await prisma.user.findFirst({
       where: { email },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true },
     });
 
     if (!user?.email) {
-      res.status(404).json({ message: PASSWORD_RESET_REQUEST_FAILED_MESSAGE });
+      res.status(200).json({ message: PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE });
       return;
     }
 
     const rawToken = randomBytes(32).toString("hex");
-    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = hashToken(rawToken);
     const expiresAt = new Date(Date.now() + getPasswordResetExpiryMinutes() * 60 * 1000);
 
     await prisma.passwordResetToken.deleteMany({
@@ -344,10 +330,10 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     const resetLink = `${getClientOrigin()}/reset-password?token=${rawToken}`;
     await sendPasswordResetEmail(user.email, resetLink);
 
-    res.status(200).json({ message: "ส่งลิงก์เปลี่ยนรหัสผ่านไปยังอีเมลเรียบร้อยแล้ว" });
+    res.status(200).json({ message: PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: "ไม่สามารถส่งอีเมลเปลี่ยนรหัสผ่านได้" });
+    res.status(500).json({ message: "Failed to process password reset request" });
   }
 };
 
@@ -360,10 +346,9 @@ export const validateResetPasswordToken = async (req: Request, res: Response): P
   }
 
   try {
-    const tokenHash = createHash("sha256").update(token).digest("hex");
     const resetToken = await prisma.passwordResetToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: hashToken(token),
         usedAt: null,
       },
       select: {
@@ -380,7 +365,7 @@ export const validateResetPasswordToken = async (req: Request, res: Response): P
     res.status(200).json({ message: "Reset token is valid" });
   } catch (error) {
     console.error("Validate reset token error:", error);
-    res.status(500).json({ message: "ไม่สามารถตรวจสอบลิงก์เปลี่ยนรหัสผ่านได้" });
+    res.status(500).json({ message: "Failed to validate reset link" });
   }
 };
 
@@ -388,16 +373,15 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   const parsed = resetPasswordSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    const firstError = parsed.error.issues[0]?.message || "ข้อมูลไม่ถูกต้อง";
+    const firstError = parsed.error.issues[0]?.message || "Invalid request";
     res.status(400).json({ message: firstError });
     return;
   }
 
   try {
-    const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
     const resetToken = await prisma.passwordResetToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: hashToken(parsed.data.token),
         usedAt: null,
       },
       select: {
@@ -435,10 +419,10 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       },
     });
 
-    res.status(200).json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
+    res.status(200).json({ message: "Password has been reset successfully" });
   } catch (error) {
     console.error("Reset password error:", error);
-    res.status(500).json({ message: "ไม่สามารถเปลี่ยนรหัสผ่านได้" });
+    res.status(500).json({ message: "Failed to reset password" });
   }
 };
 
@@ -475,9 +459,10 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const decoded = jwt.verify(refreshToken, getRefreshSecret()) as AuthTokenPayload;
+    const hashedRefreshToken = hashToken(refreshToken);
 
     const storedToken = await prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+      where: { token: hashedRefreshToken },
     });
 
     if (!storedToken) {
@@ -487,7 +472,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     }
 
     if (storedToken.expiresAt.getTime() < Date.now()) {
-      await prisma.refreshToken.delete({ where: { token: refreshToken } });
+      await prisma.refreshToken.delete({ where: { token: hashedRefreshToken } });
       clearAuthCookies(res);
       res.status(401).json({ message: "Refresh token expired" });
       return;
@@ -500,29 +485,28 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     }
 
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-
     if (!user) {
-      await prisma.refreshToken.delete({ where: { token: refreshToken } });
+      await prisma.refreshToken.delete({ where: { token: hashedRefreshToken } });
       clearAuthCookies(res);
       res.status(404).json({ message: "User not found" });
       return;
     }
 
     if (!user.isActive) {
-      await prisma.refreshToken.delete({ where: { token: refreshToken } });
+      await prisma.refreshToken.delete({ where: { token: hashedRefreshToken } });
       clearAuthCookies(res);
       res.status(401).json({ message: "Invalid refresh token" });
       return;
     }
 
-    await prisma.refreshToken.delete({ where: { token: refreshToken } });
+    await prisma.refreshToken.delete({ where: { token: hashedRefreshToken } });
 
     const newAccessToken = createAccessToken(user);
     const newRefreshToken = createRefreshToken(user);
 
     await prisma.refreshToken.create({
       data: {
-        token: newRefreshToken,
+        token: hashToken(newRefreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
       },
@@ -534,7 +518,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
       message: "Token refreshed",
       user: sanitizeUser(user),
     });
-  } catch (error) {
+  } catch (_error) {
     clearAuthCookies(res);
     res.status(401).json({ message: "Invalid or expired refresh token" });
   }

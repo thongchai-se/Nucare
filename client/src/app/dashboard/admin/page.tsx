@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   FileSpreadsheet,
-  Loader2,
+  LayoutDashboard,
   LogOut,
   Menu,
   ShieldCheck,
@@ -75,16 +75,12 @@ export default function AdminDashboardPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <span className="loader h-7 w-7  text-blue-600"></span>
+        <span className="loader h-7 w-7 text-blue-600"></span>
       </main>
     );
   }
 
-  if (!user) {
-    return null;
-  }
-
-  if (!isAdmin) {
+  if (!user || !isAdmin) {
     return null;
   }
 
@@ -115,20 +111,25 @@ export default function AdminDashboardPage() {
           </div>
 
           <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
-            <span className="block truncate rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">หน้าหลัก</span>
+            <span className="flex min-h-11 items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-white">
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              <span className="truncate">หน้าหลัก</span>
+            </span>
             <Link
               href="/dashboard/admin/manage-students"
               onClick={closeSidebar}
-              className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
             >
-              จัดการข้อมูลนักศึกษา
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate">จัดการข้อมูลนักศึกษา</span>
             </Link>
             <Link
               href="/dashboard/admin/import-students"
               onClick={closeSidebar}
-              className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
             >
-              นำเข้านักศึกษา (CSV)
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />
+              <span className="truncate">นำเข้านักศึกษา (CSV)</span>
             </Link>
           </nav>
 
@@ -186,14 +187,14 @@ export default function AdminDashboardPage() {
                   <span className="text-xs font-semibold uppercase tracking-wide">Protected Route</span>
                 </div>
                 <p className="mt-4 text-sm leading-relaxed text-blue-900">
-                  หน้านี้เป็นพื้นที่ protected สำหรับผู้ใช้งานที่ผ่านการยืนยันตัวตนแล้ว และเป็นศูนย์กลางสำหรับการจัดการข้อมูลนักศึกษา
+                  หน้านี้เป็นพื้นที่สำหรับผู้ดูแลระบบที่ผ่านการยืนยันตัวตนแล้ว และใช้สำหรับดูภาพรวมการจัดการข้อมูลนักศึกษาในระบบ
                 </p>
               </div>
 
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm sm:col-span-2 xl:col-span-1">
                 <h2 className="text-base font-semibold text-emerald-900">เครื่องมือผู้ดูแลระบบ</h2>
                 <p className="mt-1 text-sm text-emerald-800">
-                  จัดการข้อมูลรายบุคคลและนำเข้ารายชื่อแบบกลุ่มผ่านไฟล์ CSV
+                  จัดการข้อมูลรายบุคคล และนำเข้ารายชื่อนักศึกษาแบบกลุ่มผ่านไฟล์ CSV
                 </p>
 
                 <div className="mt-4 flex flex-col gap-2">

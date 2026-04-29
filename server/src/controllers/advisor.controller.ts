@@ -135,7 +135,7 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
   const search = normalizeSearch(parsedQuery.data.search);
 
   try {
-    const where = await getStudentScopeWhere(role, userId);
+    const where = await getStudentScopeWhere(Role.ADVISOR, userId);
     const students = await prisma.user.findMany({
       where: {
         ...where,
@@ -168,6 +168,8 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
           select: {
             riskLevel: true,
             assessedAt: true,
+            totalScore: true,
+            instrument: true,
           },
         },
         _count: {
@@ -227,7 +229,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
   }
 
   try {
-    const canView = await canAccessStudent(role, userId, parsedParams.data.studentUserId);
+    const canView = await canAccessStudent(Role.ADVISOR, userId, parsedParams.data.studentUserId);
     if (!canView) {
       res.status(403).json({ message: "Forbidden" });
       return;
@@ -382,7 +384,6 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
 export const createCareRecord = async (req: Request, res: Response): Promise<void> => {
   const advisorId = req.user?.userId;
   const advisorRole = req.user?.role;
-
   if (!advisorId || !isAdvisorRole(advisorRole)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
@@ -413,7 +414,7 @@ export const createCareRecord = async (req: Request, res: Response): Promise<voi
   }
 
   try {
-    const canView = await canAccessStudent(advisorRole, advisorId, parsedParams.data.studentUserId);
+    const canView = await canAccessStudent(Role.ADVISOR, advisorId, parsedParams.data.studentUserId);
     if (!canView) {
       res.status(403).json({ message: "Forbidden" });
       return;
@@ -464,7 +465,6 @@ export const createCareRecord = async (req: Request, res: Response): Promise<voi
 export const createReferral = async (req: Request, res: Response): Promise<void> => {
   const advisorId = req.user?.userId;
   const advisorRole = req.user?.role;
-
   if (!advisorId || !isAdvisorRole(advisorRole)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
@@ -489,7 +489,7 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
   }
 
   try {
-    const canView = await canAccessStudent(advisorRole, advisorId, parsedParams.data.studentUserId);
+    const canView = await canAccessStudent(Role.ADVISOR, advisorId, parsedParams.data.studentUserId);
     if (!canView) {
       res.status(403).json({ message: "Forbidden" });
       return;

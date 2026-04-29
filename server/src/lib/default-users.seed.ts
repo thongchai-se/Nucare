@@ -48,18 +48,56 @@ const seedUsers: SeedUser[] = [
   },
 ];
 
-const DEFAULT_PASSWORD = process.env.DEFAULT_SEED_PASSWORD || "Nucare@12345";
-
 type SeedSummary = {
+  enabled: boolean;
   createdCount: number;
   skippedCount: number;
-  passwordSource: "DEFAULT_SEED_PASSWORD" | "fallback";
+};
+
+const MINIMUM_SEED_PASSWORD_LENGTH = 12;
+
+const parseBoolean = (value: string | undefined): boolean => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+};
+
+const shouldSeedDefaultUsers = (): boolean => {
+  const explicitlyEnabled = parseBoolean(process.env.ENABLE_DEFAULT_USER_SEED);
+  if (!explicitlyEnabled) {
+    return false;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return parseBoolean(process.env.ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION);
+  }
+
+  return true;
+};
+
+const getDefaultSeedPassword = (): string => {
+  const password = process.env.DEFAULT_SEED_PASSWORD?.trim();
+  if (!password || password.length < MINIMUM_SEED_PASSWORD_LENGTH) {
+    throw new Error(
+      `DEFAULT_SEED_PASSWORD must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long when ENABLE_DEFAULT_USER_SEED is enabled`
+    );
+  }
+
+  return password;
 };
 
 export const seedDefaultUsersIfMissing = async (
   prisma: PrismaClient
 ): Promise<SeedSummary> => {
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+  if (!shouldSeedDefaultUsers()) {
+    return {
+      enabled: false,
+      createdCount: 0,
+      skippedCount: seedUsers.length,
+    };
+  }
+
+  const defaultPassword = getDefaultSeedPassword();
+  const passwordHash = await bcrypt.hash(defaultPassword, 10);
   let createdCount = 0;
 
   for (const user of seedUsers) {
@@ -106,9 +144,9 @@ export const seedDefaultUsersIfMissing = async (
   }
 
   return {
+    enabled: true,
     createdCount,
     skippedCount: seedUsers.length - createdCount,
-    passwordSource: process.env.DEFAULT_SEED_PASSWORD ? "DEFAULT_SEED_PASSWORD" : "fallback",
   };
 };
 

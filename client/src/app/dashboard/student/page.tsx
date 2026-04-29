@@ -17,7 +17,6 @@ import {
   FileSpreadsheet,
   HeartPulse,
   Headphones,
-  Loader2,
   LogOut,
   Menu,
   MessageSquare,

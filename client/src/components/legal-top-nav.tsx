@@ -22,11 +22,13 @@ const getUserInitials = (name: string): string => {
   return `${first}${second}`.toUpperCase();
 };
 
-export default function LegalTopNav({ active: _active }: LegalTopNavProps) {
-  const { user, isAuthenticated, loading, logout } = useAuth();
+export default function LegalTopNav({ active }: LegalTopNavProps) {
+  const { user, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  void active;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -90,8 +92,6 @@ export default function LegalTopNav({ active: _active }: LegalTopNavProps) {
             <Link href="/#emergency" className="whitespace-nowrap font-semibold text-sm text-slate-600 transition-colors hover:text-blue-700">
               เหตุฉุกเฉิน
             </Link>
-
-            <div className="mx-2 h-6 border-l border-slate-200" />
 
             {!isAuthenticated && (
               <div className="flex items-center gap-2.5">

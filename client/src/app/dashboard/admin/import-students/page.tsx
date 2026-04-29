@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   FileSpreadsheet,
-  Loader2,
+  LayoutDashboard,
   LogOut,
   Menu,
   ShieldAlert,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import api from "@/lib/axios";
@@ -697,14 +698,25 @@ export default function ImportStudentsPage() {
             </button>
           </div>
           <nav className="flex-1 space-y-2 px-4 py-6">
-            <Link href="/dashboard/admin" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
-              หน้าหลัก
+            <Link
+              href="/dashboard/admin"
+              onClick={closeSidebar}
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
+            >
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              <span className="truncate">หน้าหลัก</span>
             </Link>
-            <Link href="/dashboard/admin/manage-students" onClick={closeSidebar} className="block truncate rounded-lg px-4 py-2.5 text-gray-300 transition-colors hover:bg-gray-800 hover:text-white">
-              จัดการข้อมูลนักศึกษา
+            <Link
+              href="/dashboard/admin/manage-students"
+              onClick={closeSidebar}
+              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
+            >
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate">จัดการข้อมูลนักศึกษา</span>
             </Link>
-            <span className="block truncate rounded-lg bg-gray-800 px-4 py-2.5 font-medium text-white">
-              นำเข้านักศึกษา (CSV)
+            <span className="flex min-h-11 items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-white">
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />
+              <span className="truncate">นำเข้านักศึกษา (CSV)</span>
             </span>
           </nav>
 
@@ -1151,3 +1163,4 @@ export default function ImportStudentsPage() {
     </main>
   );
 }
+

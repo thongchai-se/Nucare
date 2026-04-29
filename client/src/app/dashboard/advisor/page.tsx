@@ -9,6 +9,7 @@ import {
   FileText,
   HeartPulse,
   History,
+  LayoutDashboard,
   LogOut,
   Menu,
   Phone,
@@ -96,7 +97,7 @@ const getErrorMessage = (error: unknown): string => {
   return "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
 };
 
-const getRoleSubtitle = (role: string | undefined): string => {
+const getRoleSubtitle = (): string => {
   return "อาจารย์ที่ปรึกษา";
 };
 
@@ -331,6 +332,11 @@ export default function AdvisorDashboardPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const scrollMainToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setIsSidebarOpen(false);
+  };
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -347,7 +353,7 @@ export default function AdvisorDashboardPage() {
     return null;
   }
 
-  const subtitle = getRoleSubtitle(user.role);
+  const subtitle = getRoleSubtitle();
 
   const SidebarContent = () => (
     <>
@@ -356,7 +362,7 @@ export default function AdvisorDashboardPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20">
             <HeartPulse className="h-5 w-5" />
           </div>
-          <span className="text-lg font-bold tracking-tight">Teacher Portal</span>
+          <span className="text-lg font-bold tracking-tight">Advisor Portal</span>
         </div>
         <button
           type="button"
@@ -394,6 +400,48 @@ export default function AdvisorDashboardPage() {
             onChange={(event) => setSearchQuery(event.target.value)}
             className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-9 pr-4 text-sm shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+      </div>
+
+      <div className="shrink-0 border-b border-slate-100 bg-white px-3 py-3">
+        <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">เมนูด่วน</p>
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={scrollMainToTop}
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:border-slate-200 hover:bg-slate-50"
+          >
+            <LayoutDashboard className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="truncate">ภาพรวมนักศึกษา</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedStudent) {
+                setIsRecordModalOpen(true);
+                setIsSidebarOpen(false);
+              }
+            }}
+            disabled={!selectedStudent}
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="truncate">บันทึกการดูแล</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedStudent) {
+                setIsReferralModalOpen(true);
+                setIsSidebarOpen(false);
+              }
+            }}
+            disabled={!selectedStudent}
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Send className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="truncate">ส่งต่อเคส</span>
+          </button>
         </div>
       </div>
 
@@ -480,7 +528,7 @@ export default function AdvisorDashboardPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20">
             <HeartPulse className="h-5 w-5" />
           </div>
-          <span className="text-lg font-bold">Teacher Portal</span>
+          <span className="text-lg font-bold">Advisor Portal</span>
         </div>
         <button
           type="button"
