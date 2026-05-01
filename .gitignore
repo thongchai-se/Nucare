@@ -7,3 +7,5 @@ dist
 !.env.local.example
 prisma/dev.db
 *.log
+*.tmp
+*.tsbuildinfo

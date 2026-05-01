@@ -1,16 +1,7 @@
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "./prisma";
 
-export const advisorRoles = new Set<Role>([Role.ADVISOR]);
-export const mentalHealthRoles = new Set<Role>([Role.MENTAL_HEALTH]);
-export const instructorRoles = new Set<Role>([Role.INSTRUCTOR]);
-
 export const isAdvisorRole = (role: Role | undefined): boolean => role === Role.ADVISOR;
-
-export const isInstructorRole = (role: Role | undefined): boolean => role === Role.INSTRUCTOR;
-
-export const isMentalHealthRole = (role: Role | undefined): boolean =>
-  role === Role.MENTAL_HEALTH;
 
 export const getStudentScopeWhere = async (
   role: Role,

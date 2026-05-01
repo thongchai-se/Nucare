@@ -149,5 +149,3 @@ export const seedDefaultUsersIfMissing = async (
     skippedCount: seedUsers.length - createdCount,
   };
 };
-
-export const getDefaultSeedAccounts = (): SeedUser[] => seedUsers;
