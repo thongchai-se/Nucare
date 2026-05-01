@@ -1,4 +1,4 @@
-import { AlertPriority, AlertType, BehaviorSeverity, Role } from "@prisma/client";
+import { AlertPriority, AlertStatus, AlertType, BehaviorSeverity, Role } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere } from "../lib/access-control";
@@ -17,6 +17,20 @@ const createBehaviorRecordSchema = z.object({
   details: z.string().trim().min(1).max(4000),
   severity: z.nativeEnum(BehaviorSeverity),
 });
+
+const getBehaviorRecordFollowUpStatus = (
+  statuses: AlertStatus[]
+): "PENDING" | "ACKNOWLEDGED" | "COMPLETED" => {
+  if (statuses.includes(AlertStatus.CLOSED)) {
+    return "COMPLETED";
+  }
+
+  if (statuses.includes(AlertStatus.ACKNOWLEDGED)) {
+    return "ACKNOWLEDGED";
+  }
+
+  return "PENDING";
+};
 
 export const listInstructorStudents = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
@@ -68,6 +82,110 @@ export const listInstructorStudents = async (req: Request, res: Response): Promi
   } catch (error) {
     console.error("List instructor students error:", error);
     res.status(500).json({ message: "Failed to list instructor students" });
+  }
+};
+
+export const listBehaviorRecords = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  const role = req.user?.role;
+  if (!userId || role !== Role.INSTRUCTOR) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const behaviorRecords = await prisma.behaviorRecord.findMany({
+      where: {
+        instructorId: userId,
+      },
+      select: {
+        id: true,
+        category: true,
+        details: true,
+        severity: true,
+        observedAt: true,
+        createdAt: true,
+        student: {
+          select: {
+            id: true,
+            name: true,
+            studentId: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const sourceIds = behaviorRecords.map((record) => record.id);
+    const alerts =
+      sourceIds.length > 0
+        ? await prisma.alert.findMany({
+            where: {
+              sourceType: "BehaviorRecord",
+              sourceId: {
+                in: sourceIds,
+              },
+            },
+            select: {
+              sourceId: true,
+              status: true,
+              recipient: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          })
+        : [];
+
+    const alertsBySourceId = new Map<
+      string,
+      Array<{
+        status: AlertStatus;
+        recipientName: string;
+      }>
+    >();
+
+    alerts.forEach((alert) => {
+      const sourceId = alert.sourceId;
+      if (!sourceId) {
+        return;
+      }
+
+      const current = alertsBySourceId.get(sourceId) || [];
+      current.push({
+        status: alert.status,
+        recipientName: alert.recipient.name,
+      });
+      alertsBySourceId.set(sourceId, current);
+    });
+
+    res.status(200).json({
+      records: behaviorRecords.map((record) => {
+        const relatedAlerts = alertsBySourceId.get(record.id) || [];
+
+        return {
+          id: record.id,
+          category: record.category,
+          details: record.details,
+          severity: record.severity,
+          observedAt: record.observedAt,
+          createdAt: record.createdAt,
+          status: getBehaviorRecordFollowUpStatus(relatedAlerts.map((alert) => alert.status)),
+          advisorRecipients: Array.from(new Set(relatedAlerts.map((alert) => alert.recipientName))).filter(Boolean),
+          student: {
+            id: record.student.id,
+            name: record.student.name,
+            studentId: formatStudentIdForResponse(record.student.studentId),
+          },
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("List instructor behavior records error:", error);
+    res.status(500).json({ message: "Failed to list instructor behavior records" });
   }
 };
 

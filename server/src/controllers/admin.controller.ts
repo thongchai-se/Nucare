@@ -82,10 +82,24 @@ const listStudentsQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
 });
 
+const listUsersQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+});
+
 const studentStatusSchema = z.enum(["active", "inactive"]);
+const managedRoleSchema = z.nativeEnum(Role);
 
 const createStudentSchema = z.object({
   studentId: z.string().trim().min(1),
+  name: z.string().trim().min(2).max(120),
+  email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+  status: studentStatusSchema,
+});
+
+const managedUserSchema = z.object({
+  role: managedRoleSchema,
+  studentId: z.string().trim().optional(),
+  employeeId: z.string().trim().optional(),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
   status: studentStatusSchema,
@@ -187,6 +201,55 @@ const mapStaff = (user: {
   role: user.role,
 });
 
+const mapManagedUser = (user: {
+  id: string;
+  name: string;
+  email: string | null;
+  studentId: string | null;
+  employeeId: string | null;
+  role: Role;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  studentId: formatStudentIdForResponse(user.studentId),
+  employeeId: user.employeeId,
+  role: user.role,
+  status: user.isActive ? "active" : "inactive",
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+});
+
+const normalizeEmployeeId = (raw?: string): string | null => {
+  const trimmed = raw?.trim() || "";
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseManagedUserPayload = (input: z.infer<typeof managedUserSchema>) => {
+  const role = input.role;
+  const email = normalizeEmail(input.email);
+  const employeeId = normalizeEmployeeId(input.employeeId);
+  let studentId: string | null = null;
+
+  if (role === Role.STUDENT) {
+    studentId = normalizeStudentId(input.studentId || "");
+  } else if (!employeeId) {
+    throw new Error("Employee ID is required for non-student roles");
+  }
+
+  return {
+    role,
+    studentId,
+    employeeId: role === Role.STUDENT ? null : employeeId,
+    name: input.name.trim(),
+    email,
+    isActive: input.status === "active",
+  };
+};
+
 const getStudentDependencyCount = async (studentUserId: string): Promise<number> => {
   const [
     assessments,
@@ -270,6 +333,75 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
   } catch (error) {
     console.error("List students error:", error);
     res.status(500).json({ message: "Failed to list students" });
+  }
+};
+
+export const listUsers = async (req: Request, res: Response): Promise<void> => {
+  const parsed = listUsersQuerySchema.safeParse(req.query);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid query",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const search = parsed.data.search?.trim();
+
+  try {
+    const users = await prisma.user.findMany({
+      where: search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                email: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                studentId: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                employeeId: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : undefined,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        studentId: true,
+        employeeId: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
+
+    res.status(200).json({
+      users: users.map(mapManagedUser),
+      total: users.length,
+    });
+  } catch (error) {
+    console.error("List users error:", error);
+    res.status(500).json({ message: "Failed to list users" });
   }
 };
 
@@ -358,6 +490,99 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
 
     console.error("Create student error:", error);
     res.status(500).json({ message: "Failed to create student" });
+  }
+};
+
+export const createUser = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const parsed = managedUserSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  let payload: ReturnType<typeof parseManagedUserPayload>;
+  try {
+    payload = parseManagedUserPayload(parsed.data);
+  } catch (error) {
+    res.status(400).json({
+      message: error instanceof Error ? error.message : "Invalid user payload",
+    });
+    return;
+  }
+
+  try {
+    const conflict = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(payload.studentId ? [{ studentId: payload.studentId }] : []),
+          ...(payload.employeeId ? [{ employeeId: payload.employeeId }] : []),
+          ...(payload.email ? [{ email: payload.email }] : []),
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (conflict) {
+      res.status(409).json({ message: "Student ID, employee ID or email already exists" });
+      return;
+    }
+
+    const temporaryPassword = createTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+
+    const created = await prisma.user.create({
+      data: {
+        name: payload.name,
+        email: payload.email,
+        role: payload.role,
+        studentId: payload.studentId,
+        employeeId: payload.employeeId,
+        isActive: payload.isActive,
+        password: passwordHash,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        studentId: true,
+        employeeId: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.user.create",
+      entityType: "User",
+      entityId: created.id,
+      description: `Created ${payload.role} account ${payload.studentId ?? payload.employeeId ?? created.id}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(201).json({
+      message: "User created successfully",
+      user: mapManagedUser(created),
+      temporaryPassword,
+      onboardingHint: "Use the temporary password once or reset the password via the forgot-password flow.",
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      res.status(409).json({ message: "Student ID, employee ID or email already exists" });
+      return;
+    }
+
+    console.error("Create user error:", error);
+    res.status(500).json({ message: "Failed to create user" });
   }
 };
 
@@ -460,6 +685,112 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+export const updateUser = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const userId = req.params.id;
+  const parsed = managedUserSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  let payload: ReturnType<typeof parseManagedUserPayload>;
+  try {
+    payload = parseManagedUserPayload(parsed.data);
+  } catch (error) {
+    res.status(400).json({
+      message: error instanceof Error ? error.message : "Invalid user payload",
+    });
+    return;
+  }
+
+  try {
+    const existing = await prisma.user.findFirst({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    const conflict = await prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [
+          ...(payload.studentId ? [{ studentId: payload.studentId }] : []),
+          ...(payload.employeeId ? [{ employeeId: payload.employeeId }] : []),
+          ...(payload.email ? [{ email: payload.email }] : []),
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (conflict) {
+      res.status(409).json({ message: "Student ID, employee ID or email already exists" });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        name: payload.name,
+        email: payload.email,
+        role: payload.role,
+        studentId: payload.studentId,
+        employeeId: payload.employeeId,
+        isActive: payload.isActive,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        studentId: true,
+        employeeId: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.user.update",
+      entityType: "User",
+      entityId: updated.id,
+      description: `Updated ${payload.role} account ${payload.studentId ?? payload.employeeId ?? updated.id}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "User updated successfully",
+      user: mapManagedUser(updated),
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      res.status(409).json({ message: "Student ID, employee ID or email already exists" });
+      return;
+    }
+
+    console.error("Update user error:", error);
+    res.status(500).json({ message: "Failed to update user" });
+  }
+};
+
 export const deleteStudent = async (req: Request, res: Response): Promise<void> => {
   const actorUserId = req.user?.userId;
   const studentUserId = req.params.id;
@@ -512,6 +843,65 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error("Delete student error:", error);
     res.status(500).json({ message: "Failed to delete student" });
+  }
+};
+
+export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const userId = req.params.id;
+
+  if (actorUserId === userId) {
+    res.status(409).json({ message: "Cannot delete the current admin account" });
+    return;
+  }
+
+  try {
+    const existing = await prisma.user.findFirst({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        role: true,
+        studentId: true,
+        employeeId: true,
+      },
+    });
+
+    if (!existing) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    await prisma.user.delete({
+      where: {
+        id: userId,
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.user.delete",
+      entityType: "User",
+      entityId: userId,
+      description: `Deleted ${existing.role} account ${existing.studentId ?? existing.employeeId ?? userId}`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "User deleted successfully",
+      deletedId: userId,
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) {
+      res.status(409).json({
+        message: "This user already has related records in the system. Set the account to inactive instead of deleting it.",
+      });
+      return;
+    }
+
+    console.error("Delete user error:", error);
+    res.status(500).json({ message: "Failed to delete user" });
   }
 };
 

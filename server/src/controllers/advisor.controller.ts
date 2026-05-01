@@ -211,6 +211,64 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
   }
 };
 
+export const listAdvisorReferrals = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  const role = req.user?.role;
+  if (!userId || !isAdvisorRole(role)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const referrals = await prisma.caseReferral.findMany({
+      where: {
+        advisorId: userId,
+      },
+      select: {
+        id: true,
+        target: true,
+        reason: true,
+        isUrgent: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        student: {
+          select: {
+            id: true,
+            name: true,
+            studentId: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          createdAt: "desc",
+        },
+      ],
+      take: 200,
+    });
+
+    res.status(200).json({
+      referrals: referrals.map((referral) => ({
+        id: referral.id,
+        studentId: referral.student.id,
+        studentName: referral.student.name,
+        studentCode: formatStudentIdForResponse(referral.student.studentId),
+        year: inferStudyYear(referral.student.studentId),
+        target: referral.target,
+        reason: referral.reason,
+        isUrgent: referral.isUrgent,
+        status: referral.status,
+        createdAt: referral.createdAt,
+        updatedAt: referral.updatedAt,
+      })),
+    });
+  } catch (error) {
+    console.error("List advisor referrals error:", error);
+    res.status(500).json({ message: "Failed to list referrals" });
+  }
+};
+
 export const getStudentHistory = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
   const role = req.user?.role;
@@ -370,6 +428,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         riskLevel: normalizeRiskLevel(student.studentAssessments[0]?.riskLevel ?? RiskLevel.NORMAL),
         lastAssessment: student.studentAssessments[0]?.assessedAt ?? null,
         careRecordCount: student._count.studentCareRecords,
+        behaviorRecordCount: student._count.studentBehaviorRecords,
         latestScore: student.studentAssessments[0]?.totalScore ?? null,
         latestInstrument: student.studentAssessments[0]?.instrument ?? null,
       },

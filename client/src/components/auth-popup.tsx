@@ -76,6 +76,18 @@ export default function AuthPopup({
   const [forgotSuccess, setForgotSuccess] = useState("");
   const [isForgotLoading, setIsForgotLoading] = useState(false);
 
+  const resetPopupState = () => {
+    setShowPassword(false);
+    setIdentifier("");
+    setPassword("");
+    setLoginError("");
+    setIsLoginLoading(false);
+    setEmail("");
+    setForgotError("");
+    setForgotSuccess("");
+    setIsForgotLoading(false);
+  };
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -100,11 +112,7 @@ export default function AuthPopup({
 
   useEffect(() => {
     if (!isOpen) {
-      setLoginError("");
-      setForgotError("");
-      setForgotSuccess("");
-      setIsLoginLoading(false);
-      setIsForgotLoading(false);
+      resetPopupState();
     }
   }, [isOpen]);
 

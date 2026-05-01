@@ -6,16 +6,13 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   FileSpreadsheet,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  ShieldAlert,
   Upload,
-  Users,
+  ShieldAlert,
   X,
 } from "lucide-react";
 import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
+import { AdminShell } from "@/components/admin-shell";
 
 type CsvStudentRow = {
   studentId: string;
@@ -224,8 +221,6 @@ export default function ImportStudentsPage() {
   const [importProgressPercent, setImportProgressPercent] = useState(0);
   const [importProgressCurrent, setImportProgressCurrent] = useState(0);
   const [importProgressTotal, setImportProgressTotal] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const [previewExistingStudents, setPreviewExistingStudents] = useState<
     ExistingCheckResponse["existingStudents"]
   >([]);
@@ -405,14 +400,6 @@ export default function ImportStudentsPage() {
       !importing,
     [rows.length, incompleteRowsCount, emailConflictRowsCount, importableRowsCount, existingCheckLoading, importing]
   );
-
-  const toggleSidebar = () => {
-    setSidebarOpen((prev) => !prev);
-  };
-
-  const closeSidebar = () => {
-    setSidebarOpen(false);
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -673,73 +660,18 @@ export default function ImportStudentsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-800 [scrollbar-gutter:stable]">
+    <AdminShell
+      activeNav="import"
+      onLogout={handleLogout}
+      title="นำเข้าข้อมูล"
+      userName={user.name}
+      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
+    >
       <div
-        className={`fixed inset-0 z-40 bg-gray-900/50 transition-opacity duration-300 lg:hidden ${
-          sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        className={`fixed inset-0 z-[80] flex items-center justify-center p-6 transition-all duration-300 ease-out ${
+          showImportSuccessModal ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
         }`}
-        onClick={toggleSidebar}
-      />
-
-      <div className="flex min-h-screen overflow-x-hidden">
-        <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-64 transform flex-col bg-gray-900 text-white transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="flex h-16 shrink-0 items-center justify-between border-b border-gray-800 px-5 sm:px-6">
-            <h2 className="text-xl font-semibold tracking-wide">Admin Panel</h2>
-            <button
-              type="button"
-              className="text-gray-400 transition-colors hover:text-white lg:hidden"
-              onClick={toggleSidebar}
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-          <nav className="flex-1 space-y-2 px-4 py-6">
-            <Link
-              href="/dashboard/admin"
-              onClick={closeSidebar}
-              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
-            >
-              <LayoutDashboard className="h-4 w-4 shrink-0" />
-              <span className="truncate">หน้าหลัก</span>
-            </Link>
-            <Link
-              href="/dashboard/admin/manage-students"
-              onClick={closeSidebar}
-              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
-            >
-              <Users className="h-4 w-4 shrink-0" />
-              <span className="truncate">จัดการข้อมูลนักศึกษา</span>
-            </Link>
-            <span className="flex min-h-11 items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-white">
-              <FileSpreadsheet className="h-4 w-4 shrink-0" />
-              <span className="truncate">นำเข้านักศึกษา (CSV)</span>
-            </span>
-          </nav>
-
-          <div className="border-t border-gray-800 p-4">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-gray-700"
-            >
-              <LogOut className="h-4 w-4" />
-              ออกจากระบบ
-            </button>
-          </div>
-        </aside>
-
-        <section className="relative flex min-h-screen w-full flex-1 flex-col lg:w-[calc(100%-16rem)]">
-          <div
-            className={`absolute inset-0 z-[80] flex items-center justify-center p-6 transition-all duration-300 ease-out ${
-              showImportSuccessModal
-                ? "opacity-100 scale-100"
-                : "pointer-events-none opacity-0 scale-95"
-            }`}
-          >
+      >
             <div className="flex flex-col items-center gap-5 rounded-[2rem] border border-gray-100 bg-white/95 px-10 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] backdrop-blur-sm">
               <svg
                 key={successAnimationKey}
@@ -758,26 +690,15 @@ export default function ImportStudentsPage() {
                 </span>
               </p>
             </div>
-          </div>
+      </div>
 
-          <header className="sticky top-0 z-30 border-b border-gray-200 bg-white">
-            <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 md:px-8">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <button
-                  type="button"
-                  className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
-                  onClick={toggleSidebar}
-                >
-                  <Menu className="h-6 w-6" />
-                </button>
-                <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">นำเข้าข้อมูลนักศึกษาเป็นกลุ่ม (Batch Onboard)</h1>
-              </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
-                AD
-              </div>
-            </div>
-          </header>
-          <div className="relative mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 md:p-8">
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">นำเข้าข้อมูล (Import Data)</h2>
+          <p className="mt-1 text-sm text-slate-500">อัปเดตฐานข้อมูลนักศึกษาและบุคลากรผ่านไฟล์ CSV ด้วย flow batch import ที่ทีมทำไว้แล้ว</p>
+        </div>
+
+        <div className="relative">
 
             {!showPreviewSection && (
               <>
@@ -813,9 +734,9 @@ export default function ImportStudentsPage() {
                         <table className="w-full table-fixed text-left">
                           <thead className="bg-gray-100 text-gray-600">
                             <tr>
-                              <th className="border-b border-gray-200 px-4 py-2 font-medium">studentId *</th>
-                              <th className="border-b border-gray-200 px-4 py-2 font-medium">name *</th>
-                              <th className="border-b border-gray-200 px-4 py-2 font-medium">email *</th>
+                              <th className="w-[28%] border-b border-gray-200 px-4 py-2 font-medium">studentId *</th>
+                              <th className="w-[32%] border-b border-gray-200 px-4 py-2 font-medium">name *</th>
+                              <th className="w-[40%] border-b border-gray-200 px-4 py-2 font-medium">email *</th>
                             </tr>
                           </thead>
                           <tbody className="font-mono text-xs text-gray-600">
@@ -993,7 +914,14 @@ export default function ImportStudentsPage() {
                 )}
 
                 <div className="mb-6 min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full min-w-[760px] text-left text-sm">
+                  <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+                    <colgroup>
+                      <col className="w-16" />
+                      <col className="w-[22%]" />
+                      <col className="w-[26%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[28%]" />
+                    </colgroup>
                     <thead className="sticky top-0 border-b border-gray-200 bg-gray-50 text-gray-600">
                       <tr>
                         <th className="w-16 px-4 py-3 text-center font-medium">ลำดับ</th>
@@ -1025,8 +953,12 @@ export default function ImportStudentsPage() {
                             <td className="px-4 py-3 font-mono text-xs text-gray-800">
                               {formatStudentIdDisplay(row.studentId)}
                             </td>
-                            <td className="px-4 py-3 text-gray-800">{row.name || "-"}</td>
-                            <td className="px-4 py-3 text-xs text-gray-500">{row.email || "-"}</td>
+                            <td className="px-4 py-3 text-gray-800">
+                              <p className="truncate">{row.name || "-"}</p>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-500">
+                              <p className="truncate">{row.email || "-"}</p>
+                            </td>
                             <td className="px-4 py-3">
                               {row.isIncomplete ? (
                                 <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
@@ -1096,8 +1028,7 @@ export default function ImportStudentsPage() {
                 <p className="text-sm font-medium">{serverError}</p>
               </section>
             )}
-          </div>
-        </section>
+        </div>
       </div>
 
       <style jsx>{`
@@ -1160,7 +1091,7 @@ export default function ImportStudentsPage() {
           }
         }
       `}</style>
-    </main>
+    </AdminShell>
   );
 }
 

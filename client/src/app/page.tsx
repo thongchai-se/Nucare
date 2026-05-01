@@ -12,7 +12,9 @@ import {
   Headphones,
   HeartHandshake,
   HeartPulse,
+  LayoutDashboard,
   Lock,
+  LogOut,
   LogIn,
   Menu,
   Music,
@@ -27,6 +29,7 @@ import {
 import { useAuth } from "@/context/auth.context";
 import AuthPopup, { type AuthPopupView } from "@/components/auth-popup";
 import LegalFooter from "@/components/legal-footer";
+import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-config";
 
 const getUserInitials = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -50,6 +53,26 @@ const getAuthPopupViewFromUrl = (): AuthPopupView | null => {
   }
 
   return null;
+};
+
+const formatUserIdentifier = (studentId?: string | null, employeeId?: string | null, email?: string | null): string => {
+  if (studentId) {
+    if (/^\d{9}-\d$/.test(studentId)) {
+      return `ID: ${studentId}`;
+    }
+
+    if (/^\d{10}$/.test(studentId)) {
+      return `ID: ${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+    }
+
+    return `ID: ${studentId}`;
+  }
+
+  if (employeeId) {
+    return `ID: ${employeeId}`;
+  }
+
+  return email ?? "-";
 };
 
 export default function HomePage() {
@@ -102,6 +125,7 @@ export default function HomePage() {
 
   const closeAuthPopup = () => {
     setIsAuthPopupOpen(false);
+    setAuthPopupView("login");
     syncAuthPopupQuery(null);
   };
 
@@ -339,6 +363,11 @@ export default function HomePage() {
     return getUserInitials(user.name);
   }, [user?.name]);
 
+  const userMenuSubtitle = useMemo(
+    () => formatUserIdentifier(user?.studentId, user?.employeeId, user?.email),
+    [user?.email, user?.employeeId, user?.studentId]
+  );
+
   const handleLogout = async () => {
     await logout();
     setToastMessage("ออกจากระบบเรียบร้อยแล้ว");
@@ -348,7 +377,7 @@ export default function HomePage() {
   };
 
   return (
-    <>
+    <div className="overflow-x-clip">
       <div
         className={`fixed bottom-6 right-6 z-[70] flex transform items-center gap-3 rounded-lg border-l-4 border-emerald-500 bg-white px-5 py-4 shadow-xl transition-all duration-300 ${
           showToast ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-20 opacity-0"
@@ -381,16 +410,16 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="hidden items-center gap-5 lg:flex xl:gap-7">
-              <a href="#support" className="text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
-                การดูแล
-              </a>
-              <a href="#resources" className="text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
-                คลังฮีลใจ
-              </a>
-              <a href="#emergency" className="text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700">
-                เหตุฉุกเฉิน
-              </a>
+            <div className="hidden items-center gap-5 lg:flex xl:gap-8">
+              {PUBLIC_NAV_ITEMS.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  className="whitespace-nowrap text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700"
+                >
+                  {item.label}
+                </a>
+              ))}
 
               {showGuestActions && (
                 <div className="flex items-center gap-2.5">
@@ -399,61 +428,87 @@ export default function HomePage() {
                     onClick={() => openAuthPopup("login")}
                     className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-blue-700 px-4 py-2 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50"
                   >
-                    <User className="h-4 w-4" /> เข้าสู่ระบบ
+                    <User className="h-4 w-4" /> {PUBLIC_NAV_LABELS.login}
                   </button>
                   <button
                     type="button"
                     onClick={() => openAuthPopup("login")}
                     className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800"
                   >
-                    <ClipboardCheck className="h-4 w-4" /> ทำแบบประเมิน
+                    <ClipboardCheck className="h-4 w-4" /> {PUBLIC_NAV_LABELS.assessment}
                   </button>
                 </div>
               )}
 
               {showAuthenticatedActions && (
-                <div className="relative flex items-center border-l border-slate-200 pl-4" ref={profileMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setProfileMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-slate-50"
-                    aria-expanded={profileMenuOpen}
-                    aria-haspopup="menu"
-                  >
-                    <div className="hidden text-right lg:block">
-                      <p className="text-sm font-bold leading-tight text-blue-900">{user?.name}</p>
-                      <p className="text-xs text-slate-500">{user?.studentId ? "นักศึกษาพยาบาลศาสตร์" : "บุคลากร"}</p>
-                    </div>
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
-                      {userInitials}
-                    </div>
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-
-                  <div
-                    className={`absolute right-0 top-full z-50 mt-2 w-52 rounded-lg border border-slate-100 bg-white p-2 shadow-lg transition-all duration-150 ${
-                      profileMenuOpen
-                        ? "pointer-events-auto visible translate-y-0 opacity-100"
-                        : "pointer-events-none invisible -translate-y-1 opacity-0"
-                    }`}
-                    role="menu"
-                  >
-                    <Link
-                      href="/dashboard"
-                      className="block rounded-md px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-700"
-                      onClick={() => setProfileMenuOpen(false)}
-                    >
-                      ไปที่แดชบอร์ด
-                    </Link>
+                <div className="flex items-center border-l border-slate-200 pl-4">
+                  <div className="relative w-[14rem]" ref={profileMenuRef}>
                     <button
                       type="button"
-                      onClick={handleLogout}
-                      className="mt-1 flex w-full items-center gap-2 rounded-md px-4 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                      onClick={() => setProfileMenuOpen((prev) => !prev)}
+                      className={`flex w-full items-center justify-between gap-2.5 border border-slate-200 bg-white px-3 py-1.5 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50/90 ${
+                        profileMenuOpen ? "rounded-b-none rounded-t-[1.35rem] border-b-transparent" : "rounded-[1.35rem]"
+                      }`}
+                      aria-expanded={profileMenuOpen}
+                      aria-haspopup="menu"
                     >
-                      ออกจากระบบ
+                      <div className="hidden min-w-0 flex-1 text-right lg:block">
+                        <p className="text-sm font-bold leading-tight text-blue-900">{user?.name}</p>
+                        <p className="text-xs text-slate-500">{userMenuSubtitle}</p>
+                      </div>
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
+                        {userInitials}
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 text-slate-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
+                      />
                     </button>
+
+                    <div
+                      className={`absolute inset-x-0 top-[calc(100%-1px)] z-50 origin-top overflow-hidden rounded-b-[1.35rem] border border-slate-200/90 border-t-0 bg-white p-1.5 shadow-[0_20px_36px_-28px_rgba(15,23,42,0.32)] transition-all duration-200 ${
+                        profileMenuOpen
+                          ? "pointer-events-auto visible translate-y-0 scale-100 opacity-100"
+                          : "pointer-events-none invisible -translate-y-2 scale-95 opacity-0"
+                      }`}
+                      role="menu"
+                    >
+                      <Link
+                        href="/dashboard"
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
+                        onClick={() => setProfileMenuOpen(false)}
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                          <LayoutDashboard className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-800">{PUBLIC_NAV_LABELS.dashboard}</p>
+                        </div>
+                      </Link>
+                      <Link
+                        href="/dashboard/change-password"
+                        className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
+                        onClick={() => setProfileMenuOpen(false)}
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                          <Lock className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-800">{PUBLIC_NAV_LABELS.changePassword}</p>
+                        </div>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-slate-100 px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                          <LogOut className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-red-600">{PUBLIC_NAV_LABELS.logout}</p>
+                        </div>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -473,32 +528,21 @@ export default function HomePage() {
         </div>
 
         <div
-          className={`overflow-hidden border-t border-slate-100 bg-white/95 backdrop-blur-xl transition-all duration-300 lg:hidden ${
-            mobileMenuOpen ? "max-h-[420px] pb-4 shadow-xl" : "max-h-0"
+          className={`overflow-hidden border-t border-slate-100 bg-white transition-all duration-300 lg:hidden ${
+            mobileMenuOpen ? "max-h-[420px] pb-4" : "max-h-0"
           }`}
         >
           <div className="space-y-1 px-4 pt-4">
-            <a
-              href="#support"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              การดูแล
-            </a>
-            <a
-              href="#resources"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              คลังฮีลใจ
-            </a>
-            <a
-              href="#emergency"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              เหตุฉุกเฉิน
-            </a>
+            {PUBLIC_NAV_ITEMS.map((item) => (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {item.label}
+              </a>
+            ))}
 
             {showGuestActions && (
               <div className="flex flex-col gap-3 pt-3">
@@ -507,34 +551,55 @@ export default function HomePage() {
                   onClick={() => openAuthPopup("login")}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-[15px] text-white"
                 >
-                  <ClipboardCheck className="h-5 w-5" /> ทำแบบประเมิน
+                  <ClipboardCheck className="h-5 w-5" /> {PUBLIC_NAV_LABELS.assessment}
                 </button>
                 <button
                   type="button"
                   onClick={() => openAuthPopup("login")}
                   className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-700 px-4 py-3 font-semibold text-[15px] text-blue-700"
                 >
-                  <LogIn className="h-5 w-5" /> เข้าสู่ระบบ
+                  <LogIn className="h-5 w-5" /> {PUBLIC_NAV_LABELS.login}
                 </button>
               </div>
             )}
 
             {showAuthenticatedActions && (
-              <div className="flex flex-col gap-3 pt-3">
-                <Link
-                  href="/dashboard"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-[15px] text-white"
-                >
-                  ไปที่แดชบอร์ด
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="w-full rounded-lg border border-slate-300 px-4 py-3 font-semibold text-[15px] text-slate-700"
-                >
-                  ออกจากระบบ
-                </button>
+              <div className="space-y-3 pt-3">
+                <div className="flex items-center gap-3 rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
+                    {userInitials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-bold text-slate-900">{user?.name}</p>
+                    <p className="truncate text-xs font-medium text-slate-500">{userMenuSubtitle}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
+                  >
+                    <LayoutDashboard className="h-4.5 w-4.5 text-blue-700" />
+                    แดชบอร์ด
+                  </Link>
+                  <Link
+                    href="/dashboard/change-password"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
+                  >
+                    <Lock className="h-4.5 w-4.5 text-slate-700" />
+                    {PUBLIC_NAV_LABELS.changePassword}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="col-span-2 flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    ออกจากระบบ
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -787,7 +852,7 @@ export default function HomePage() {
       />
 
       <LegalFooter />
-    </>
+    </div>
   );
 }
 

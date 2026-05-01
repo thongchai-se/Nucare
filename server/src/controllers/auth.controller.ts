@@ -14,8 +14,8 @@ const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const LOGIN_FAILED_MESSAGE = "Invalid credentials";
 const PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE =
-  "If the email exists in our system, a reset link has been sent";
-const INVALID_RESET_TOKEN_MESSAGE = "Invalid or expired reset link";
+  "หากอีเมลนี้อยู่ในระบบของเรา ลิงก์สำหรับตั้งรหัสผ่านใหม่ได้ถูกส่งแล้ว";
+const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์ตั้งรหัสผ่านใหม่ไม่ถูกต้องหรือหมดอายุแล้ว";
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 
 const loginSchema = z
@@ -37,13 +37,37 @@ const loginSchema = z
   });
 
 const forgotPasswordSchema = z.object({
-  email: z.string().trim().email("Please provide a valid email address"),
+  email: z.string().trim().email("กรุณากรอกอีเมลที่ถูกต้อง"),
 });
 
 const resetPasswordSchema = z.object({
   token: z.string().trim().min(1, INVALID_RESET_TOKEN_MESSAGE),
-  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+  password: z.string().min(8, "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร").max(128),
 });
+
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(8, "กรุณากรอกรหัสผ่านปัจจุบัน").max(128),
+    newPassword: z.string().min(8, "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร").max(128),
+    confirmPassword: z.string().min(8, "กรุณายืนยันรหัสผ่านใหม่").max(128),
+  })
+  .superRefine((data, context) => {
+    if (data.newPassword !== data.confirmPassword) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน",
+      });
+    }
+
+    if (data.currentPassword === data.newPassword) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน",
+      });
+    }
+  });
 
 const getAccessSecret = (): string => {
   const secret = process.env.JWT_ACCESS_SECRET;
@@ -104,21 +128,21 @@ const sendPasswordResetEmail = async (email: string, resetLink: string): Promise
   await transporter.sendMail({
     from,
     to: email,
-    subject: "NuCare password reset",
-    text: `Use this link to reset your password: ${resetLink}\n\nIf you did not request this, you can ignore this email.`,
+    subject: "ลิงก์สำหรับตั้งรหัสผ่านใหม่ - NuCare",
+    text: `คุณได้ส่งคำขอตั้งรหัสผ่านใหม่สำหรับบัญชี NuCare\n\nกรุณาเปิดลิงก์นี้เพื่อตั้งรหัสผ่านใหม่:\n${resetLink}\n\nหากคุณไม่ได้เป็นผู้ร้องขอ สามารถละเว้นอีเมลฉบับนี้ได้อย่างปลอดภัย`,
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-        <h2 style="margin-bottom: 8px;">NuCare password reset</h2>
-        <p>You recently requested to reset your password.</p>
+        <h2 style="margin-bottom: 8px;">ตั้งรหัสผ่านใหม่สำหรับบัญชี NuCare</h2>
+        <p>เราได้รับคำขอให้ตั้งรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
         <p>
           <a
             href="${resetLink}"
             style="display: inline-block; border-radius: 10px; background: #2563eb; padding: 11px 18px; color: #ffffff; text-decoration: none; font-weight: 700;"
           >
-            Reset password
+            ตั้งรหัสผ่านใหม่
           </a>
         </p>
-        <p>If you did not request this, you can safely ignore this email.</p>
+        <p>หากคุณไม่ได้เป็นผู้ร้องขอ คุณสามารถละเว้นอีเมลฉบับนี้ได้อย่างปลอดภัย</p>
       </div>
     `,
   });
@@ -292,7 +316,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   const parsed = forgotPasswordSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    res.status(400).json({ message: "Please provide a valid email address" });
+    res.status(400).json({ message: "กรุณากรอกอีเมลที่ถูกต้อง" });
     return;
   }
 
@@ -333,7 +357,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     res.status(200).json({ message: PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: "Failed to process password reset request" });
+    res.status(500).json({ message: "ไม่สามารถดำเนินการส่งลิงก์ตั้งรหัสผ่านใหม่ได้" });
   }
 };
 
@@ -362,10 +386,10 @@ export const validateResetPasswordToken = async (req: Request, res: Response): P
       return;
     }
 
-    res.status(200).json({ message: "Reset token is valid" });
+    res.status(200).json({ message: "ลิงก์ตั้งรหัสผ่านใหม่ใช้งานได้" });
   } catch (error) {
     console.error("Validate reset token error:", error);
-    res.status(500).json({ message: "Failed to validate reset link" });
+    res.status(500).json({ message: "ไม่สามารถตรวจสอบลิงก์ตั้งรหัสผ่านใหม่ได้" });
   }
 };
 
@@ -373,7 +397,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   const parsed = resetPasswordSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    const firstError = parsed.error.issues[0]?.message || "Invalid request";
+    const firstError = parsed.error.issues[0]?.message || "คำขอไม่ถูกต้อง";
     res.status(400).json({ message: firstError });
     return;
   }
@@ -419,10 +443,86 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       },
     });
 
-    res.status(200).json({ message: "Password has been reset successfully" });
+    res.status(200).json({ message: "ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว" });
   } catch (error) {
     console.error("Reset password error:", error);
-    res.status(500).json({ message: "Failed to reset password" });
+    res.status(500).json({ message: "ไม่สามารถตั้งรหัสผ่านใหม่ได้" });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user?.userId) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = changePasswordSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    const firstError = parsed.error.issues[0]?.message || "คำขอไม่ถูกต้อง";
+    res.status(400).json({ message: firstError });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        id: true,
+        password: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      clearAuthCookies(res);
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(parsed.data.currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      res.status(400).json({ message: "รหัสผ่านปัจจุบันไม่ถูกต้อง" });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(parsed.data.newPassword, 12);
+    const nextAccessToken = createAccessToken(user);
+    const nextRefreshToken = createRefreshToken(user);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword },
+      });
+
+      await tx.refreshToken.deleteMany({
+        where: { userId: user.id },
+      });
+
+      await tx.passwordResetToken.deleteMany({
+        where: {
+          userId: user.id,
+          usedAt: null,
+        },
+      });
+
+      await tx.refreshToken.create({
+        data: {
+          token: hashToken(nextRefreshToken),
+          userId: user.id,
+          expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+        },
+      });
+    });
+
+    setAuthCookies(res, nextAccessToken, nextRefreshToken);
+
+    res.status(200).json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ message: "ไม่สามารถเปลี่ยนรหัสผ่านได้" });
   }
 };
 

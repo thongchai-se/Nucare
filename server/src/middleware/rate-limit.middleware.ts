@@ -29,9 +29,13 @@ const createAuthLimiter = (
     message: { message },
   });
 
-export const loginRateLimit = createAuthLimiter(10, "ลองเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง", {
-  skipSuccessfulRequests: true,
-});
+export const loginRateLimit = createAuthLimiter(
+  10,
+  "ลองเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง",
+  {
+    skipSuccessfulRequests: true,
+  }
+);
 
 export const forgotPasswordRateLimit = createAuthLimiter(
   5,
@@ -46,4 +50,9 @@ export const resetPasswordRateLimit = createAuthLimiter(
 export const refreshRateLimit = createAuthLimiter(
   60,
   "คำขอต่ออายุเซสชันมากเกินไป กรุณาลองใหม่อีกครั้ง"
+);
+
+export const changePasswordRateLimit = createAuthLimiter(
+  10,
+  "คุณพยายามเปลี่ยนรหัสผ่านบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง"
 );

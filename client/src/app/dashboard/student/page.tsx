@@ -14,9 +14,11 @@ import {
   Check,
   ChevronDown,
   ClipboardEdit,
+  Contact,
   FileSpreadsheet,
   HeartPulse,
   Headphones,
+  Lock,
   LogOut,
   Menu,
   MessageSquare,
@@ -271,22 +273,22 @@ export default function StudentDashboardPage() {
         </div>
       )}
 
-      <nav className="fixed z-50 w-full border-b border-slate-100 bg-white transition-all duration-300">
-        <div className="mx-auto max-w-[116rem] px-1.5 sm:px-2 lg:px-3">
-          <div className="flex h-20 items-center justify-between">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 text-white shadow-sm">
-                <HeartPulse className="h-6 w-6" />
+      <nav className="fixed z-50 w-full border-b border-white/70 bg-white/85 backdrop-blur-md transition-all duration-300">
+        <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
+          <div className="flex h-16 items-center justify-between sm:h-20">
+            <Link href="/" className="flex items-center gap-2.5 sm:gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
+                <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               <div className="flex flex-col justify-center">
-                <span className="mb-1 block text-xl font-bold leading-none text-blue-900">
-                  Nucare<span className="text-2xl leading-none text-cyan-500">.</span>
+                <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
+                  Nucare<span className="text-cyan-500">.</span>
                 </span>
                 <span className="block text-[11px] font-medium leading-none text-slate-500">คณะพยาบาลศาสตร์</span>
               </div>
             </Link>
 
-            <div className="hidden items-center gap-4 md:flex" ref={profileMenuRef}>
+            <div className="hidden items-center gap-4 md:flex">
               <button
                 type="button"
                 className="relative rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-blue-700"
@@ -299,7 +301,7 @@ export default function StudentDashboardPage() {
               <div className="h-7 border-l border-slate-200" />
 
               <div
-                className="relative"
+                className="relative w-[15.5rem]"
                 ref={profileMenuRef}
                 onMouseEnter={openProfileMenu}
                 onMouseLeave={closeProfileMenuWithDelay}
@@ -315,13 +317,15 @@ export default function StudentDashboardPage() {
                     setProfileMenuOpen((prev) => !prev);
                   }}
                   onFocus={openProfileMenu}
-                  className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-slate-50"
+                  className={`flex w-full items-center justify-between gap-2.5 border border-slate-200 bg-white px-3 py-1.5 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50/90 ${
+                    profileMenuOpen ? "rounded-b-none rounded-t-[1.35rem] border-b-transparent" : "rounded-[1.35rem]"
+                  }`}
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="menu"
                 >
-                  <div className="hidden text-right lg:block">
+                  <div className="hidden min-w-0 flex-1 text-right lg:block">
                     <p className="text-sm font-bold leading-tight text-blue-900">{user.name}</p>
-                    <p className="text-xs text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
+                    <p className="truncate whitespace-nowrap text-[11px] text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
                   </div>
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
                     {userInitials}
@@ -330,36 +334,49 @@ export default function StudentDashboardPage() {
                     className={`h-4 w-4 text-slate-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`}
                   />
                 </button>
-
                 <div
-                  className={`absolute right-0 top-full z-50 mt-2 w-52 rounded-lg border border-slate-100 bg-white p-2 shadow-lg transition-all duration-150 ${
+                  className={`absolute inset-x-0 top-[calc(100%-1px)] z-50 origin-top overflow-hidden rounded-b-[1.35rem] border border-slate-200/90 border-t-0 bg-white p-1.5 shadow-[0_20px_36px_-28px_rgba(15,23,42,0.32)] transition-all duration-200 ${
                     profileMenuOpen
-                      ? "pointer-events-auto visible translate-y-0 opacity-100"
-                      : "pointer-events-none invisible -translate-y-1 opacity-0"
+                      ? "pointer-events-auto visible translate-y-0 scale-100 opacity-100"
+                      : "pointer-events-none invisible -translate-y-2 scale-95 opacity-0"
                   }`}
                   role="menu"
                 >
                   <Link
-                    href="/dashboard/student"
-                    className="block rounded-md px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-700"
+                    href="/dashboard/student/profile"
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
                     onClick={() => setProfileMenuOpen(false)}
                   >
-                    หน้าหลัก (Dashboard)
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                      <Contact className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">ประวัติส่วนตัว</p>
+                    </div>
                   </Link>
                   <Link
-                    href="/dashboard/student/profile"
-                    className="block rounded-md px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-700"
+                    href="/dashboard/change-password"
+                    className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
                     onClick={() => setProfileMenuOpen(false)}
                   >
-                    ประวัติส่วนตัว
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">เปลี่ยนรหัสผ่าน</p>
+                    </div>
                   </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="mt-1 flex w-full items-center gap-2 rounded-md px-4 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                    className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-slate-100 px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
                   >
-                    <LogOut className="h-4 w-4" />
-                    ออกจากระบบ
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                      <LogOut className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-red-600">ออกจากระบบ</p>
+                    </div>
                   </button>
                 </div>
               </div>
@@ -383,37 +400,37 @@ export default function StudentDashboardPage() {
             studentMobileMenuOpen ? "max-h-[420px] pb-4" : "max-h-0"
           }`}
         >
-          <div className="space-y-1 px-4 pt-2">
-            <div className="mb-4 flex items-center gap-3 rounded-lg bg-slate-50 p-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
+          <div className="space-y-3 px-4 py-3">
+            <div className="flex items-center gap-3 rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
                 {userInitials}
               </div>
-              <div>
-                <p className="text-sm font-bold text-blue-900">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold text-slate-900">{user.name}</p>
+                <p className="truncate text-xs font-medium text-slate-500">{user.studentId ? `ID: ${identifier}` : identifier}</p>
               </div>
             </div>
-
-            <Link
-              href="/dashboard/student"
-              className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-              onClick={closeStudentMobileMenu}
-            >
-              หน้าหลัก (Dashboard)
-            </Link>
-            <Link
-              href="/dashboard/student/profile"
-              className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-              onClick={closeStudentMobileMenu}
-            >
-              ประวัติส่วนตัว
-            </Link>
-
-            <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Link
+                href="/dashboard/student/profile"
+                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
+                onClick={closeStudentMobileMenu}
+              >
+                <Contact className="h-4.5 w-4.5 text-blue-700" />
+                โปรไฟล์
+              </Link>
+              <Link
+                href="/dashboard/change-password"
+                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
+                onClick={closeStudentMobileMenu}
+              >
+                <Lock className="h-4.5 w-4.5 text-slate-700" />
+                เปลี่ยนรหัสผ่าน
+              </Link>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-3 font-semibold text-red-600"
+                className="col-span-2 flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
               >
                 <LogOut className="h-4 w-4" />
                 ออกจากระบบ

@@ -30,8 +30,10 @@ export default function RootLayout({
     <html lang="th">
       <body className={`${notoSansThai.variable} ${mitr.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
         <AuthProvider>
-          {children}
-          <CookieConsentPopup />
+          <div className="min-h-screen">
+            {children}
+            <CookieConsentPopup />
+          </div>
         </AuthProvider>
       </body>
     </html>

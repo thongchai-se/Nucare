@@ -2,13 +2,17 @@ import { Role } from "@prisma/client";
 import { Router } from "express";
 import {
   assignAdvisorStudents,
+  createUser,
   listAuditLogs,
   listStaffUsers,
   checkExistingStudents,
+  deleteUser,
   createStudent,
+  listUsers,
   deleteStudent,
   importStudents,
   listStudents,
+  updateUser,
   updateStudent,
 } from "../controllers/admin.controller";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware";
@@ -27,6 +31,34 @@ router.get(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   listStaffUsers
+);
+
+router.get(
+  "/users",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listUsers
+);
+
+router.post(
+  "/users",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  createUser
+);
+
+router.put(
+  "/users/:id",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  updateUser
+);
+
+router.delete(
+  "/users/:id",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  deleteUser
 );
 
 router.post(

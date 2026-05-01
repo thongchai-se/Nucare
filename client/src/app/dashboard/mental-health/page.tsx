@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
@@ -13,8 +13,8 @@ import {
   ChevronRight,
   Clock3,
   FileText,
-  HeartPulse,
   LayoutDashboard,
+  Lock,
   LogOut,
   MapPin,
   Menu,
@@ -27,6 +27,9 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
+import { AppBrand } from "@/components/app-brand";
+import { ChangePasswordForm } from "@/components/change-password-form";
+import { MenuSectionHeading } from "@/components/menu-section-heading";
 import api from "@/lib/axios";
 
 type DashboardReferral = {
@@ -72,7 +75,10 @@ type DashboardAlert = {
   createdAt: string;
 };
 
-type ActiveView = "dashboard" | "referrals" | "cases" | "appointments" | "settings";
+type ActiveView = "dashboard" | "referrals" | "cases" | "appointments" | "settings" | "change-password";
+
+const isMentalHealthView = (value: string | null): value is ActiveView =>
+  value === "dashboard" || value === "referrals" || value === "cases" || value === "appointments" || value === "settings" || value === "change-password";
 
 type ActiveCase = {
   referralId: string;
@@ -221,10 +227,10 @@ const SidebarItem = ({
   <button
     type="button"
     onClick={onClick}
-    className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-[background-color,border-color,color,box-shadow] ${
+    className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left font-medium transition-colors ${
       active
-        ? "border border-blue-100 bg-blue-50 font-bold text-blue-700 shadow-sm"
-        : "border-transparent font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+        ? "border-blue-100 bg-blue-50 text-blue-700"
+        : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
     }`}
   >
     <span className="flex min-w-0 items-center gap-3">
@@ -284,12 +290,12 @@ const ModalShell = ({
   </div>
 );
 
-export default function MentalHealthDashboardPage() {
+function MentalHealthDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading, isAuthenticated, logout } = useAuth();
   const mainContentRef = useRef<HTMLElement | null>(null);
 
-  const [activeView, setActiveView] = useState<ActiveView>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [referrals, setReferrals] = useState<DashboardReferral[]>([]);
@@ -475,11 +481,25 @@ export default function MentalHealthDashboardPage() {
   }, [searchQuery, upcomingAppointments]);
 
   const unreadSignalCount = pendingReferrals.length + emergencyCases.length + alerts.length;
+  const requestedView = searchParams.get("view");
+  const activeView: ActiveView = isMentalHealthView(requestedView) ? requestedView : "dashboard";
+
+  const currentViewLabel =
+    activeView === "dashboard"
+      ? "หน้าหลัก"
+      : activeView === "referrals"
+        ? "รายการส่งต่อ"
+        : activeView === "cases"
+          ? "เคสในการดูแล"
+          : activeView === "appointments"
+            ? "ปฏิทินนัดหมาย"
+            : "ตั้งค่าระบบ";
+  const resolvedViewLabel = activeView === "change-password" ? "เปลี่ยนรหัสผ่าน" : currentViewLabel;
   const userInitials = useMemo(() => getInitials(user?.name || ""), [user?.name]);
 
   const navigateTo = (view: ActiveView) => {
-    setActiveView(view);
     setIsMobileMenuOpen(false);
+    router.replace(view === "dashboard" ? "/dashboard/mental-health" : `/dashboard/mental-health?view=${view}`);
     window.requestAnimationFrame(() => {
       mainContentRef.current?.scrollTo({ top: 0, behavior: "auto" });
     });
@@ -561,7 +581,7 @@ export default function MentalHealthDashboardPage() {
         message: status === "ACCEPTED" ? "รับเคสเรียบร้อยแล้ว" : "อัปเดตสถานะ referral เรียบร้อยแล้ว",
       });
       if (status === "ACCEPTED") {
-        setActiveView("cases");
+        navigateTo("cases");
       }
     } catch (error) {
       setNotice({
@@ -681,72 +701,60 @@ export default function MentalHealthDashboardPage() {
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
           <div className="flex h-16 items-center border-b border-slate-100 px-6">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-                <HeartPulse className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold leading-none text-slate-800">
-                  Nucare<span className="text-blue-600">.</span>
-                </h1>
-                <p className="text-[10px] font-medium text-slate-500">Expert Portal</p>
-              </div>
+            <Link href="/">
+              <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
             </Link>
           </div>
 
           <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-            <div>
-              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">เมนูหลัก</p>
-              <div className="space-y-1">
-                <SidebarItem
-                  active={activeView === "dashboard"}
-                  icon={<LayoutDashboard className="h-5 w-5" />}
-                  label="หน้าหลัก"
-                  onClick={() => navigateTo("dashboard")}
-                />
-                <SidebarItem
-                  active={activeView === "referrals"}
-                  badge={pendingReferrals.length}
-                  icon={<ArrowRightLeft className="h-5 w-5" />}
-                  label="รายการส่งต่อ"
-                  onClick={() => navigateTo("referrals")}
-                />
-                <SidebarItem
-                  active={activeView === "cases"}
-                  icon={<Users className="h-5 w-5" />}
-                  label="เคสในการดูแล"
-                  onClick={() => navigateTo("cases")}
-                />
-                <SidebarItem
-                  active={activeView === "appointments"}
-                  icon={<CalendarDays className="h-5 w-5" />}
-                  label="ปฏิทินนัดหมาย"
-                  onClick={() => navigateTo("appointments")}
-                />
-              </div>
+            <div className="space-y-1">
+              <MenuSectionHeading title="เมนูหลัก" />
+              <SidebarItem
+                active={activeView === "dashboard"}
+                icon={<LayoutDashboard className="h-5 w-5" />}
+                label="หน้าหลัก"
+                onClick={() => navigateTo("dashboard")}
+              />
+              <SidebarItem
+                active={activeView === "referrals"}
+                badge={pendingReferrals.length}
+                icon={<ArrowRightLeft className="h-5 w-5" />}
+                label="รายการส่งต่อ"
+                onClick={() => navigateTo("referrals")}
+              />
+              <SidebarItem
+                active={activeView === "cases"}
+                icon={<Users className="h-5 w-5" />}
+                label="เคสในการดูแล"
+                onClick={() => navigateTo("cases")}
+              />
+              <SidebarItem
+                active={activeView === "appointments"}
+                icon={<CalendarDays className="h-5 w-5" />}
+                label="ปฏิทินนัดหมาย"
+                onClick={() => navigateTo("appointments")}
+              />
             </div>
 
-            <div>
-              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">ระบบและความปลอดภัย</p>
-              <div className="space-y-1">
-                <SidebarItem
-                  active={activeView === "settings"}
-                  icon={<Settings className="h-5 w-5" />}
-                  label="ตั้งค่าระบบ"
-                  onClick={() => navigateTo("settings")}
-                />
-              </div>
+            <div className="space-y-1">
+              <MenuSectionHeading title="ระบบและความปลอดภัย" />
+              <SidebarItem
+                active={activeView === "settings"}
+                icon={<Settings className="h-5 w-5" />}
+                label="ตั้งค่าระบบ"
+                onClick={() => navigateTo("settings")}
+              />
+              <Link
+                href="/dashboard/mental-health?view=change-password"
+                className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+              >
+                <Lock className="h-5 w-5 text-slate-400" />
+                <span className="truncate">เปลี่ยนรหัสผ่าน</span>
+              </Link>
             </div>
           </div>
 
-          <div className="border-t border-slate-100 bg-slate-50/80 p-4">
-            <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <div className="flex items-center gap-2 font-bold">
-                <ShieldCheck className="h-4 w-4" />
-                โหมดคุ้มครองข้อมูลเปิดใช้งาน
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-emerald-700">ข้อมูลเคสที่ยังไม่รับงานจะถูกปกปิดในหน้าจอจนกว่าจะยืนยันรับเคส</p>
-            </div>
+          <div className="border-t border-slate-100 p-4">
             <button
               type="button"
               onClick={handleLogout}
@@ -762,27 +770,15 @@ export default function MentalHealthDashboardPage() {
           <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
             <div className="flex h-full w-72 flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
               <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-                    <HeartPulse className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">Nucare Expert</p>
-                    <p className="text-[10px] text-slate-500">ทีมสุขภาพจิต</p>
-                  </div>
-                </div>
+                <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
                 <button type="button" onClick={() => setIsMobileMenuOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="space-y-5 overflow-y-auto p-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-bold text-slate-800">{user.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">ผู้เชี่ยวชาญสุขภาพจิต</p>
-                </div>
-
+              <div className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
                 <div className="space-y-1">
+                  <MenuSectionHeading title="เมนูหลัก" />
                   <SidebarItem
                     active={activeView === "dashboard"}
                     icon={<LayoutDashboard className="h-5 w-5" />}
@@ -808,12 +804,24 @@ export default function MentalHealthDashboardPage() {
                     label="ปฏิทินนัดหมาย"
                     onClick={() => navigateTo("appointments")}
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <MenuSectionHeading title="ระบบและความปลอดภัย" />
                   <SidebarItem
                     active={activeView === "settings"}
                     icon={<Settings className="h-5 w-5" />}
                     label="ตั้งค่าระบบ"
                     onClick={() => navigateTo("settings")}
                   />
+                  <Link
+                    href="/dashboard/mental-health?view=change-password"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    <Lock className="h-5 w-5 text-slate-400" />
+                    <span className="truncate">เปลี่ยนรหัสผ่าน</span>
+                  </Link>
                 </div>
               </div>
 
@@ -842,15 +850,10 @@ export default function MentalHealthDashboardPage() {
                 <Menu className="h-5 w-5" />
               </button>
 
-              <div className="relative hidden w-72 lg:block">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="ค้นหารหัสนักศึกษา, ชื่อ, ผู้ส่งต่อ..."
-                  className="w-full rounded-full border border-transparent bg-slate-100 py-2 pl-9 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-200 focus:bg-white focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="hidden items-center gap-2 text-sm font-medium text-slate-500 lg:flex">
+                <span>Expert Portal</span>
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+                <span className="font-bold text-slate-800">{resolvedViewLabel}</span>
               </div>
             </div>
 
@@ -1209,7 +1212,14 @@ export default function MentalHealthDashboardPage() {
 
                   <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:block">
                     <div className="overflow-x-auto">
-                      <table className="min-w-full text-left">
+                      <table className="w-full min-w-[980px] table-fixed text-left">
+                        <colgroup>
+                          <col className="w-[34%]" />
+                          <col className="w-[14%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[20%]" />
+                        </colgroup>
                         <thead className="bg-slate-50 text-sm text-slate-600">
                           <tr>
                             <th className="px-5 py-4 font-bold">รหัสอ้างอิง / ข้อมูลนักศึกษา</th>
@@ -1226,14 +1236,14 @@ export default function MentalHealthDashboardPage() {
                               <tr key={item.id} className="align-top hover:bg-slate-50/70">
                                 <td className="px-5 py-4">
                                   {item.status === "PENDING" ? (
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-sm font-bold text-slate-800">ข้อมูลนักศึกษาถูกปกปิดจนกว่าจะรับเคส</p>
                                       <p className="mt-1 text-xs text-slate-500">
                                         {item.id} • {item.student.year}
                                       </p>
                                     </div>
                                   ) : (
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="text-sm font-bold text-blue-700">
                                         {item.student.name} ({item.student.studentId || "-"})
                                       </p>
@@ -1246,8 +1256,10 @@ export default function MentalHealthDashboardPage() {
                                 <td className="px-5 py-4">
                                   <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase ${risk.badge}`}>{risk.label}</span>
                                 </td>
-                                <td className="px-5 py-4 text-sm text-slate-600">{item.advisorName}</td>
-                                <td className="px-5 py-4 text-sm text-slate-600">{formatThaiDateTime(item.createdAt)}</td>
+                                <td className="px-5 py-4 text-sm text-slate-600">
+                                  <p className="truncate">{item.advisorName}</p>
+                                </td>
+                                <td className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{formatThaiDateTime(item.createdAt)}</td>
                                 <td className="px-5 py-4">
                                   <div className="flex justify-end gap-2">
                                     {item.status === "PENDING" ? (
@@ -1585,6 +1597,18 @@ export default function MentalHealthDashboardPage() {
                 </div>
               ) : null}
 
+              {activeView === "change-password" ? (
+                <div className="mx-auto max-w-3xl">
+                  <ChangePasswordForm
+                    cancelHref="/dashboard/mental-health?view=settings"
+                    description="อัปเดตรหัสผ่านของบัญชีผู้เชี่ยวชาญได้จากหน้านี้โดยตรง"
+                    onSuccessRedirect="/dashboard/mental-health?view=settings"
+                    title="เปลี่ยนรหัสผ่าน"
+                    tone="portal"
+                  />
+                </div>
+              ) : null}
+
               {loadingData ? (
                 <div className="pointer-events-none fixed bottom-4 right-4 z-40 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-lg">
                   <div className="flex items-center gap-2">
@@ -1807,5 +1831,19 @@ export default function MentalHealthDashboardPage() {
         </ModalShell>
       ) : null}
     </div>
+  );
+}
+
+export default function MentalHealthDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100">
+          <span className="loader h-7 w-7 text-blue-600"></span>
+        </main>
+      }
+    >
+      <MentalHealthDashboardContent />
+    </Suspense>
   );
 }

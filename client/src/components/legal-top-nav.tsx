@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronDown, ClipboardCheck, HeartPulse, LogIn, Menu, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/auth.context";
+import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-config";
 
 type LegalPageKey = "terms" | "privacy" | "cookies";
 
@@ -83,15 +84,15 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
           </Link>
 
           <div className="hidden items-center gap-5 lg:flex xl:gap-8">
-            <Link href="/#support" className="whitespace-nowrap font-semibold text-sm text-slate-600 transition-colors hover:text-blue-700">
-              การดูแล
-            </Link>
-            <Link href="/#resources" className="whitespace-nowrap font-semibold text-sm text-slate-600 transition-colors hover:text-blue-700">
-              คลังฮีลใจ
-            </Link>
-            <Link href="/#emergency" className="whitespace-nowrap font-semibold text-sm text-slate-600 transition-colors hover:text-blue-700">
-              เหตุฉุกเฉิน
-            </Link>
+            {PUBLIC_NAV_ITEMS.map((item) => (
+              <Link
+                key={item.id}
+                href={`/#${item.id}`}
+                className="whitespace-nowrap text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700"
+              >
+                {item.label}
+              </Link>
+            ))}
 
             {!isAuthenticated && (
               <div className="flex items-center gap-2.5">
@@ -99,13 +100,13 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
                   href="/?auth=login"
                   className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-blue-700 px-4 py-2 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50"
                 >
-                  <User className="h-4 w-4" /> เข้าสู่ระบบ
+                  <User className="h-4 w-4" /> {PUBLIC_NAV_LABELS.login}
                 </Link>
                 <Link
                   href="/?auth=login"
                   className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-800"
                 >
-                  <ClipboardCheck className="h-4 w-4" /> ทำแบบประเมิน
+                  <ClipboardCheck className="h-4 w-4" /> {PUBLIC_NAV_LABELS.assessment}
                 </Link>
               </div>
             )}
@@ -144,14 +145,14 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
                     className="block rounded-md px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-700"
                     onClick={() => setProfileMenuOpen(false)}
                   >
-                    ไปที่แดชบอร์ด
+                    {PUBLIC_NAV_LABELS.dashboard}
                   </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
                     className="mt-1 flex w-full items-center gap-2 rounded-md px-4 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
                   >
-                    ออกจากระบบ
+                    {PUBLIC_NAV_LABELS.logout}
                   </button>
                 </div>
               </div>
@@ -176,63 +177,52 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
           mobileMenuOpen ? "max-h-[420px] pb-4" : "max-h-0"
         }`}
       >
-        <div className="space-y-1 px-4 pt-2">
-          <Link
-            href="/#support"
-            className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            การดูแล
-          </Link>
-          <Link
-            href="/#resources"
-            className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            คลังฮีลใจ
-          </Link>
-          <Link
-            href="/#emergency"
-            className="block rounded-md px-3 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            เหตุฉุกเฉิน
-          </Link>
+        <div className="space-y-1 px-4 pt-4">
+          {PUBLIC_NAV_ITEMS.map((item) => (
+            <Link
+              key={item.id}
+              href={`/#${item.id}`}
+              className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {item.label}
+            </Link>
+          ))}
 
           {!isAuthenticated && (
-            <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-100 pt-4">
+            <div className="flex flex-col gap-3 pt-3">
               <Link
                 href="/?auth=login"
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-white"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-[15px] text-white"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <ClipboardCheck className="h-5 w-5" /> ทำแบบประเมิน
+                <ClipboardCheck className="h-5 w-5" /> {PUBLIC_NAV_LABELS.assessment}
               </Link>
               <Link
                 href="/?auth=login"
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-700 px-4 py-3 font-semibold text-blue-700"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-700 px-4 py-3 font-semibold text-[15px] text-blue-700"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <LogIn className="h-5 w-5" /> เข้าสู่ระบบ
+                <LogIn className="h-5 w-5" /> {PUBLIC_NAV_LABELS.login}
               </Link>
             </div>
           )}
 
           {isAuthenticated && (
-            <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-100 pt-4">
+            <div className="flex flex-col gap-3 pt-3">
               <Link
                 href="/dashboard"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-white"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-[15px] text-white"
               >
-                ไปที่แดชบอร์ด
+                {PUBLIC_NAV_LABELS.dashboard}
               </Link>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 font-semibold text-slate-700"
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 font-semibold text-[15px] text-slate-700"
               >
-                ออกจากระบบ
+                {PUBLIC_NAV_LABELS.logout}
               </button>
             </div>
           )}

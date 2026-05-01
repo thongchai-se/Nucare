@@ -1,23 +1,172 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  FileSpreadsheet,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  ShieldCheck,
+  Activity,
+  CheckCircle2,
+  Database,
+  Download,
+  Lock,
+  Server,
+  ShieldAlert,
+  UploadCloud,
   Users,
-  X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
+import api from "@/lib/axios";
+import { AdminShell } from "@/components/admin-shell";
+import { ChangePasswordForm } from "@/components/change-password-form";
+import type { Role } from "@/types/auth";
 
-export default function AdminDashboardPage() {
+type AdminRootView = "dashboard" | "audit" | "reports" | "settings" | "change-password";
+
+type ManagedStudent = {
+  id: string;
+  studentId: string;
+  name: string;
+  email: string | null;
+  status: "active" | "inactive";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type StaffUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  employeeId: string | null;
+  role: Role;
+};
+
+type AuditLogItem = {
+  id: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  description: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  actor: {
+    id: string;
+    name: string;
+    role: Role;
+  } | null;
+};
+
+type StudentsResponse = {
+  students: ManagedStudent[];
+  total: number;
+};
+
+type StaffResponse = {
+  staff: StaffUser[];
+};
+
+type AuditLogsResponse = {
+  logs: AuditLogItem[];
+};
+
+type HealthResponse = {
+  message: string;
+  ok: boolean;
+};
+
+const adminOnlyViewSet = new Set<AdminRootView>(["dashboard", "audit", "reports", "settings", "change-password"]);
+
+const roleRedirects: Partial<Record<Role, string>> = {
+  ADVISOR: "/dashboard/advisor",
+  EXECUTIVE: "/dashboard/executive",
+  INSTRUCTOR: "/dashboard/instructor",
+  MENTAL_HEALTH: "/dashboard/mental-health",
+  STUDENT: "/dashboard/student",
+};
+
+const roleBadgeMap: Record<Role, string> = {
+  ADMIN: "bg-violet-100 text-violet-700",
+  ADVISOR: "bg-amber-100 text-amber-700",
+  EXECUTIVE: "bg-cyan-100 text-cyan-700",
+  INSTRUCTOR: "bg-slate-100 text-slate-700",
+  MENTAL_HEALTH: "bg-blue-100 text-blue-700",
+  STUDENT: "bg-emerald-100 text-emerald-700",
+};
+
+const roleLabelMap: Record<Role, string> = {
+  ADMIN: "ผู้ดูแลระบบ",
+  ADVISOR: "อาจารย์ที่ปรึกษา",
+  EXECUTIVE: "ผู้บริหาร",
+  INSTRUCTOR: "อาจารย์ผู้สอน",
+  MENTAL_HEALTH: "ผู้เชี่ยวชาญ",
+  STUDENT: "นักศึกษา",
+};
+
+const formatThaiDateTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
+  ) {
+    return (error as { response?: { data?: { message?: string } } }).response?.data?.message || "เกิดข้อผิดพลาด";
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
+};
+
+const getAuditStatus = (log: AuditLogItem): "Success" | "Failed" => {
+  const haystack = `${log.action} ${log.description || ""}`.toLowerCase();
+  return haystack.includes("failed") || haystack.includes("error") ? "Failed" : "Success";
+};
+
+const getAuditTarget = (log: AuditLogItem): string => {
+  if (log.entityId && log.entityType) {
+    return `${log.entityType} • ${log.entityId}`;
+  }
+
+  if (log.entityType) {
+    return log.entityType;
+  }
+
+  return "System";
+};
+
+function AdminDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isAuthenticated, loading, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [students, setStudents] = useState<ManagedStudent[]>([]);
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [systemOnline, setSystemOnline] = useState(true);
+  const [loadingData, setLoadingData] = useState(false);
+  const [serverError, setServerError] = useState("");
+
+  const activeView = useMemo<AdminRootView>(() => {
+    const value = searchParams.get("view");
+    return value && adminOnlyViewSet.has(value as AdminRootView) ? (value as AdminRootView) : "dashboard";
+  }, [searchParams]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -26,51 +175,124 @@ export default function AdminDashboardPage() {
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {
-    if (!loading && user?.role === "EXECUTIVE") {
-      router.replace("/dashboard/executive");
+    if (loading || !user) {
       return;
     }
 
-    if (!loading && user?.role === "MENTAL_HEALTH") {
-      router.replace("/dashboard/mental-health");
-      return;
-    }
-
-    if (!loading && user?.role === "INSTRUCTOR") {
-      router.replace("/dashboard/instructor");
-      return;
-    }
-
-    if (!loading && user?.role === "ADVISOR") {
-      router.replace("/dashboard/advisor");
-      return;
-    }
-
-    if (!loading && user && user.role !== "ADMIN") {
-      router.replace("/dashboard/student");
+    if (user.role !== "ADMIN") {
+      router.replace(roleRedirects[user.role] ?? "/dashboard");
     }
   }, [loading, router, user]);
 
   useEffect(() => {
     router.prefetch("/dashboard/admin/manage-students");
+    router.prefetch("/dashboard/admin/manage-staff");
     router.prefetch("/dashboard/admin/import-students");
   }, [router]);
+
+  useEffect(() => {
+    if (loading || user?.role !== "ADMIN") {
+      return;
+    }
+
+    const loadDashboard = async () => {
+      setLoadingData(true);
+      setServerError("");
+
+      try {
+        const [studentsResponse, staffResponse, auditResponse, healthResponse] = await Promise.all([
+          api.get<StudentsResponse>("/api/admin/students"),
+          api.get<StaffResponse>("/api/admin/staff"),
+          api.get<AuditLogsResponse>("/api/admin/audit-logs?limit=60"),
+          api.get<HealthResponse>("/api/health"),
+        ]);
+
+        setStudents(studentsResponse.data.students);
+        setStaffUsers(staffResponse.data.staff);
+        setAuditLogs(auditResponse.data.logs);
+        setSystemOnline(Boolean(healthResponse.data.ok));
+      } catch (error) {
+        setServerError(getErrorMessage(error));
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    void loadDashboard();
+  }, [loading, user?.role]);
 
   const handleLogout = async () => {
     await logout();
     router.replace("/login");
   };
 
-  const identifier = user?.studentId || user?.employeeId || user?.email || "-";
-  const isAdmin = useMemo(() => user?.role === "ADMIN", [user]);
+  const filteredAuditLogs = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) {
+      return auditLogs;
+    }
 
-  const toggleSidebar = () => {
-    setSidebarOpen((prev) => !prev);
-  };
+    return auditLogs.filter((log) =>
+      [log.actor?.name || "Unknown", log.action, log.description || "", log.ipAddress || "", getAuditTarget(log)]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized)
+    );
+  }, [auditLogs, searchQuery]);
 
-  const closeSidebar = () => {
-    setSidebarOpen(false);
-  };
+  const filteredStaffUsers = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) {
+      return staffUsers;
+    }
+
+    return staffUsers.filter((item) =>
+      [item.name, item.email || "", item.employeeId || "", roleLabelMap[item.role]].join(" ").toLowerCase().includes(normalized)
+    );
+  }, [searchQuery, staffUsers]);
+
+  const activeStudentsCount = useMemo(
+    () => students.filter((student) => student.status === "active").length,
+    [students]
+  );
+
+  const abnormalEventsCount = useMemo(
+    () => auditLogs.filter((log) => getAuditStatus(log) === "Failed").length,
+    [auditLogs]
+  );
+
+  const quickStats = useMemo(
+    () => [
+      {
+        title: "นักศึกษาทั้งหมด",
+        value: students.length.toLocaleString(),
+        icon: <Users size={20} />,
+        className: "border-blue-100 bg-blue-50 text-blue-600",
+      },
+      {
+        title: "บัญชีผู้ใช้งานที่เปิดใช้",
+        value: (activeStudentsCount + staffUsers.length).toLocaleString(),
+        icon: <Activity size={20} />,
+        className: "border-emerald-100 bg-emerald-50 text-emerald-600",
+      },
+      {
+        title: "เหตุการณ์ผิดปกติใน Log",
+        value: abnormalEventsCount.toLocaleString(),
+        icon: <ShieldAlert size={20} />,
+        className: "border-red-100 bg-red-50 text-red-600",
+      },
+      {
+        title: "สถานะระบบ",
+        value: systemOnline ? "Online" : "Offline",
+        icon: <Server size={20} />,
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      },
+    ],
+    [abnormalEventsCount, activeStudentsCount, staffUsers.length, students.length, systemOnline]
+  );
+
+  const latestAuditLogs = filteredAuditLogs.slice(0, 4);
+  const staffPreview = filteredStaffUsers.slice(0, 4);
 
   if (loading) {
     return (
@@ -80,144 +302,299 @@ export default function AdminDashboardPage() {
     );
   }
 
-  if (!user || !isAdmin) {
+  if (!user || user.role !== "ADMIN") {
     return null;
   }
 
-  return (
-    <main className="min-h-screen bg-gray-50 text-gray-800 [scrollbar-gutter:stable]">
-      <div
-        className={`fixed inset-0 z-40 bg-gray-900/50 transition-opacity duration-300 lg:hidden ${
-          sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-        onClick={toggleSidebar}
-      />
-
-      <div className="flex min-h-screen overflow-x-hidden">
-        <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-64 transform flex-col bg-gray-900 text-white transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="flex h-16 shrink-0 items-center justify-between border-b border-gray-800 px-5 sm:px-6">
-            <h2 className="text-xl font-semibold tracking-wide">Admin Panel</h2>
-            <button
-              type="button"
-              className="text-gray-400 transition-colors hover:text-white lg:hidden"
-              onClick={toggleSidebar}
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-
-          <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
-            <span className="flex min-h-11 items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-medium text-white">
-              <LayoutDashboard className="h-4 w-4 shrink-0" />
-              <span className="truncate">หน้าหลัก</span>
-            </span>
-            <Link
-              href="/dashboard/admin/manage-students"
-              onClick={closeSidebar}
-              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
-            >
-              <Users className="h-4 w-4 shrink-0" />
-              <span className="truncate">จัดการข้อมูลนักศึกษา</span>
-            </Link>
-            <Link
-              href="/dashboard/admin/import-students"
-              onClick={closeSidebar}
-              className="flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-4 py-2.5 text-gray-300 transition-colors hover:border-gray-700 hover:bg-gray-800 hover:text-white"
-            >
-              <FileSpreadsheet className="h-4 w-4 shrink-0" />
-              <span className="truncate">นำเข้านักศึกษา (CSV)</span>
-            </Link>
-          </nav>
-
-          <div className="border-t border-gray-800 p-4">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-gray-700"
-            >
-              <LogOut className="h-4 w-4" />
-              ออกจากระบบ
-            </button>
-          </div>
-        </aside>
-
-        <section className="flex min-h-screen w-full flex-1 flex-col lg:w-[calc(100%-16rem)]">
-          <header className="sticky top-0 z-30 border-b border-gray-200 bg-white">
-            <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 md:px-8">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <button
-                  type="button"
-                  className="text-gray-600 transition-colors hover:text-gray-900 lg:hidden"
-                  onClick={toggleSidebar}
-                >
-                  <Menu className="h-6 w-6" />
-                </button>
-                <h1 className="truncate text-lg font-medium text-gray-800 sm:text-xl">หน้าหลักผู้ดูแลระบบ</h1>
-              </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
-                AD
-              </div>
-            </div>
-          </header>
-
-          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-4 sm:p-6 md:p-8">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">ผู้ใช้งานปัจจุบัน</h2>
-                <div className="mt-4 space-y-2 text-sm text-gray-700">
-                  <p>
-                    <span className="font-medium text-gray-900">ชื่อ:</span> {user.name}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">บทบาท:</span> {user.role}
-                  </p>
-                  <p className="break-all">
-                    <span className="font-medium text-gray-900">Identifier:</span> {identifier}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-                <div className="inline-flex items-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-blue-700">
-                  <ShieldCheck className="h-4 w-4" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Protected Route</span>
-                </div>
-                <p className="mt-4 text-sm leading-relaxed text-blue-900">
-                  หน้านี้เป็นพื้นที่สำหรับผู้ดูแลระบบที่ผ่านการยืนยันตัวตนแล้ว และใช้สำหรับดูภาพรวมการจัดการข้อมูลนักศึกษาในระบบ
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm sm:col-span-2 xl:col-span-1">
-                <h2 className="text-base font-semibold text-emerald-900">เครื่องมือผู้ดูแลระบบ</h2>
-                <p className="mt-1 text-sm text-emerald-800">
-                  จัดการข้อมูลรายบุคคล และนำเข้ารายชื่อนักศึกษาแบบกลุ่มผ่านไฟล์ CSV
-                </p>
-
-                <div className="mt-4 flex flex-col gap-2">
-                  <Link
-                    href="/dashboard/admin/manage-students"
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                  >
-                    <Users className="h-4 w-4" />
-                    จัดการข้อมูลนักศึกษา
-                  </Link>
-                  <Link
-                    href="/dashboard/admin/import-students"
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    นำเข้า CSV
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+  const DashboardView = () => (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800">แดชบอร์ดผู้ดูแลระบบ</h2>
+        <p className="mt-1 text-sm text-slate-500">ภาพรวมการทำงานของระบบ Nucare Management System และเครื่องมือดูแลข้อมูลหลัก</p>
       </div>
-    </main>
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {quickStats.map((stat) => (
+          <div key={stat.title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl border ${stat.className}`}>{stat.icon}</div>
+            <h4 className="mb-1 text-2xl font-black text-slate-800">{stat.value}</h4>
+            <p className="text-sm font-bold text-slate-700">{stat.title}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-bold text-slate-800">
+              <Lock className="h-4 w-4 text-slate-500" /> แจ้งเตือนความปลอดภัยล่าสุด
+            </h3>
+            <Link href="/dashboard/admin?view=audit" className="text-sm font-bold text-blue-600 hover:text-blue-700">
+              ดูทั้งหมด
+            </Link>
+          </div>
+          <div className="space-y-3">
+            {latestAuditLogs.length > 0 ? (
+              latestAuditLogs.map((log) => {
+                const status = getAuditStatus(log);
+                return (
+                  <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-800">{log.action}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {log.actor?.name || "Unknown"} • {formatThaiDateTime(log.createdAt)}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${
+                        status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {status}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                ยังไม่มีข้อมูล audit log
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800">บุคลากรในระบบ</h3>
+            <Link href="/dashboard/admin/manage-staff" className="text-sm font-bold text-blue-600 hover:text-blue-700">
+              ไปหน้าจัดการ
+            </Link>
+          </div>
+          <div className="space-y-3">
+            {staffPreview.map((item) => (
+              <div key={item.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-800">{item.name}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{item.employeeId || item.email || "-"}</p>
+                </div>
+                <span className={`rounded-md px-2.5 py-1 text-[10px] font-bold ${roleBadgeMap[item.role]}`}>
+                  {roleLabelMap[item.role]}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <UploadCloud size={32} />
+          </div>
+          <h3 className="mb-2 text-lg font-bold text-slate-800">อัปเดตฐานข้อมูลนักศึกษา</h3>
+          <p className="mb-6 max-w-sm text-sm text-slate-500">
+            นำเข้าข้อมูลนักศึกษาชั้นปีใหม่ หรืออัปเดตรายชื่อแบบกลุ่มผ่านไฟล์ CSV ที่ทีมทำ flow ไว้แล้ว
+          </p>
+          <Link
+            href="/dashboard/admin/import-students"
+            className="rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white shadow-md transition-colors hover:bg-blue-700"
+          >
+            ไปที่หน้าต่างนำเข้าข้อมูล
+          </Link>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center gap-2 font-bold text-slate-800">
+            <Database className="h-4 w-4 text-slate-500" />
+            ระบบพร้อมใช้งาน
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-emerald-700">
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-bold">เชื่อมต่อ API ปกติ</p>
+                <p className="text-xs">สถานะล่าสุด: {systemOnline ? "System Online" : "System Offline"}</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
+              บัญชีนักศึกษาที่เปิดใช้งานอยู่ตอนนี้ {activeStudentsCount.toLocaleString()} รายการ และบุคลากรในระบบ {staffUsers.length.toLocaleString()} รายการ
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const AuditLogView = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">บันทึกระบบ (Audit Logs)</h2>
+          <p className="mt-1 text-sm text-slate-500">ประวัติการใช้งานและการเข้าถึงข้อมูลทั้งหมดเพื่อตรวจสอบย้อนหลัง</p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          <Download size={16} /> ส่งออก Log (.csv)
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-slate-50 p-4">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="ค้นหาตาม User, IP, หรือกิจกรรม..."
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none transition focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-28" />
+              <col className="w-40" />
+              <col className="w-[18%]" />
+              <col className="w-[24%]" />
+              <col className="w-[18%]" />
+              <col className="w-32" />
+              <col className="w-28" />
+            </colgroup>
+            <thead className="border-b border-slate-200 bg-slate-50">
+              <tr>
+                <th className="p-4 font-bold text-slate-600">Log ID</th>
+                <th className="p-4 font-bold text-slate-600">วัน/เวลา</th>
+                <th className="p-4 font-bold text-slate-600">ผู้ใช้งาน</th>
+                <th className="p-4 font-bold text-slate-600">กิจกรรม</th>
+                <th className="p-4 font-bold text-slate-600">เป้าหมาย</th>
+                <th className="p-4 font-bold text-slate-600">IP Address</th>
+                <th className="p-4 font-bold text-slate-600">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredAuditLogs.map((log) => {
+                const status = getAuditStatus(log);
+                return (
+                  <tr key={log.id} className="font-mono text-xs transition-colors hover:bg-slate-50 sm:text-sm sm:font-sans">
+                    <td className="p-4 text-slate-500">{log.id}</td>
+                    <td className="p-4 text-slate-700 whitespace-nowrap">{formatThaiDateTime(log.createdAt)}</td>
+                    <td className="p-4 font-bold text-slate-800">
+                      <p className="truncate">{log.actor?.name || "Unknown"}</p>
+                    </td>
+                    <td className="p-4 text-slate-700">
+                      <p className="truncate">{log.action}</p>
+                    </td>
+                    <td className="p-4 text-slate-600">
+                      <p className="truncate">{getAuditTarget(log)}</p>
+                    </td>
+                    <td className="p-4 font-mono text-xs text-slate-500 whitespace-nowrap">{log.ipAddress || "-"}</td>
+                    <td className="p-4">
+                      <span
+                        className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${
+                          status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredAuditLogs.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-sm text-slate-500">
+                    ไม่พบบันทึกที่ตรงกับคำค้นหา
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const PlaceholderView = ({ description, title }: { description: string; title: string }) => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
+      <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+      <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  );
+
+  return (
+    <AdminShell
+      activeNav={activeView === "change-password" ? "changePassword" : activeView}
+      headerSearch={{
+        value: searchQuery,
+        onChange: setSearchQuery,
+        placeholder:
+          activeView === "audit"
+            ? "ค้นหา Log, ผู้ใช้งาน, หรือ IP..."
+            : "ค้นหา Log, ผู้ใช้งาน, หรือรหัสประจำตัว...",
+      }}
+      onLogout={handleLogout}
+      title="แดชบอร์ดผู้ดูแลระบบ"
+      userName={user.name}
+      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
+    >
+      {serverError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>
+      )}
+
+      {loadingData ? (
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-500 shadow-sm">
+            <span className="loader h-5 w-5 text-blue-600"></span>
+            กำลังโหลดข้อมูลแดชบอร์ด...
+          </div>
+        </div>
+      ) : (
+        <>
+          {activeView === "dashboard" && <DashboardView />}
+          {activeView === "audit" && <AuditLogView />}
+          {activeView === "reports" && (
+            <PlaceholderView
+              title="สถิติและรายงาน"
+              description="พื้นที่รายงานเชิงวิเคราะห์และ data export ยังอยู่ระหว่างพัฒนา รอบนี้ผมคงเมนูและโครงใหม่ให้พร้อมต่อยอดก่อน เพื่อไม่กระทบ flow จัดการผู้ใช้และนำเข้าข้อมูลที่ใช้งานอยู่แล้ว"
+            />
+          )}
+          {activeView === "change-password" && (
+            <div className="mx-auto max-w-3xl">
+              <ChangePasswordForm
+                cancelHref="/dashboard/admin?view=settings"
+                description="อัปเดตรหัสผ่านของบัญชีผู้ดูแลระบบได้จากหน้านี้โดยตรง"
+                onSuccessRedirect="/dashboard/admin?view=settings"
+                title="เปลี่ยนรหัสผ่าน"
+                tone="admin"
+              />
+            </div>
+          )}
+          {activeView === "settings" && (
+            <PlaceholderView
+              title="ตั้งค่าระบบพื้นฐาน"
+              description="พื้นที่กำหนดค่าระบบ แบบประเมิน และการแจ้งเตือน จะต่อยอดจาก shell ใหม่นี้ได้เลยโดยไม่ต้องรื้อเมนูหรือโครงสร้างอีก"
+            />
+          )}
+        </>
+      )}
+    </AdminShell>
   );
 }
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100">
+          <span className="loader h-7 w-7 text-blue-600"></span>
+        </main>
+      }
+    >
+      <AdminDashboardContent />
+    </Suspense>
+  );
+}
+
