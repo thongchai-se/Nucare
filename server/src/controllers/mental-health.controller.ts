@@ -1,4 +1,4 @@
-import { AlertStatus, ReferralStatus, Role } from "@prisma/client";
+import { AlertStatus, ReferralStatus, ReferralTarget, Role } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
@@ -26,7 +26,13 @@ const createSpecializedCareRecordSchema = z.object({
   confidentialNotes: z.string().trim().max(4000).optional(),
 });
 
-export const getMentalHealthDashboard = async (_req: Request, res: Response): Promise<void> => {
+export const getMentalHealthDashboard = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
   try {
     const [referrals, emergencyCases, alerts] = await Promise.all([
       prisma.caseReferral.findMany({
@@ -79,6 +85,7 @@ export const getMentalHealthDashboard = async (_req: Request, res: Response): Pr
       }),
       prisma.alert.findMany({
         where: {
+          recipientUserId: userId,
           status: AlertStatus.OPEN,
           OR: [
             { type: "HIGH_RISK_SCREENING" },
@@ -142,8 +149,23 @@ export const updateReferralStatus = async (req: Request, res: Response): Promise
   }
 
   try {
+    const existingReferral = await prisma.caseReferral.findFirst({
+      where: {
+        id: parsedParams.data.referralId,
+        target: ReferralTarget.COUNSELING_CENTER,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existingReferral) {
+      res.status(404).json({ message: "Referral not found" });
+      return;
+    }
+
     const referral = await prisma.caseReferral.update({
-      where: { id: parsedParams.data.referralId },
+      where: { id: existingReferral.id },
       data: { status: parsedBody.data.status },
     });
 
@@ -186,11 +208,51 @@ export const createSpecializedCareRecord = async (req: Request, res: Response): 
   }
 
   try {
+    const student = await prisma.user.findFirst({
+      where: {
+        id: parsed.data.studentId,
+        role: Role.STUDENT,
+        isActive: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!student) {
+      res.status(404).json({ message: "Student not found" });
+      return;
+    }
+
+    const referralId = parsed.data.referralId?.trim() || null;
+    if (referralId) {
+      const referral = await prisma.caseReferral.findFirst({
+        where: {
+          id: referralId,
+          target: ReferralTarget.COUNSELING_CENTER,
+        },
+        select: {
+          id: true,
+          studentId: true,
+        },
+      });
+
+      if (!referral) {
+        res.status(404).json({ message: "Referral not found" });
+        return;
+      }
+
+      if (referral.studentId !== student.id) {
+        res.status(400).json({ message: "Referral does not belong to this student" });
+        return;
+      }
+    }
+
     const record = await prisma.specializedCareRecord.create({
       data: {
-        studentId: parsed.data.studentId,
+        studentId: student.id,
         mentalHealthUserId: userId,
-        referralId: parsed.data.referralId || null,
+        referralId,
         sessionDate,
         summary: parsed.data.summary,
         interventionPlan: parsed.data.interventionPlan,
@@ -231,8 +293,20 @@ export const resolveEmergencyCase = async (req: Request, res: Response): Promise
   }
 
   try {
-    const emergencyCase = await prisma.emergencyCase.update({
+    const existingCase = await prisma.emergencyCase.findUnique({
       where: { id: parsedParams.data.caseId },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existingCase) {
+      res.status(404).json({ message: "Emergency case not found" });
+      return;
+    }
+
+    const emergencyCase = await prisma.emergencyCase.update({
+      where: { id: existingCase.id },
       data: {
         status: "RESOLVED",
         resolvedAt: new Date(),

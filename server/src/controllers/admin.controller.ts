@@ -86,6 +86,10 @@ const listUsersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
 });
 
+const listAuditLogsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
 const studentStatusSchema = z.enum(["active", "inactive"]);
 const managedRoleSchema = z.nativeEnum(Role);
 
@@ -249,6 +253,14 @@ const parseManagedUserPayload = (input: z.infer<typeof managedUserSchema>) => {
     isActive: input.status === "active",
   };
 };
+
+const countActiveAdmins = async (): Promise<number> =>
+  prisma.user.count({
+    where: {
+      role: Role.ADMIN,
+      isActive: true,
+    },
+  });
 
 const getStudentDependencyCount = async (studentUserId: string): Promise<number> => {
   const [
@@ -715,12 +727,31 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       },
       select: {
         id: true,
+        role: true,
+        isActive: true,
       },
     });
 
     if (!existing) {
       res.status(404).json({ message: "User not found" });
       return;
+    }
+
+    if (actorUserId === userId && (payload.role !== Role.ADMIN || !payload.isActive)) {
+      res.status(409).json({ message: "Cannot demote or deactivate the current admin account" });
+      return;
+    }
+
+    if (
+      existing.role === Role.ADMIN &&
+      existing.isActive &&
+      (payload.role !== Role.ADMIN || !payload.isActive)
+    ) {
+      const activeAdminCount = await countActiveAdmins();
+      if (activeAdminCount <= 1) {
+        res.status(409).json({ message: "At least one active admin account is required" });
+        return;
+      }
     }
 
     const conflict = await prisma.user.findFirst({
@@ -863,6 +894,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       select: {
         id: true,
         role: true,
+        isActive: true,
         studentId: true,
         employeeId: true,
       },
@@ -871,6 +903,14 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     if (!existing) {
       res.status(404).json({ message: "User not found" });
       return;
+    }
+
+    if (existing.role === Role.ADMIN && existing.isActive) {
+      const activeAdminCount = await countActiveAdmins();
+      if (activeAdminCount <= 1) {
+        res.status(409).json({ message: "At least one active admin account is required" });
+        return;
+      }
     }
 
     await prisma.user.delete({
@@ -1334,7 +1374,16 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
 };
 
 export const listAuditLogs = async (req: Request, res: Response): Promise<void> => {
-  const limit = Math.min(Number.parseInt(String(req.query.limit || "100"), 10) || 100, 200);
+  const parsed = listAuditLogsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid query",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const limit = parsed.data.limit ?? 100;
 
   try {
     const auditLogs = await prisma.auditLog.findMany({

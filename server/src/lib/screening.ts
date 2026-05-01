@@ -2,6 +2,7 @@ import {
   AlertPriority,
   AlertType,
   AssessmentInstrument,
+  EmergencyCaseStatus,
   RiskLevel,
   Role,
 } from "@prisma/client";
@@ -107,11 +108,25 @@ export const createScreeningAlerts = async (studentId: string, totalScore: numbe
       });
     }
 
-    await prisma.emergencyCase.create({
-      data: {
+    const existingOpenCase = await prisma.emergencyCase.findFirst({
+      where: {
         studentId,
-        summary: "Auto-open case จากผลคัดกรองความเสี่ยงสูง",
+        status: {
+          in: [EmergencyCaseStatus.OPEN, EmergencyCaseStatus.IN_PROGRESS],
+        },
+      },
+      select: {
+        id: true,
       },
     });
+
+    if (!existingOpenCase) {
+      await prisma.emergencyCase.create({
+        data: {
+          studentId,
+          summary: "Auto-open case จากผลคัดกรองความเสี่ยงสูง",
+        },
+      });
+    }
   }
 };

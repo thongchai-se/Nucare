@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
+import { prisma } from "../lib/prisma";
 
 export interface AuthTokenPayload extends JwtPayload {
   userId: string;
@@ -23,7 +24,11 @@ const getAccessSecret = (): string => {
   return secret;
 };
 
-export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticateToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const token = req.cookies?.accessToken as string | undefined;
 
   if (!token) {
@@ -31,12 +36,43 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  let decoded: AuthTokenPayload;
   try {
-    const decoded = jwt.verify(token, getAccessSecret()) as AuthTokenPayload;
-    req.user = decoded;
-    next();
+    decoded = jwt.verify(token, getAccessSecret()) as AuthTokenPayload;
   } catch (_error) {
     res.status(401).json({ message: "Invalid or expired access token" });
+    return;
+  }
+
+  if (!decoded.userId) {
+    res.status(401).json({ message: "Invalid or expired access token" });
+    return;
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user?.isActive) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    req.user = {
+      ...decoded,
+      userId: user.id,
+      role: user.role,
+    };
+    next();
+  } catch (error) {
+    console.error("Authenticate token error:", error);
+    res.status(500).json({ message: "Failed to authenticate request" });
   }
 };
 

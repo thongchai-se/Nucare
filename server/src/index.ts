@@ -12,14 +12,28 @@ import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import studentRoutes from "./routes/student.routes";
 
+dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
+const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
 const trustProxyHops = Math.max(
   0,
-  Number.parseInt(process.env.TRUST_PROXY_HOPS || "1", 10) || 1
+  parseNonNegativeInt(process.env.TRUST_PROXY_HOPS, 0)
 );
+const jsonBodyLimit = process.env.JSON_BODY_LIMIT || "2mb";
 const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim())
@@ -74,7 +88,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: jsonBodyLimit }));
 app.use(cookieParser());
 
 app.get("/", (_req: Request, res: Response) => {
@@ -107,8 +121,30 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
+const assertRequiredConfiguration = (): void => {
+  const requiredEnvNames = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
+  const missingEnvNames = requiredEnvNames.filter((name) => !process.env[name]?.trim());
+
+  if (missingEnvNames.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnvNames.join(", ")}`);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    const weakSecretNames = requiredEnvNames.filter(
+      (name) => (process.env[name]?.trim().length || 0) < 32
+    );
+
+    if (weakSecretNames.length > 0) {
+      throw new Error(
+        `Production JWT secrets must be at least 32 characters: ${weakSecretNames.join(", ")}`
+      );
+    }
+  }
+};
+
 const startServer = async (): Promise<void> => {
   const maxRetries = 5;
+  assertRequiredConfiguration();
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
@@ -139,7 +175,10 @@ const startServer = async (): Promise<void> => {
   process.exit(1);
 };
 
-void startServer();
+void startServer().catch((error) => {
+  console.error("Server startup failed.", error);
+  process.exit(1);
+});
 
 process.on("SIGINT", async () => {
   await prisma.$disconnect();

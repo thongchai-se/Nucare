@@ -6,6 +6,7 @@ import {
   logout,
   me,
   resetPassword,
+  session,
   validateResetPasswordToken,
   refresh,
 } from "../controllers/auth.controller";
@@ -26,6 +27,7 @@ router.get("/reset-password/validate", validateResetPasswordToken);
 router.post("/reset-password", resetPasswordRateLimit, resetPassword);
 router.post("/change-password", authenticateToken, changePasswordRateLimit, changePassword);
 router.post("/logout", logout);
+router.get("/session", session);
 router.get("/me", authenticateToken, me);
 router.post("/refresh", refreshRateLimit, refresh);
 

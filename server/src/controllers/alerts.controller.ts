@@ -57,6 +57,11 @@ export const acknowledgeAlert = async (req: Request, res: Response): Promise<voi
       },
     });
 
+    if (alert.count === 0) {
+      res.status(404).json({ message: "Alert not found" });
+      return;
+    }
+
     await writeAuditLog({
       actorUserId: userId,
       action: "alerts.acknowledge",

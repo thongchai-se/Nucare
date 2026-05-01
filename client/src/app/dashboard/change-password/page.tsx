@@ -417,13 +417,6 @@ function StudentChangePasswordView({
                   <h2 className="mb-1 text-2xl font-bold text-slate-800 sm:text-3xl">{user.name}</h2>
                   <p className="font-medium text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
                 </div>
-                <Link
-                  href="/dashboard/student/profile"
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-5 py-2.5 font-bold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  กลับไปหน้าประวัติ
-                </Link>
               </div>
 
               <div className="grid grid-cols-1 gap-8 sm:gap-12 md:grid-cols-2">
@@ -774,12 +767,6 @@ function StudentProfileStyledChangePasswordView({
                   <h2 className="mb-1 text-2xl font-bold text-slate-800 sm:text-3xl">{user.name}</h2>
                   <p className="font-medium text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
                 </div>
-                <Link
-                  href="/dashboard/student/profile"
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-5 py-2.5 font-bold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 sm:w-auto"
-                >
-                  <ArrowLeft className="h-4 w-4" /> กลับไปหน้าประวัติ
-                </Link>
               </div>
 
               <div className="grid grid-cols-1 gap-8 sm:gap-12 md:grid-cols-2">

@@ -169,7 +169,10 @@ const createAccessToken = (user: { id: string; role: Role }): string =>
   jwt.sign({ userId: user.id, role: user.role }, getAccessSecret(), { expiresIn: "15m" });
 
 const createRefreshToken = (user: { id: string; role: Role }): string =>
-  jwt.sign({ userId: user.id, role: user.role }, getRefreshSecret(), { expiresIn: "7d" });
+  jwt.sign({ userId: user.id, role: user.role }, getRefreshSecret(), {
+    expiresIn: "7d",
+    jwtid: randomBytes(16).toString("hex"),
+  });
 
 const setAuthCookies = (res: Response, accessToken: string, refreshToken: string): void => {
   res.cookie(ACCESS_TOKEN_COOKIE, accessToken, buildCookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
@@ -218,6 +221,23 @@ const sanitizeUser = (user: {
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
+
+const findActiveUserForSession = async (userId: string) =>
+  prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      studentId: true,
+      employeeId: true,
+      email: true,
+      role: true,
+      image: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 
 const findUserByIdentifier = async (identifier: string) => {
   const normalized = identifier.trim();
@@ -546,6 +566,88 @@ export const me = async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     console.error("Me error:", error);
     res.status(500).json({ message: "Failed to fetch current user" });
+  }
+};
+
+export const session = async (req: Request, res: Response): Promise<void> => {
+  const accessToken = req.cookies?.[ACCESS_TOKEN_COOKIE] as string | undefined;
+  const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as string | undefined;
+
+  try {
+    if (accessToken) {
+      try {
+        const decoded = jwt.verify(accessToken, getAccessSecret()) as AuthTokenPayload;
+        if (decoded.userId) {
+          const user = await findActiveUserForSession(decoded.userId);
+          if (user?.isActive) {
+            res.status(200).json({ user: sanitizeUser(user) });
+            return;
+          }
+        }
+      } catch {
+        // Fall through to the refresh-token path below.
+      }
+    }
+
+    if (!refreshToken) {
+      clearAuthCookies(res);
+      res.status(200).json({ user: null });
+      return;
+    }
+
+    let decodedRefreshToken: AuthTokenPayload;
+    try {
+      decodedRefreshToken = jwt.verify(refreshToken, getRefreshSecret()) as AuthTokenPayload;
+    } catch {
+      clearAuthCookies(res);
+      res.status(200).json({ user: null });
+      return;
+    }
+
+    const hashedRefreshToken = hashToken(refreshToken);
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: hashedRefreshToken },
+    });
+
+    if (
+      !storedToken ||
+      storedToken.expiresAt.getTime() < Date.now() ||
+      storedToken.userId !== decodedRefreshToken.userId
+    ) {
+      if (storedToken) {
+        await prisma.refreshToken.deleteMany({ where: { token: hashedRefreshToken } });
+      }
+      clearAuthCookies(res);
+      res.status(200).json({ user: null });
+      return;
+    }
+
+    const user = await findActiveUserForSession(decodedRefreshToken.userId);
+    if (!user?.isActive) {
+      await prisma.refreshToken.deleteMany({ where: { token: hashedRefreshToken } });
+      clearAuthCookies(res);
+      res.status(200).json({ user: null });
+      return;
+    }
+
+    await prisma.refreshToken.deleteMany({ where: { token: hashedRefreshToken } });
+
+    const newAccessToken = createAccessToken(user);
+    const newRefreshToken = createRefreshToken(user);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: hashToken(newRefreshToken),
+        userId: user.id,
+        expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+      },
+    });
+
+    setAuthCookies(res, newAccessToken, newRefreshToken);
+    res.status(200).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error("Session error:", error);
+    res.status(500).json({ message: "Failed to check session" });
   }
 };
 

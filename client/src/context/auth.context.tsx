@@ -31,8 +31,8 @@ const getErrorMessage = (error: unknown): string => {
   return axiosError.response?.data?.message || "เกิดข้อผิดพลาดในการยืนยันตัวตน";
 };
 
-const getMe = async (): Promise<User> => {
-  const response = await api.get<{ user: User }>("/api/auth/me");
+const getSessionUser = async (): Promise<User | null> => {
+  const response = await api.get<{ user: User | null }>("/api/auth/session");
   return response.data.user;
 };
 
@@ -42,17 +42,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAuth = useCallback(async () => {
     try {
-      const currentUser = await getMe();
+      const currentUser = await getSessionUser();
       setUser(currentUser);
-      return;
     } catch {
-      try {
-        await api.post("/api/auth/refresh");
-        const refreshedUser = await getMe();
-        setUser(refreshedUser);
-      } catch {
-        setUser(null);
-      }
+      setUser(null);
     }
   }, []);
 
