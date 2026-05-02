@@ -1,0 +1,106 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nucare-db-prod
+    environment:
+      POSTGRES_DB: ${NUCARE_POSTGRES_DB:?NUCARE_POSTGRES_DB is required}
+      POSTGRES_USER: ${NUCARE_POSTGRES_USER:?NUCARE_POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+    restart: unless-stopped
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: nucare-server-prod
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL_FILE: /run/secrets/database_url
+      JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
+      JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+      CLIENT_ORIGIN: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
+      TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-1}
+      JSON_BODY_LIMIT: ${NUCARE_JSON_BODY_LIMIT:-2mb}
+      PASSWORD_RESET_TOKEN_EXPIRES_MINUTES: ${NUCARE_PASSWORD_RESET_TOKEN_EXPIRES_MINUTES:-5}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${NUCARE_AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      AUTH_RATE_LIMIT_MAX: ${NUCARE_AUTH_RATE_LIMIT_MAX:-10}
+      ASSESSMENT_RATE_LIMIT_WINDOW_MS: ${NUCARE_ASSESSMENT_RATE_LIMIT_WINDOW_MS:-3600000}
+      ASSESSMENT_RATE_LIMIT_MAX: ${NUCARE_ASSESSMENT_RATE_LIMIT_MAX:-30}
+      SOS_RATE_LIMIT_WINDOW_MS: ${NUCARE_SOS_RATE_LIMIT_WINDOW_MS:-600000}
+      SOS_RATE_LIMIT_MAX: ${NUCARE_SOS_RATE_LIMIT_MAX:-3}
+      STUDENT_IMPORT_BCRYPT_ROUNDS: ${NUCARE_STUDENT_IMPORT_BCRYPT_ROUNDS:-12}
+      STUDENT_IMPORT_CONCURRENCY: ${NUCARE_STUDENT_IMPORT_CONCURRENCY:-4}
+      SMTP_HOST: ${NUCARE_SMTP_HOST:?NUCARE_SMTP_HOST is required}
+      SMTP_PORT: ${NUCARE_SMTP_PORT:-587}
+      SMTP_SECURE: ${NUCARE_SMTP_SECURE:-true}
+      SMTP_USER: ${NUCARE_SMTP_USER:?NUCARE_SMTP_USER is required}
+      SMTP_PASS_FILE: /run/secrets/smtp_password
+      SMTP_FROM: ${NUCARE_SMTP_FROM:-}
+      ENABLE_DEFAULT_USER_SEED: ${NUCARE_ENABLE_DEFAULT_USER_SEED:-false}
+      ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION: ${NUCARE_ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION:-false}
+    networks:
+      - edge
+      - backend
+    ports:
+      - "${NUCARE_SERVER_PORT:-5000}:5000"
+    restart: unless-stopped
+    secrets:
+      - database_url
+      - jwt_access_secret
+      - jwt_refresh_secret
+      - smtp_password
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NUCARE_PUBLIC_API_ORIGIN:?NUCARE_PUBLIC_API_ORIGIN is required}
+        NEXT_PUBLIC_SITE_URL: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
+    container_name: nucare-client-prod
+    depends_on:
+      - server
+    networks:
+      - edge
+    ports:
+      - "${NUCARE_CLIENT_PORT:-3000}:3000"
+    restart: unless-stopped
+
+networks:
+  edge:
+    name: nucare_edge
+  backend:
+    internal: true
+    name: nucare_backend
+
+secrets:
+  postgres_password:
+    file: ${NUCARE_POSTGRES_PASSWORD_SECRET_FILE:?NUCARE_POSTGRES_PASSWORD_SECRET_FILE is required}
+  database_url:
+    file: ${NUCARE_DATABASE_URL_SECRET_FILE:?NUCARE_DATABASE_URL_SECRET_FILE is required}
+  jwt_access_secret:
+    file: ${NUCARE_JWT_ACCESS_SECRET_FILE:?NUCARE_JWT_ACCESS_SECRET_FILE is required}
+  jwt_refresh_secret:
+    file: ${NUCARE_JWT_REFRESH_SECRET_FILE:?NUCARE_JWT_REFRESH_SECRET_FILE is required}
+  smtp_password:
+    file: ${NUCARE_SMTP_PASSWORD_SECRET_FILE:?NUCARE_SMTP_PASSWORD_SECRET_FILE is required}
+
+volumes:
+  postgres_data:

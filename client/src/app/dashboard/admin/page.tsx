@@ -101,6 +101,72 @@ const roleLabelMap: Record<Role, string> = {
   STUDENT: "นักศึกษา",
 };
 
+const auditActionLabelMap: Record<string, string> = {
+  "auth.login.success": "เข้าสู่ระบบสำเร็จ",
+  "auth.login.failed": "เข้าสู่ระบบไม่สำเร็จ",
+  "auth.logout": "ออกจากระบบ",
+  "auth.password-reset.request": "ขอรีเซ็ตรหัสผ่าน",
+  "auth.password-reset.complete": "รีเซ็ตรหัสผ่านสำเร็จ",
+  "auth.password-change": "เปลี่ยนรหัสผ่านสำเร็จ",
+  "auth.password-change.failed": "เปลี่ยนรหัสผ่านไม่สำเร็จ",
+  "admin.student.create": "สร้างบัญชีนักศึกษา",
+  "admin.user.create": "สร้างบัญชีบุคลากร",
+  "admin.student.update": "แก้ไขบัญชีนักศึกษา",
+  "admin.user.update": "แก้ไขบัญชีบุคลากร",
+  "admin.student.delete": "ลบบัญชีนักศึกษา",
+  "admin.user.delete": "ลบบัญชีบุคลากร",
+  "admin.student.import": "นำเข้าข้อมูลนักศึกษา",
+  "admin.advisor-assignment.assign": "มอบหมายอาจารย์ที่ปรึกษา",
+  "advisor.student-history.view": "เปิดดูประวัตินักศึกษา",
+  "advisor.referral.create": "สร้างรายการส่งต่อ",
+  "alerts.acknowledge": "รับทราบการแจ้งเตือน",
+  "instructor.behavior-record.create": "เพิ่มบันทึกพฤติกรรม",
+  "mental-health.referral.update-status": "อัปเดตสถานะการส่งต่อ",
+  "mental-health.specialized-care.create": "เพิ่มบันทึกการดูแลเฉพาะทาง",
+  "mental-health.emergency.resolve": "ปิดเคสฉุกเฉิน",
+  "student.assessment.submit": "ส่งแบบประเมิน",
+  "student.sos.create": "แจ้งเหตุฉุกเฉิน",
+};
+
+const auditActionDetailMap: Record<string, string> = {
+  "auth.login.success": "สร้างเซสชันเข้าสู่ระบบใหม่ให้ผู้ใช้งาน",
+  "auth.login.failed": "การยืนยันตัวตนไม่ผ่านหรือบัญชีไม่พร้อมใช้งาน",
+  "auth.logout": "สิ้นสุดเซสชันของผู้ใช้งาน",
+  "auth.password-reset.request": "บันทึกคำขอสำหรับตั้งรหัสผ่านใหม่",
+  "auth.password-reset.complete": "ยืนยันการตั้งรหัสผ่านใหม่เรียบร้อย",
+  "auth.password-change": "อัปเดตรหัสผ่านและออกโทเค็นการใช้งานใหม่",
+  "auth.password-change.failed": "ปฏิเสธการเปลี่ยนรหัสผ่านจากข้อมูลเดิมไม่ถูกต้อง",
+  "admin.student.create": "เพิ่มบัญชีนักศึกษาใหม่เข้าสู่ระบบ",
+  "admin.user.create": "เพิ่มบัญชีบุคลากรใหม่เข้าสู่ระบบ",
+  "admin.student.update": "ปรับปรุงข้อมูลนักศึกษาในระบบ",
+  "admin.user.update": "ปรับปรุงข้อมูลบุคลากรในระบบ",
+  "admin.student.delete": "ลบบัญชีนักศึกษาออกจากระบบ",
+  "admin.user.delete": "ลบบัญชีบุคลากรออกจากระบบ",
+  "admin.student.import": "นำเข้าข้อมูลนักศึกษาแบบกลุ่มจากไฟล์",
+  "admin.advisor-assignment.assign": "บันทึกการจับคู่นักศึกษากับอาจารย์ที่ปรึกษา",
+  "advisor.student-history.view": "เข้าถึงหน้าประวัติและข้อมูลย้อนหลังของนักศึกษา",
+  "advisor.referral.create": "สร้างคำขอส่งต่อไปยังหน่วยงานที่เกี่ยวข้อง",
+  "alerts.acknowledge": "ผู้ใช้งานรับทราบเหตุแจ้งเตือนแล้ว",
+  "instructor.behavior-record.create": "สร้างรายการบันทึกพฤติกรรมใหม่",
+  "mental-health.referral.update-status": "อัปเดตสถานะการติดตามเคสส่งต่อ",
+  "mental-health.specialized-care.create": "เพิ่มข้อมูลการดูแลเฉพาะทางในระบบ",
+  "mental-health.emergency.resolve": "ปิดเคสฉุกเฉินหลังดำเนินการแล้ว",
+  "student.assessment.submit": "นักศึกษาส่งแบบประเมินเข้าระบบ",
+  "student.sos.create": "สร้างเหตุฉุกเฉินเพื่อขอความช่วยเหลือ",
+};
+
+const auditEntityLabelMap: Record<string, string> = {
+  AuthSession: "เซสชันเข้าสู่ระบบ",
+  User: "บัญชีผู้ใช้งาน",
+  Alert: "การแจ้งเตือน",
+  StudentAssessment: "แบบประเมินนักศึกษา",
+  EmergencyCase: "เคสฉุกเฉิน",
+  CaseReferral: "รายการส่งต่อ",
+  BehaviorRecord: "บันทึกพฤติกรรม",
+  SpecializedCareRecord: "บันทึกการดูแลเฉพาะทาง",
+  StudentAdvisorAssignment: "การมอบหมายอาจารย์ที่ปรึกษา",
+};
+
 const formatThaiDateTime = (value: string): string => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -111,6 +177,31 @@ const formatThaiDateTime = (value: string): string => {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const formatThaiDate = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+};
+
+const formatThaiTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("th-TH", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
@@ -149,6 +240,54 @@ const getAuditTarget = (log: AuditLogItem): string => {
 
   return "System";
 };
+
+const getAuditStatusLabel = (status: "Success" | "Failed"): string => (status === "Success" ? "สำเร็จ" : "ไม่สำเร็จ");
+
+const getAuditActionLabel = (action: string): string => auditActionLabelMap[action] ?? action;
+
+const getAuditActionDetail = (log: AuditLogItem): string =>
+  auditActionDetailMap[log.action] ?? log.description ?? "กิจกรรมภายในระบบ";
+
+const getAuditTargetLabel = (log: AuditLogItem): string => {
+  if (log.entityType) {
+    return auditEntityLabelMap[log.entityType] ?? log.entityType;
+  }
+
+  return "ระบบ";
+};
+
+const getAuditTargetReference = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (value.length <= 16) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
+};
+
+const getAuditActorName = (log: AuditLogItem): string => log.actor?.name || "ระบบ";
+
+const getAuditSearchText = (log: AuditLogItem): string =>
+  [
+    log.id,
+    getAuditActorName(log),
+    log.actor?.role ? roleLabelMap[log.actor.role] : "",
+    log.action,
+    getAuditActionLabel(log.action),
+    getAuditActionDetail(log),
+    log.description || "",
+    log.ipAddress || "",
+    log.entityType || "",
+    getAuditTarget(log),
+    getAuditTargetLabel(log),
+    log.entityId || "",
+    getAuditTargetReference(log.entityId) || "",
+  ]
+    .join(" ")
+    .toLowerCase();
 
 function AdminDashboardContent() {
   const router = useRouter();
@@ -232,12 +371,7 @@ function AdminDashboardContent() {
       return auditLogs;
     }
 
-    return auditLogs.filter((log) =>
-      [log.actor?.name || "Unknown", log.action, log.description || "", log.ipAddress || "", getAuditTarget(log)]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized)
-    );
+    return auditLogs.filter((log) => getAuditSearchText(log).includes(normalized));
   }, [auditLogs, searchQuery]);
 
   const filteredStaffUsers = useMemo(() => {
@@ -340,17 +474,18 @@ function AdminDashboardContent() {
                 return (
                   <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-800">{log.action}</p>
+                      <p className="truncate text-sm font-bold text-slate-800">{getAuditActionLabel(log.action)}</p>
                       <p className="mt-1 truncate text-xs text-slate-500">
-                        {log.actor?.name || "Unknown"} • {formatThaiDateTime(log.createdAt)}
+                        {getAuditActorName(log)} • {getAuditTargetLabel(log)}
                       </p>
+                      <p className="mt-1 text-xs text-slate-400">{formatThaiDateTime(log.createdAt)}</p>
                     </div>
                     <span
                       className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${
                         status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                       }`}
                     >
-                      {status}
+                      {getAuditStatusLabel(status)}
                     </span>
                   </div>
                 );
@@ -453,15 +588,15 @@ function AdminDashboardContent() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
             <colgroup>
-              <col className="w-28" />
-              <col className="w-40" />
-              <col className="w-[18%]" />
-              <col className="w-[24%]" />
-              <col className="w-[18%]" />
               <col className="w-32" />
+              <col className="w-36" />
+              <col className="w-[18%]" />
+              <col className="w-[26%]" />
+              <col className="w-[20%]" />
               <col className="w-28" />
+              <col className="w-24" />
             </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
@@ -478,26 +613,41 @@ function AdminDashboardContent() {
               {filteredAuditLogs.map((log) => {
                 const status = getAuditStatus(log);
                 return (
-                  <tr key={log.id} className="font-mono text-xs transition-colors hover:bg-slate-50 sm:text-sm sm:font-sans">
-                    <td className="p-4 text-slate-500">{log.id}</td>
-                    <td className="p-4 text-slate-700 whitespace-nowrap">{formatThaiDateTime(log.createdAt)}</td>
-                    <td className="p-4 font-bold text-slate-800">
-                      <p className="truncate">{log.actor?.name || "Unknown"}</p>
+                  <tr key={log.id} className="transition-colors hover:bg-slate-50">
+                    <td className="p-4 align-top">
+                      <p className="font-mono text-xs leading-5 text-slate-600 break-all">
+                        {log.id}
+                      </p>
                     </td>
-                    <td className="p-4 text-slate-700">
-                      <p className="truncate">{log.action}</p>
+                    <td className="p-4 align-top text-slate-700">
+                      <p className="font-medium">{formatThaiDate(log.createdAt)}</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatThaiTime(log.createdAt)}</p>
                     </td>
-                    <td className="p-4 text-slate-600">
-                      <p className="truncate">{getAuditTarget(log)}</p>
+                    <td className="p-4 align-top text-slate-800">
+                      <p className="font-bold break-words">{getAuditActorName(log)}</p>
+                      <p className="mt-1 text-xs text-slate-500">{log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ"}</p>
                     </td>
-                    <td className="p-4 font-mono text-xs text-slate-500 whitespace-nowrap">{log.ipAddress || "-"}</td>
-                    <td className="p-4">
+                    <td className="p-4 align-top text-slate-700">
+                      <p className="font-semibold text-slate-800">{getAuditActionLabel(log.action)}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{getAuditActionDetail(log)}</p>
+                      <p className="mt-1 font-mono text-[11px] leading-5 text-slate-400 break-all">{log.action}</p>
+                    </td>
+                    <td className="p-4 align-top text-slate-600">
+                      <p className="font-medium text-slate-700">{getAuditTargetLabel(log)}</p>
+                      <p className="mt-1 font-mono text-xs leading-5 text-slate-500 break-all">
+                        {log.entityId || "-"}
+                      </p>
+                    </td>
+                    <td className="p-4 align-top">
+                      <p className="font-mono text-xs leading-5 text-slate-600 break-all">{log.ipAddress || "-"}</p>
+                    </td>
+                    <td className="p-4 align-top">
                       <span
-                        className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${
                           status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                         }`}
                       >
-                        {status}
+                        {getAuditStatusLabel(status)}
                       </span>
                     </td>
                   </tr>

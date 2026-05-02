@@ -579,7 +579,7 @@ export default function ManageStaffPage() {
                 const isDeleting = deletingId === managedUser.id;
                 return (
                   <div key={managedUser.id} className="min-h-[152px] space-y-3 px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <p className="text-xs text-slate-500">ลำดับที่ {startItemIndex + index + 1}</p>
                         <p className="mt-0.5 font-medium text-slate-900">{managedUser.name}</p>
@@ -600,13 +600,17 @@ export default function ManageStaffPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${managedUser.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
                         <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${managedUser.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
                         {managedUser.status === "active" ? "Active" : "Inactive"}
                       </span>
                       <div className="flex gap-4">
-                        <button type="button" onClick={() => openEditModal(managedUser)} className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(managedUser)}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                        >
                           แก้ไข
                         </button>
                         <button
@@ -625,15 +629,15 @@ export default function ManageStaffPage() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[980px] table-fixed text-left text-sm">
+              <table className="w-full min-w-[1040px] table-fixed text-left text-sm">
                 <colgroup>
                   <col className="w-20" />
-                  <col className="w-[22%]" />
+                  <col className="w-[20%]" />
                   <col className="w-[16%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[22%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[20%]" />
                   <col className="w-[12%]" />
-                  <col className="w-[10%]" />
+                  <col className="w-44" />
                 </colgroup>
                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                   <tr>
@@ -679,7 +683,11 @@ export default function ManageStaffPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button type="button" onClick={() => openEditModal(managedUser)} className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-800">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(managedUser)}
+                            className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-800"
+                          >
                             แก้ไข
                           </button>
                           <button

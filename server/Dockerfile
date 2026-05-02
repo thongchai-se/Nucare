@@ -18,4 +18,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
 EXPOSE 5000
-CMD ["sh", "-c", "npx prisma db push && node dist/index.js"]
+CMD ["sh", "-c", "if [ -n \"$DATABASE_URL_FILE\" ] && [ -f \"$DATABASE_URL_FILE\" ]; then export DATABASE_URL=\"$(cat \"$DATABASE_URL_FILE\")\"; fi; npx prisma db push && node dist/index.js"]

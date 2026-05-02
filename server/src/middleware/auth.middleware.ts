@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
+import { requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
 
 export interface AuthTokenPayload extends JwtPayload {
@@ -17,11 +18,7 @@ declare global {
 }
 
 const getAccessSecret = (): string => {
-  const secret = process.env.JWT_ACCESS_SECRET;
-  if (!secret) {
-    throw new Error("JWT_ACCESS_SECRET is not set");
-  }
-  return secret;
+  return requireEnv("JWT_ACCESS_SECRET");
 };
 
 export const authenticateToken = async (

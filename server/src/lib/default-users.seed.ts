@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { readEnv } from "./env";
 
 type SeedUser = {
   name: string;
@@ -62,20 +63,20 @@ const parseBoolean = (value: string | undefined): boolean => {
 };
 
 const shouldSeedDefaultUsers = (): boolean => {
-  const explicitlyEnabled = parseBoolean(process.env.ENABLE_DEFAULT_USER_SEED);
+  const explicitlyEnabled = parseBoolean(readEnv("ENABLE_DEFAULT_USER_SEED"));
   if (!explicitlyEnabled) {
     return false;
   }
 
   if (process.env.NODE_ENV === "production") {
-    return parseBoolean(process.env.ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION);
+    return parseBoolean(readEnv("ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION"));
   }
 
   return true;
 };
 
 const getDefaultSeedPassword = (): string => {
-  const password = process.env.DEFAULT_SEED_PASSWORD?.trim();
+  const password = readEnv("DEFAULT_SEED_PASSWORD");
   if (!password || password.length < MINIMUM_SEED_PASSWORD_LENGTH) {
     throw new Error(
       `DEFAULT_SEED_PASSWORD must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long when ENABLE_DEFAULT_USER_SEED is enabled`

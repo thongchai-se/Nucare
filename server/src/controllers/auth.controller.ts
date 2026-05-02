@@ -5,6 +5,8 @@ import { CookieOptions, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import { z } from "zod";
+import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { readEnv, requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
 import { AuthTokenPayload } from "../middleware/auth.middleware";
 
@@ -70,31 +72,21 @@ const changePasswordSchema = z
   });
 
 const getAccessSecret = (): string => {
-  const secret = process.env.JWT_ACCESS_SECRET;
-  if (!secret) {
-    throw new Error("JWT_ACCESS_SECRET is not set");
-  }
-
-  return secret;
+  return requireEnv("JWT_ACCESS_SECRET");
 };
 
 const getRefreshSecret = (): string => {
-  const secret = process.env.JWT_REFRESH_SECRET;
-  if (!secret) {
-    throw new Error("JWT_REFRESH_SECRET is not set");
-  }
-
-  return secret;
+  return requireEnv("JWT_REFRESH_SECRET");
 };
 
 const getClientOrigin = (): string =>
-  (process.env.CLIENT_ORIGIN || "http://localhost:3000")
+  (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
     .split(",")
     .map((origin) => origin.trim())
     .find(Boolean) || "http://localhost:3000";
 
 const getPasswordResetExpiryMinutes = (): number => {
-  const configured = Number(process.env.PASSWORD_RESET_TOKEN_EXPIRES_MINUTES || "30");
+  const configured = Number(readEnv("PASSWORD_RESET_TOKEN_EXPIRES_MINUTES") || "30");
   if (Number.isFinite(configured) && configured > 0) {
     return configured;
   }
@@ -103,11 +95,11 @@ const getPasswordResetExpiryMinutes = (): number => {
 };
 
 const getSmtpTransport = () => {
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = Number(process.env.SMTP_PORT || "465");
-  const secure = `${process.env.SMTP_SECURE || "true"}`.toLowerCase() !== "false";
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = readEnv("SMTP_HOST") || "smtp.gmail.com";
+  const port = Number(readEnv("SMTP_PORT") || "465");
+  const secure = `${readEnv("SMTP_SECURE") || "true"}`.toLowerCase() !== "false";
+  const user = readEnv("SMTP_USER");
+  const pass = readEnv("SMTP_PASS");
 
   if (!user || !pass) {
     throw new Error("SMTP_USER or SMTP_PASS is not set");
@@ -123,7 +115,7 @@ const getSmtpTransport = () => {
 
 const sendPasswordResetEmail = async (email: string, resetLink: string): Promise<void> => {
   const transporter = getSmtpTransport();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = readEnv("SMTP_FROM") || readEnv("SMTP_USER");
 
   await transporter.sendMail({
     from,
@@ -182,6 +174,21 @@ const setAuthCookies = (res: Response, accessToken: string, refreshToken: string
 const clearAuthCookies = (res: Response): void => {
   res.clearCookie(ACCESS_TOKEN_COOKIE, clearCookieOptions);
   res.clearCookie(REFRESH_TOKEN_COOKIE, clearCookieOptions);
+};
+
+const writeAuthAuditLog = async (input: {
+  action: string;
+  actorUserId?: string | null;
+  description: string;
+  entityId?: string | null;
+  entityType: string;
+  ipAddress?: string | null;
+}): Promise<void> => {
+  try {
+    await writeAuditLog(input);
+  } catch (error) {
+    console.error("Auth audit log error:", error);
+  }
 };
 
 const formatStudentIdForResponse = (studentId: string | null): string | null => {
@@ -263,6 +270,7 @@ const findUserByIdentifier = async (identifier: string) => {
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body);
+  const ipAddress = getRequestIpAddress(req);
 
   if (!parsed.success) {
     res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
@@ -274,12 +282,26 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const user = await findUserByIdentifier(identifier);
 
     if (!user || !user.isActive) {
+      await writeAuthAuditLog({
+        action: "auth.login.failed",
+        description: "Failed login attempt",
+        entityType: "AuthSession",
+        ipAddress,
+      });
       res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
       return;
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      await writeAuthAuditLog({
+        action: "auth.login.failed",
+        actorUserId: user.id,
+        description: "Failed login attempt",
+        entityType: "AuthSession",
+        entityId: user.id,
+        ipAddress,
+      });
       res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
       return;
     }
@@ -304,6 +326,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     setAuthCookies(res, accessToken, refreshToken);
 
+    await writeAuthAuditLog({
+      action: "auth.login.success",
+      actorUserId: user.id,
+      description: "User logged in successfully",
+      entityType: "AuthSession",
+      entityId: user.id,
+      ipAddress,
+    });
+
     res.status(200).json({
       message: "Login successful",
       user: sanitizeUser(user),
@@ -316,8 +347,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 export const logout = async (req: Request, res: Response): Promise<void> => {
   const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as string | undefined;
+  const ipAddress = getRequestIpAddress(req);
 
   try {
+    const storedToken = refreshToken
+      ? await prisma.refreshToken.findUnique({
+          where: { token: hashToken(refreshToken) },
+          select: { userId: true },
+        })
+      : null;
+
     if (refreshToken) {
       await prisma.refreshToken.deleteMany({
         where: { token: hashToken(refreshToken) },
@@ -325,6 +364,14 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     }
 
     clearAuthCookies(res);
+    await writeAuthAuditLog({
+      action: "auth.logout",
+      actorUserId: storedToken?.userId,
+      description: "User logged out",
+      entityType: "AuthSession",
+      entityId: storedToken?.userId,
+      ipAddress,
+    });
     res.status(200).json({ message: "Logout successful" });
   } catch (error) {
     console.error("Logout error:", error);
@@ -334,6 +381,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   const parsed = forgotPasswordSchema.safeParse(req.body);
+  const ipAddress = getRequestIpAddress(req);
 
   if (!parsed.success) {
     res.status(400).json({ message: "กรุณากรอกอีเมลที่ถูกต้อง" });
@@ -373,6 +421,14 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
     const resetLink = `${getClientOrigin()}/reset-password?token=${rawToken}`;
     await sendPasswordResetEmail(user.email, resetLink);
+    await writeAuthAuditLog({
+      action: "auth.password-reset.request",
+      actorUserId: user.id,
+      description: "Password reset requested",
+      entityType: "User",
+      entityId: user.id,
+      ipAddress,
+    });
 
     res.status(200).json({ message: PASSWORD_RESET_REQUEST_SUCCESS_MESSAGE });
   } catch (error) {
@@ -415,6 +471,7 @@ export const validateResetPasswordToken = async (req: Request, res: Response): P
 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   const parsed = resetPasswordSchema.safeParse(req.body);
+  const ipAddress = getRequestIpAddress(req);
 
   if (!parsed.success) {
     const firstError = parsed.error.issues[0]?.message || "คำขอไม่ถูกต้อง";
@@ -463,6 +520,15 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    await writeAuthAuditLog({
+      action: "auth.password-reset.complete",
+      actorUserId: resetToken.userId,
+      description: "Password reset completed",
+      entityType: "User",
+      entityId: resetToken.userId,
+      ipAddress,
+    });
+
     res.status(200).json({ message: "ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว" });
   } catch (error) {
     console.error("Reset password error:", error);
@@ -477,6 +543,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
   }
 
   const parsed = changePasswordSchema.safeParse(req.body);
+  const ipAddress = getRequestIpAddress(req);
 
   if (!parsed.success) {
     const firstError = parsed.error.issues[0]?.message || "คำขอไม่ถูกต้อง";
@@ -503,6 +570,14 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
     const isCurrentPasswordValid = await bcrypt.compare(parsed.data.currentPassword, user.password);
     if (!isCurrentPasswordValid) {
+      await writeAuthAuditLog({
+        action: "auth.password-change.failed",
+        actorUserId: user.id,
+        description: "Password change rejected due to invalid current password",
+        entityType: "User",
+        entityId: user.id,
+        ipAddress,
+      });
       res.status(400).json({ message: "รหัสผ่านปัจจุบันไม่ถูกต้อง" });
       return;
     }
@@ -538,6 +613,15 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     });
 
     setAuthCookies(res, nextAccessToken, nextRefreshToken);
+
+    await writeAuthAuditLog({
+      action: "auth.password-change",
+      actorUserId: user.id,
+      description: "Password changed successfully",
+      entityType: "User",
+      entityId: user.id,
+      ipAddress,
+    });
 
     res.status(200).json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
   } catch (error) {

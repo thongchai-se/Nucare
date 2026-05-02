@@ -5,7 +5,13 @@ dist
 .env.*
 !.env.example
 !.env.local.example
+!.env.production.example
 prisma/dev.db
 *.log
 *.tmp
 *.tsbuildinfo
+secrets/*
+!secrets/README.md
+!secrets/examples/
+secrets/examples/*
+!secrets/examples/*.example.txt

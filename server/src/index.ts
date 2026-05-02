@@ -1,7 +1,8 @@
+import "./lib/env";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
+import { readEnv, requireEnv } from "./lib/env";
 import { seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
 import adminRoutes from "./routes/admin.routes";
@@ -12,11 +13,8 @@ import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import studentRoutes from "./routes/student.routes";
 
-dotenv.config({ path: ".env.local" });
-dotenv.config();
-
 const app = express();
-const port = Number(process.env.PORT) || 5000;
+const port = Number(readEnv("PORT")) || 5000;
 const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -31,10 +29,10 @@ const parseNonNegativeInt = (value: string | undefined, fallback: number): numbe
 };
 const trustProxyHops = Math.max(
   0,
-  parseNonNegativeInt(process.env.TRUST_PROXY_HOPS, 0)
+  parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), 0)
 );
-const jsonBodyLimit = process.env.JSON_BODY_LIMIT || "2mb";
-const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:3000")
+const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "2mb";
+const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -122,16 +120,17 @@ const sleep = (ms: number): Promise<void> =>
   });
 
 const assertRequiredConfiguration = (): void => {
-  const requiredEnvNames = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
-  const missingEnvNames = requiredEnvNames.filter((name) => !process.env[name]?.trim());
+  const requiredEnvNames = ["DATABASE_URL", "JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
+  const missingEnvNames = requiredEnvNames.filter((name) => !readEnv(name));
 
   if (missingEnvNames.length > 0) {
     throw new Error(`Missing required environment variables: ${missingEnvNames.join(", ")}`);
   }
 
   if (process.env.NODE_ENV === "production") {
-    const weakSecretNames = requiredEnvNames.filter(
-      (name) => (process.env[name]?.trim().length || 0) < 32
+    const securitySecretNames = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
+    const weakSecretNames = securitySecretNames.filter(
+      (name) => requireEnv(name).length < 32
     );
 
     if (weakSecretNames.length > 0) {
