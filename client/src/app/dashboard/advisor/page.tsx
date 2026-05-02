@@ -107,6 +107,7 @@ const redirectByRole: Partial<Record<Role, string>> = {
   EXECUTIVE: "/dashboard/executive",
   MENTAL_HEALTH: "/dashboard/mental-health",
   INSTRUCTOR: "/dashboard/instructor",
+  STUDENT_DEVELOPMENT: "/dashboard/student-development",
   STUDENT: "/dashboard/student",
 };
 

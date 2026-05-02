@@ -15,6 +15,7 @@ import studentRoutes from "./routes/student.routes";
 
 const app = express();
 const port = Number(readEnv("PORT")) || 5000;
+
 const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -27,9 +28,11 @@ const parseNonNegativeInt = (value: string | undefined, fallback: number): numbe
 
   return parsed;
 };
+
+const defaultTrustProxyHops = process.env.VERCEL ? 1 : 0;
 const trustProxyHops = Math.max(
   0,
-  parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), 0)
+  parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), defaultTrustProxyHops)
 );
 const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "2mb";
 const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
@@ -38,6 +41,81 @@ const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
   .filter(Boolean);
 const allowedOriginSet = new Set(allowedOrigins);
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const assertRequiredConfiguration = (): void => {
+  const requiredEnvNames = ["DATABASE_URL", "JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
+  const missingEnvNames = requiredEnvNames.filter((name) => !readEnv(name));
+
+  if (missingEnvNames.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnvNames.join(", ")}`);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    const securitySecretNames = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
+    const weakSecretNames = securitySecretNames.filter(
+      (name) => requireEnv(name).length < 32
+    );
+
+    if (weakSecretNames.length > 0) {
+      throw new Error(
+        `Production JWT secrets must be at least 32 characters: ${weakSecretNames.join(", ")}`
+      );
+    }
+  }
+};
+
+const initializeApplication = async (maxRetries: number): Promise<void> => {
+  assertRequiredConfiguration();
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      const seedSummary = await seedDefaultUsersIfMissing(prisma);
+      if (seedSummary.enabled) {
+        console.log(
+          `[seed] Default users ready (created=${seedSummary.createdCount}, skipped=${seedSummary.skippedCount})`
+        );
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `Server startup failed (attempt ${attempt}/${maxRetries}).`,
+        error
+      );
+
+      if (attempt < maxRetries) {
+        await sleep(2000);
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Server startup failed");
+};
+
+let appReadyPromise: Promise<void> | null = null;
+
+export const ensureAppReady = async (
+  maxRetries = process.env.VERCEL ? 1 : 5
+): Promise<void> => {
+  if (!appReadyPromise) {
+    appReadyPromise = initializeApplication(maxRetries);
+  }
+
+  try {
+    await appReadyPromise;
+  } catch (error) {
+    appReadyPromise = null;
+    throw error;
+  }
+};
 
 app.disable("x-powered-by");
 app.set("trust proxy", trustProxyHops);
@@ -88,6 +166,14 @@ app.use(
 );
 app.use(express.json({ limit: jsonBodyLimit }));
 app.use(cookieParser());
+app.use(async (_req: Request, _res: Response, next: NextFunction) => {
+  try {
+    await ensureAppReady();
+    next();
+  } catch (error) {
+    next(error instanceof Error ? error : new Error("Application startup failed"));
+  }
+});
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -114,77 +200,33 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ message: "Internal server error" });
 });
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
-const assertRequiredConfiguration = (): void => {
-  const requiredEnvNames = ["DATABASE_URL", "JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
-  const missingEnvNames = requiredEnvNames.filter((name) => !readEnv(name));
-
-  if (missingEnvNames.length > 0) {
-    throw new Error(`Missing required environment variables: ${missingEnvNames.join(", ")}`);
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    const securitySecretNames = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const;
-    const weakSecretNames = securitySecretNames.filter(
-      (name) => requireEnv(name).length < 32
-    );
-
-    if (weakSecretNames.length > 0) {
-      throw new Error(
-        `Production JWT secrets must be at least 32 characters: ${weakSecretNames.join(", ")}`
-      );
-    }
-  }
-};
-
 const startServer = async (): Promise<void> => {
-  const maxRetries = 5;
-  assertRequiredConfiguration();
-
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      const seedSummary = await seedDefaultUsersIfMissing(prisma);
-      if (seedSummary.enabled) {
-        console.log(
-          `[seed] Default users ready (created=${seedSummary.createdCount}, skipped=${seedSummary.skippedCount})`
-        );
-      }
-
-      app.listen(port, () => {
-        console.log(`NuCare server listening on http://localhost:${port}`);
-      });
-      return;
-    } catch (error) {
-      console.error(
-        `Server startup failed (attempt ${attempt}/${maxRetries}).`,
-        error
-      );
-
-      if (attempt < maxRetries) {
-        await sleep(2000);
-      }
-    }
-  }
-
-  process.exit(1);
+  await ensureAppReady(5);
+  app.listen(port, () => {
+    console.log(`NuCare server listening on http://localhost:${port}`);
+  });
 };
 
-void startServer().catch((error) => {
-  console.error("Server startup failed.", error);
-  process.exit(1);
-});
+const isExecutedDirectly = (): boolean => {
+  return typeof require !== "undefined" && typeof module !== "undefined" && require.main === module;
+};
 
-process.on("SIGINT", async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+const registerShutdownHandlers = (): void => {
+  const shutdown = async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  };
 
-process.on("SIGTERM", async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+};
+
+if (isExecutedDirectly()) {
+  registerShutdownHandlers();
+  void startServer().catch((error) => {
+    console.error("Server startup failed.", error);
+    process.exit(1);
+  });
+}
+
+export default app;

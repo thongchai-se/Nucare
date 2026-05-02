@@ -54,6 +54,7 @@ type FormErrors = {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const roleOptions: Array<{ label: string; value: StaffRole }> = [
+  { value: "STUDENT_DEVELOPMENT", label: "ฝ่ายพัฒนานักศึกษา" },
   { value: "ADVISOR", label: "อาจารย์ที่ปรึกษา" },
   { value: "INSTRUCTOR", label: "อาจารย์ผู้สอน" },
   { value: "MENTAL_HEALTH", label: "ผู้เชี่ยวชาญ" },
@@ -62,6 +63,7 @@ const roleOptions: Array<{ label: string; value: StaffRole }> = [
 ];
 
 const roleBadgeMap: Record<StaffRole, string> = {
+  STUDENT_DEVELOPMENT: "bg-rose-100 text-rose-700",
   ADMIN: "bg-violet-100 text-violet-700",
   ADVISOR: "bg-amber-100 text-amber-700",
   EXECUTIVE: "bg-cyan-100 text-cyan-700",
@@ -70,6 +72,7 @@ const roleBadgeMap: Record<StaffRole, string> = {
 };
 
 const roleLabelMap: Record<StaffRole, string> = {
+  STUDENT_DEVELOPMENT: "ฝ่ายพัฒนานักศึกษา",
   ADMIN: "ผู้ดูแลระบบ",
   ADVISOR: "อาจารย์ที่ปรึกษา",
   EXECUTIVE: "ผู้บริหาร",

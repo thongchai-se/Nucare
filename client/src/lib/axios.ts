@@ -9,7 +9,17 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
 }
 
 const AUTH_EXPIRED_EVENT = "nucare:auth-expired";
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_API_URL || "http://localhost:5000";
+
+const normalizeApiBaseUrl = (value: string | undefined): string => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.replace(/\/+$/, "");
+};
+
+const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 let refreshPromise: Promise<void> | null = null;
 

@@ -112,7 +112,7 @@ The following manual tests should be executed in a browser before final acceptan
   - password reset request
   - password reset completion
   - password change
-- Hardened the container deployment baseline by keeping PostgreSQL on the Docker internal network in `docker-compose.yml` and moving host port exposure to `docker-compose.dev.yml` for development-only access.
+- The production Docker path still keeps PostgreSQL on the internal network via `docker-compose.prod.yml`, while `docker-compose.yml` now republishes `5432:5432` temporarily to support the local `npm run dev` workflow.
 - Added `docker-compose.prod.yml` and a file-based secret policy so production deployments can inject sensitive values through `*_FILE` references instead of inline compose secrets.
 - Audit logs are available in the admin dashboard.
 

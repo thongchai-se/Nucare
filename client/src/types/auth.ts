@@ -1,6 +1,7 @@
 export type Role =
   | "STUDENT"
   | "ADVISOR"
+  | "STUDENT_DEVELOPMENT"
   | "MENTAL_HEALTH"
   | "INSTRUCTOR"
   | "EXECUTIVE"

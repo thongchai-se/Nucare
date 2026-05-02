@@ -53,6 +53,12 @@ export default function StudentProfilePage() {
   }, [loading, router, user?.role]);
 
   useEffect(() => {
+    if (!loading && user?.role === "STUDENT_DEVELOPMENT") {
+      router.replace("/dashboard/student-development");
+    }
+  }, [loading, router, user?.role]);
+
+  useEffect(() => {
     if (!loading && user?.role === "MENTAL_HEALTH") {
       router.replace("/dashboard/mental-health");
     }

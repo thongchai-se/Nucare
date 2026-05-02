@@ -33,6 +33,7 @@ import { ChangePasswordForm } from "@/components/change-password-form";
 import type { Role } from "@/types/auth";
 
 const roleHomeMap: Record<Role, string> = {
+  STUDENT_DEVELOPMENT: "/dashboard/student-development",
   ADMIN: "/dashboard/admin",
   ADVISOR: "/dashboard/advisor",
   EXECUTIVE: "/dashboard/executive",
@@ -42,6 +43,7 @@ const roleHomeMap: Record<Role, string> = {
 };
 
 const roleChangePasswordMap: Record<Exclude<Role, "STUDENT">, string> = {
+  STUDENT_DEVELOPMENT: "/dashboard/student-development?view=change-password",
   ADMIN: "/dashboard/admin?view=change-password",
   ADVISOR: "/dashboard/advisor?view=change-password",
   EXECUTIVE: "/dashboard/executive?view=change-password",
@@ -50,6 +52,7 @@ const roleChangePasswordMap: Record<Exclude<Role, "STUDENT">, string> = {
 };
 
 const roleLabelMap: Record<Role, string> = {
+  STUDENT_DEVELOPMENT: "ฝ่ายพัฒนานักศึกษา",
   ADMIN: "ผู้ดูแลระบบ",
   ADVISOR: "อาจารย์ที่ปรึกษา",
   EXECUTIVE: "ผู้บริหาร",
@@ -1204,6 +1207,28 @@ export default function ChangePasswordPage() {
             { href: "/dashboard/advisor?view=advisees", icon: <Users size={20} />, label: "นักศึกษาในที่ปรึกษา" },
             { href: "/dashboard/advisor?view=referrals", icon: <Send size={20} />, label: "ติดตามการส่งต่อ" },
             { href: "/dashboard/advisor?view=academic", icon: <BookOpen size={20} />, label: "แจ้งปัญหาจากผู้สอน" },
+            { icon: <Lock size={20} />, label: "เปลี่ยนรหัสผ่าน", active: true },
+          ],
+        },
+      ],
+    },
+    STUDENT_DEVELOPMENT: {
+      initialsFallback: "SD",
+      portalLabel: "Student Affairs Portal",
+      userRoleLabel: roleLabelMap.STUDENT_DEVELOPMENT,
+      sections: [
+        {
+          title: "งานประจำวัน",
+          items: [
+            { href: "/dashboard/student-development", icon: <LayoutDashboard size={20} />, label: "หน้าหลัก" },
+            { href: "/dashboard/student-development?view=tracking", icon: <Users size={20} />, label: "ติดตามการคัดกรอง" },
+          ],
+        },
+        {
+          title: "กิจกรรมและสวัสดิการ",
+          items: [
+            { href: "/dashboard/student-development?view=wellness", icon: <CalendarDays size={20} />, label: "กิจกรรม Wellness" },
+            { href: "/dashboard/student-development?view=welfare", icon: <ArrowRightLeft size={20} />, label: "ประสานงานสวัสดิการ" },
             { icon: <Lock size={20} />, label: "เปลี่ยนรหัสผ่าน", active: true },
           ],
         },

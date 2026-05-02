@@ -17,36 +17,6 @@ const seedUsers: SeedUser[] = [
     employeeId: "ADM001",
     email: "admin@nucare.local",
   },
-  {
-    name: "Student Demo",
-    role: Role.STUDENT,
-    studentId: "660000000-1",
-    email: "student@nucare.local",
-  },
-  {
-    name: "Advisor Demo",
-    role: Role.ADVISOR,
-    employeeId: "ADV001",
-    email: "advisor@nucare.local",
-  },
-  {
-    name: "Mental Health Demo",
-    role: Role.MENTAL_HEALTH,
-    employeeId: "MHS001",
-    email: "mentalhealth@nucare.local",
-  },
-  {
-    name: "Instructor Demo",
-    role: Role.INSTRUCTOR,
-    employeeId: "INS001",
-    email: "instructor@nucare.local",
-  },
-  {
-    name: "Executive Demo",
-    role: Role.EXECUTIVE,
-    employeeId: "EXE001",
-    email: "executive@nucare.local",
-  },
 ];
 
 type SeedSummary = {

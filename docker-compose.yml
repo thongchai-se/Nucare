@@ -8,6 +8,10 @@ services:
       POSTGRES_PASSWORD: nucare_password
     expose:
       - "5432"
+    ports:
+      # เปิดพอร์ตออกมาที่เครื่องสำหรับ workflow local dev แบบรัน client/server แยกด้วย npm run dev
+      # ตอนขึ้น server จริงให้ถอดบรรทัดนี้ออก หรือใช้ docker-compose.prod.yml แทน
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -76,6 +76,7 @@ type HealthResponse = {
 const adminOnlyViewSet = new Set<AdminRootView>(["dashboard", "audit", "reports", "settings", "change-password"]);
 
 const roleRedirects: Partial<Record<Role, string>> = {
+  STUDENT_DEVELOPMENT: "/dashboard/student-development",
   ADVISOR: "/dashboard/advisor",
   EXECUTIVE: "/dashboard/executive",
   INSTRUCTOR: "/dashboard/instructor",
@@ -84,6 +85,7 @@ const roleRedirects: Partial<Record<Role, string>> = {
 };
 
 const roleBadgeMap: Record<Role, string> = {
+  STUDENT_DEVELOPMENT: "bg-rose-100 text-rose-700",
   ADMIN: "bg-violet-100 text-violet-700",
   ADVISOR: "bg-amber-100 text-amber-700",
   EXECUTIVE: "bg-cyan-100 text-cyan-700",
@@ -93,6 +95,7 @@ const roleBadgeMap: Record<Role, string> = {
 };
 
 const roleLabelMap: Record<Role, string> = {
+  STUDENT_DEVELOPMENT: "ฝ่ายพัฒนานักศึกษา",
   ADMIN: "ผู้ดูแลระบบ",
   ADVISOR: "อาจารย์ที่ปรึกษา",
   EXECUTIVE: "ผู้บริหาร",

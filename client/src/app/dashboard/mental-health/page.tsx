@@ -131,6 +131,7 @@ const redirectByRole: Record<string, string> = {
   EXECUTIVE: "/dashboard/executive",
   ADVISOR: "/dashboard/advisor",
   INSTRUCTOR: "/dashboard/instructor",
+  STUDENT_DEVELOPMENT: "/dashboard/student-development",
   STUDENT: "/dashboard/student",
 };
 

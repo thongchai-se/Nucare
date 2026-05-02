@@ -76,6 +76,7 @@ const roleRedirects: Record<string, string> = {
   ADVISOR: "/dashboard/advisor",
   EXECUTIVE: "/dashboard/executive",
   MENTAL_HEALTH: "/dashboard/mental-health",
+  STUDENT_DEVELOPMENT: "/dashboard/student-development",
   STUDENT: "/dashboard/student",
 };
 

@@ -2,12 +2,29 @@ import type { Metadata } from "next";
 
 const FALLBACK_SITE_URL = "http://localhost:3000";
 
+const buildSiteUrl = (): string => {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configuredSiteUrl) {
+    return configuredSiteUrl;
+  }
+
+  const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (vercelProductionUrl) {
+    return `https://${vercelProductionUrl}`;
+  }
+
+  const vercelDeploymentUrl = process.env.VERCEL_URL?.trim();
+  if (vercelDeploymentUrl) {
+    return `https://${vercelDeploymentUrl}`;
+  }
+
+  return FALLBACK_SITE_URL;
+};
+
 export const siteName = "NUCARE";
 export const defaultTitle = "NUCARE | Student Mental Health Care System";
 export const defaultDescription = "ระบบดูแลและติดตามสุขภาวะนักศึกษา คณะพยาบาลศาสตร์";
-export const metadataBase = new URL(
-  process.env.NEXT_PUBLIC_SITE_URL?.trim() || FALLBACK_SITE_URL
-);
+export const metadataBase = new URL(buildSiteUrl());
 
 type CreatePageMetadataOptions = {
   description: string;

@@ -33,6 +33,11 @@ export default function DashboardEntryPage() {
       return;
     }
 
+    if (user.role === "STUDENT_DEVELOPMENT") {
+      router.replace("/dashboard/student-development");
+      return;
+    }
+
     if (user.role === "MENTAL_HEALTH") {
       router.replace("/dashboard/mental-health");
       return;

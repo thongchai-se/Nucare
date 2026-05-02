@@ -35,8 +35,12 @@ export const initializeEnvironment = (): void => {
     return;
   }
 
-  dotenv.config({ path: ".env.local" });
+  // Local Node processes should prefer `.env`.
+  // `.env.local` is loaded after that only to fill in values that are still missing.
+  // Values already present in process.env (for example from Docker Compose `env_file`)
+  // keep the highest priority because dotenv does not override by default.
   dotenv.config();
+  dotenv.config({ path: ".env.local" });
   loadFileBackedEnvironmentVariables();
   initialized = true;
 };
