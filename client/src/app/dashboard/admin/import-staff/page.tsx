@@ -22,12 +22,15 @@ type CsvStaffRow = {
   rowError?: string;
 };
 
+type ImportOutcome = "success" | "partial" | "failed";
+
 type ImportSummary = {
   total: number;
   created: number;
   updated: number;
   skipped: number;
   failed: number;
+  outcome: ImportOutcome;
 };
 
 type ImportStaffResponse = {
@@ -398,6 +401,7 @@ export default function ImportStaffPage() {
   const [rows, setRows] = useState<CsvStaffRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState("");
+  const [serverNotice, setServerNotice] = useState("");
 
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -440,6 +444,15 @@ export default function ImportStaffPage() {
 
     return () => clearTimeout(timer);
   }, [showImportSuccessModal]);
+
+  useEffect(() => {
+    if (!serverError.startsWith("นำเข้าได้บางส่วน")) {
+      return;
+    }
+
+    setServerNotice(serverError);
+    setServerError("");
+  }, [serverError]);
 
   const isAdmin = useMemo(() => user?.role === "ADMIN", [user]);
 
@@ -547,6 +560,7 @@ export default function ImportStaffPage() {
     setCsvFileName("");
     setCsvFileSize("");
     setServerError("");
+    setServerNotice("");
     setShowImportProgressOverlay(false);
     setImportProgressPercent(0);
     setImportProgressCurrent(0);
@@ -558,6 +572,8 @@ export default function ImportStaffPage() {
   };
 
   const handleSelectedFile = (file: File) => {
+    setServerNotice("");
+
     if (!file.name.toLowerCase().endsWith(".csv")) {
       setServerError("กรุณาอัปโหลดไฟล์ .csv เท่านั้น");
       return;
@@ -578,6 +594,7 @@ export default function ImportStaffPage() {
   const checkExistingBeforeImport = async (csvRows: CsvStaffRow[]) => {
     setExistingCheckLoading(true);
     setExistingCheckError("");
+    setServerNotice("");
     setPreviewExistingUsers([]);
 
     const validEmails = Array.from(
@@ -612,6 +629,7 @@ export default function ImportStaffPage() {
 
     setPreviewing(true);
     setServerError("");
+    setServerNotice("");
     resetParsedState();
 
     try {
@@ -666,6 +684,8 @@ export default function ImportStaffPage() {
   };
 
   const handleImport = async () => {
+    setServerNotice("");
+
     if (!canImport) {
       if (incompleteRowsCount > 0) {
         setServerError("กรุณาแก้ข้อมูลที่มีปัญหาก่อน จึงจะนำเข้าระบบได้");
@@ -687,6 +707,7 @@ export default function ImportStaffPage() {
 
     setImporting(true);
     setServerError("");
+    setServerNotice("");
     setImportProgressTotal(totalRows);
     setImportProgressCurrent(0);
     setImportProgressPercent(1);
@@ -1175,6 +1196,13 @@ export default function ImportStaffPage() {
                   {importing || existingCheckLoading ? <span className="loader h-5 w-5"></span> : "ยืนยันนำเข้าข้อมูล"}
                 </button>
               </div>
+            </section>
+          )}
+
+          {serverNotice && (
+            <section className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-800">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <p className="text-sm font-medium">{serverNotice}</p>
             </section>
           )}
 

@@ -17,6 +17,7 @@ import {
 import { type MouseEvent, useEffect, useMemo, useState } from "react";
 import LegalTopNav from "@/components/legal-top-nav";
 import LegalFooter from "@/components/legal-footer";
+import { facultyFullName } from "@/lib/brand";
 
 type SectionId = "terms" | "privacy" | "cookies";
 
@@ -396,7 +397,7 @@ export default function PrivacyPolicyPage() {
 
                   <div className="space-y-5 text-[15px] leading-relaxed text-slate-600">
                     <p>
-                      คณะพยาบาลศาสตร์ให้ความสำคัญกับการคุ้มครองข้อมูลส่วนบุคคลของผู้ใช้งาน โดยเฉพาะข้อมูลสุขภาพ
+                      {facultyFullName} ให้ความสำคัญกับการคุ้มครองข้อมูลส่วนบุคคลของผู้ใช้งาน โดยเฉพาะข้อมูลสุขภาพ
                       และข้อมูลที่สะท้อนภาวะสุขภาวะซึ่งจัดเป็นข้อมูลอ่อนไหว ระบบจึงถูกออกแบบให้มีการคุ้มครองข้อมูลทั้งด้านเทคนิค
                       ขั้นตอนการทำงาน และการกำกับสิทธิ์ของผู้เกี่ยวข้อง
                     </p>

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
+import { facultyFullName } from "@/lib/brand";
 
 export type AuthPopupView = "login" | "forgot";
 
@@ -251,7 +252,7 @@ export default function AuthPopup({
               สุขภาพจิตนักศึกษา
             </h2>
             <p className="text-sm leading-relaxed text-blue-100">
-              คณะพยาบาลศาสตร์
+              {facultyFullName}
               <br />
               พื้นที่ปลอดภัยสำหรับทุกคน เพราะสุขภาพใจสำคัญไม่แพ้สุขภาพกาย ข้อมูลของคุณจะถูกเก็บรักษาเป็นความลับสูงสุด
             </p>

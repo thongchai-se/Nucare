@@ -233,7 +233,125 @@ const getErrorMessage = (error: unknown): string => {
   return "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
 };
 
-const getAuditStatus = (log: AuditLogItem): "Success" | "Failed" => {
+type AuditStatus = "Success" | "Partial" | "Failed";
+
+type ParsedImportAuditSummary = {
+  outcome: "success" | "partial" | "failed" | null;
+  total: number | null;
+  created: number | null;
+  updated: number | null;
+  skipped: number | null;
+  failed: number | null;
+  issues: string | null;
+  note: string | null;
+};
+
+const parseAuditNumericMetric = (description: string, key: string): number | null => {
+  const match = new RegExp(`${key}=(\\d+)`, "i").exec(description);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseAuditTextMetric = (description: string, key: string): string | null => {
+  const match = new RegExp(`${key}=([^|]+)`, "i").exec(description);
+  return match?.[1]?.trim() || null;
+};
+
+const parseAuditImportSummary = (log: AuditLogItem): ParsedImportAuditSummary | null => {
+  if (!log.action.endsWith(".import")) {
+    return null;
+  }
+
+  const description = log.description || "";
+  const created = parseAuditNumericMetric(description, "created");
+  const updated = parseAuditNumericMetric(description, "updated");
+  const skipped = parseAuditNumericMetric(description, "skipped");
+  const failed = parseAuditNumericMetric(description, "failed");
+  const total = parseAuditNumericMetric(description, "total");
+  const outcome = parseAuditTextMetric(description, "outcome");
+  const issues = parseAuditTextMetric(description, "issues");
+  const note = parseAuditTextMetric(description, "note");
+
+  if (
+    created === null &&
+    updated === null &&
+    skipped === null &&
+    failed === null &&
+    total === null &&
+    !outcome
+  ) {
+    return null;
+  }
+
+  return {
+    outcome:
+      outcome === "success" || outcome === "partial" || outcome === "failed" ? outcome : null,
+    total,
+    created,
+    updated,
+    skipped,
+    failed,
+    issues,
+    note,
+  };
+};
+
+const resolveAuditStatusFromImportSummary = (summary: ParsedImportAuditSummary): AuditStatus => {
+  if (summary.outcome === "success") {
+    return "Success";
+  }
+
+  if (summary.outcome === "partial") {
+    return "Partial";
+  }
+
+  if (summary.outcome === "failed") {
+    return "Failed";
+  }
+
+  const created = summary.created ?? 0;
+  const updated = summary.updated ?? 0;
+  const skipped = summary.skipped ?? 0;
+  const failed = summary.failed ?? 0;
+  const completedCount = created + updated + skipped;
+
+  if (failed > 0 && completedCount > 0) {
+    return "Partial";
+  }
+
+  if (failed > 0) {
+    return "Failed";
+  }
+
+  return "Success";
+};
+
+const formatAuditImportDetail = (summary: ParsedImportAuditSummary): string => {
+  const detailParts = [
+    summary.total !== null ? `ทั้งหมด ${summary.total}` : null,
+    `เพิ่มใหม่ ${summary.created ?? 0}`,
+    `อัปเดต ${summary.updated ?? 0}`,
+    `ข้าม ${summary.skipped ?? 0}`,
+    `ไม่สำเร็จ ${summary.failed ?? 0}`,
+  ].filter((item): item is string => Boolean(item));
+
+  const extras = [summary.issues ? `ปัญหาหลัก: ${summary.issues}` : null, summary.note].filter(
+    (item): item is string => Boolean(item)
+  );
+
+  return [`ผลการนำเข้า: ${detailParts.join(", ")}`, ...extras].join(" | ");
+};
+
+const getAuditStatus = (log: AuditLogItem): AuditStatus => {
+  const importSummary = parseAuditImportSummary(log);
+  if (importSummary) {
+    return resolveAuditStatusFromImportSummary(importSummary);
+  }
+
   const haystack = `${log.action} ${log.description || ""}`.toLowerCase();
   return haystack.includes("failed") || haystack.includes("error") ? "Failed" : "Success";
 };
@@ -250,7 +368,17 @@ const getAuditTarget = (log: AuditLogItem): string => {
   return "System";
 };
 
-const getAuditStatusLabel = (status: "Success" | "Failed"): string => (status === "Success" ? "สำเร็จ" : "ไม่สำเร็จ");
+const getAuditStatusLabel = (status: AuditStatus): string => {
+  if (status === "Success") {
+    return "สำเร็จ";
+  }
+
+  if (status === "Partial") {
+    return "สำเร็จบางส่วน";
+  }
+
+  return "ไม่สำเร็จ";
+};
 
 const getNormalizedAuditAction = (log: AuditLogItem): string => {
   if (!log.action.startsWith("admin.user.")) {
@@ -267,6 +395,15 @@ const getNormalizedAuditAction = (log: AuditLogItem): string => {
 const getAuditActionLabel = (log: AuditLogItem): string => {
   const normalizedAction = getNormalizedAuditAction(log);
   return auditActionLabelMap[normalizedAction] ?? normalizedAction;
+};
+
+const getResolvedAuditActionDetail = (log: AuditLogItem): string => {
+  const importSummary = parseAuditImportSummary(log);
+  if (importSummary) {
+    return formatAuditImportDetail(importSummary);
+  }
+
+  return getAuditActionDetail(log);
 };
 
 const getAuditActionDetail = (log: AuditLogItem): string =>
@@ -318,7 +455,7 @@ const getAuditSearchText = (log: AuditLogItem): string =>
     log.actor?.role ? roleLabelMap[log.actor.role] : "",
     log.action,
     getAuditActionLabel(log),
-    getAuditActionDetail(log),
+    getResolvedAuditActionDetail(log),
     log.description || "",
     log.ipAddress || "",
     log.entityType || "",
@@ -567,7 +704,11 @@ function AdminDashboardContent() {
                     </div>
                     <span
                       className={`rounded px-2 py-1 text-[10px] font-bold uppercase ${
-                        status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                        status === "Success"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : status === "Partial"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-red-100 text-red-700"
                       }`}
                     >
                       {getAuditStatusLabel(status)}
@@ -722,7 +863,7 @@ function AdminDashboardContent() {
                     </td>
                     <td className="p-4 align-top text-slate-700">
                       <p className="font-semibold text-slate-800">{getAuditActionLabel(log)}</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{getAuditActionDetail(log)}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{getResolvedAuditActionDetail(log)}</p>
                       <p className="mt-1 font-mono text-[11px] leading-5 text-slate-400 break-all">{getNormalizedAuditAction(log)}</p>
                     </td>
                     <td className="p-4 align-top text-slate-600">
@@ -737,7 +878,11 @@ function AdminDashboardContent() {
                     <td className="p-4 align-top">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                          status === "Success" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                          status === "Success"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : status === "Partial"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
                         }`}
                       >
                         {getAuditStatusLabel(status)}

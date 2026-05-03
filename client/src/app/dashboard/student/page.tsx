@@ -32,6 +32,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { facultyEnglishFullName, facultyFullName } from "@/lib/brand";
 import { useAuth } from "@/context/auth.context";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import api from "@/lib/axios";
@@ -331,7 +332,7 @@ export default function StudentDashboardPage() {
                 <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
                   Nucare<span className="text-cyan-500">.</span>
                 </span>
-                <span className="block text-[11px] font-medium leading-none text-slate-500">คณะพยาบาลศาสตร์</span>
+                <span className="block text-[11px] font-medium leading-none text-slate-500">{facultyFullName}</span>
               </div>
             </Link>
 
@@ -710,11 +711,11 @@ export default function StudentDashboardPage() {
                 </div>
                 <div className="flex flex-col justify-center">
                   <span className="mb-1 block text-xl font-bold leading-none">Nucare Sys.</span>
-                  <span className="block text-[11px] leading-none text-blue-200">Faculty of Nursing</span>
+                  <span className="block text-[11px] leading-none text-blue-200">{facultyEnglishFullName}</span>
                 </div>
               </div>
               <p className="text-sm leading-relaxed text-blue-100">
-                พื้นที่ปลอดภัยสำหรับนักศึกษา คณะพยาบาลศาสตร์
+                พื้นที่ปลอดภัยสำหรับนักศึกษา {facultyFullName}
                 <br className="hidden sm:block" />
                 เพราะสุขภาพใจของคุณ สำคัญสำหรับเรา
               </p>
@@ -744,7 +745,7 @@ export default function StudentDashboardPage() {
             <div>
               <h4 className="mb-5 inline-block border-b border-blue-700 pb-2 text-lg font-bold">ติดต่อสอบถาม</h4>
               <ul className="space-y-3 text-sm text-blue-100">
-                <li>งานพัฒนานักศึกษา คณะพยาบาลศาสตร์</li>
+                <li>งานพัฒนานักศึกษา {facultyFullName}</li>
                 <li>Nucare@nursing.edu</li>
                 <li>02-XXX-XXXX ต่อ 123</li>
               </ul>
@@ -752,7 +753,7 @@ export default function StudentDashboardPage() {
           </div>
 
           <div className="flex flex-col items-center justify-between gap-4 border-t border-blue-800 pt-6 text-xs text-blue-300 md:flex-row">
-            <p>© 2026 Faculty of Nursing. All rights reserved.</p>
+            <p>© 2026 {facultyEnglishFullName}. All rights reserved.</p>
             <div className="flex gap-4">
               <Link href="/privacy" className="transition-colors hover:text-white">
                 นโยบายความเป็นส่วนตัว (Privacy)

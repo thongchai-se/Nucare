@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { facultyFullName } from "@/lib/brand";
 
 const FALLBACK_SITE_URL = "http://localhost:3000";
 
@@ -23,7 +24,7 @@ const buildSiteUrl = (): string => {
 
 export const siteName = "NUCARE";
 export const defaultTitle = "NUCARE | Student Mental Health Care System";
-export const defaultDescription = "ระบบดูแลและติดตามสุขภาวะนักศึกษา คณะพยาบาลศาสตร์";
+export const defaultDescription = `ระบบดูแลและติดตามสุขภาวะนักศึกษา ${facultyFullName}`;
 export const metadataBase = new URL(buildSiteUrl());
 
 type CreatePageMetadataOptions = {

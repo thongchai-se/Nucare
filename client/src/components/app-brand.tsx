@@ -1,6 +1,7 @@
 "use client";
 
 import { HeartPulse } from "lucide-react";
+import { facultyFullName, facultyName } from "@/lib/brand";
 
 type AppBrandProps = {
   subtitle: string;
@@ -10,6 +11,7 @@ type AppBrandProps = {
 
 export function AppBrand({ subtitle, subtitleClassName = "", size = "default" }: AppBrandProps) {
   const compact = size === "compact";
+  const resolvedSubtitle = subtitle === facultyName ? facultyFullName : subtitle;
 
   return (
     <div className={`flex items-center ${compact ? "gap-2.5" : "gap-3"}`}>
@@ -25,7 +27,7 @@ export function AppBrand({ subtitle, subtitleClassName = "", size = "default" }:
           Nucare<span className="text-cyan-500">.</span>
         </span>
         <span className={`mt-0.5 block font-medium leading-none text-slate-500 ${compact ? "text-[10px]" : "text-[11px]"} ${subtitleClassName}`}>
-          {subtitle}
+          {resolvedSubtitle}
         </span>
       </div>
     </div>

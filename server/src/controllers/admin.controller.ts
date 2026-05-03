@@ -212,6 +212,76 @@ type ImportStaffRow = {
   roles: ManagedStaffRole[];
 };
 
+type ImportAuditOutcome = "success" | "partial" | "failed";
+
+type ImportAuditSummary = {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+};
+
+const resolveImportAuditOutcome = (summary: ImportAuditSummary): ImportAuditOutcome => {
+  const completedCount = summary.created + summary.updated + summary.skipped;
+
+  if (summary.failed <= 0) {
+    return "success";
+  }
+
+  return completedCount > 0 ? "partial" : "failed";
+};
+
+const summarizeImportFailureReasons = (
+  failures: Array<{ reason: string }>,
+  limit = 2
+): string | null => {
+  if (failures.length === 0) {
+    return null;
+  }
+
+  const counts = new Map<string, number>();
+
+  for (const failure of failures) {
+    const normalizedReason = failure.reason.replace(/[|\r\n]+/g, " ").trim();
+    counts.set(normalizedReason, (counts.get(normalizedReason) || 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([reason, count]) => `${count}x ${reason}`)
+    .join("; ");
+};
+
+const buildImportAuditDescription = (
+  label: string,
+  summary: ImportAuditSummary,
+  failures: Array<{ reason: string }> = [],
+  note?: string
+): string => {
+  const parts = [
+    label,
+    `outcome=${resolveImportAuditOutcome(summary)}`,
+    `total=${summary.total}`,
+    `created=${summary.created}`,
+    `updated=${summary.updated}`,
+    `skipped=${summary.skipped}`,
+    `failed=${summary.failed}`,
+  ];
+
+  const issueSummary = summarizeImportFailureReasons(failures);
+  if (issueSummary) {
+    parts.push(`issues=${issueSummary}`);
+  }
+
+  if (note) {
+    parts.push(`note=${note.replace(/[|\r\n]+/g, " ").trim()}`);
+  }
+
+  return parts.join(" | ");
+};
+
 const normalizeStudentId = (raw: string): string => {
   const normalized = raw.trim();
   if (!STUDENT_ID_PATTERN.test(normalized)) {
@@ -1738,24 +1808,32 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
       }
     });
 
+    const importSummary: ImportAuditSummary = {
+      total: normalizedRows.length,
+      created,
+      updated,
+      skipped,
+      failed: failures.length,
+    };
     const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
 
-    await writeAuditLog({
-      actorUserId,
-      action: "admin.student.import",
-      entityType: auditMetadata.entityType,
-      description: `Imported student batch (created=${created}, updated=${updated}, skipped=${skipped}, failed=${failures.length})`,
-      ipAddress: getRequestIpAddress(req),
-    });
+    try {
+      await writeAuditLog({
+        actorUserId,
+        action: "admin.student.import",
+        entityType: auditMetadata.entityType,
+        description: buildImportAuditDescription("Imported student batch", importSummary, failures),
+        ipAddress: getRequestIpAddress(req),
+      });
+    } catch (auditError) {
+      console.error("Write audit log after student import error:", auditError);
+    }
 
     res.status(200).json({
       message: "Student import completed",
       summary: {
-        total: normalizedRows.length,
-        created,
-        updated,
-        skipped,
-        failed: failures.length,
+        ...importSummary,
+        outcome: resolveImportAuditOutcome(importSummary),
       },
       failures,
       updatedStudents,
@@ -1766,6 +1844,33 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
     });
   } catch (error) {
     console.error("Import students error:", error);
+
+    try {
+      const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+      const failedSummary: ImportAuditSummary = {
+        total: normalizedRows.length,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        failed: normalizedRows.length,
+      };
+
+      await writeAuditLog({
+        actorUserId,
+        action: "admin.student.import",
+        entityType: auditMetadata.entityType,
+        description: buildImportAuditDescription(
+          "Imported student batch",
+          failedSummary,
+          [],
+          error instanceof Error ? error.message : "Unexpected import error"
+        ),
+        ipAddress: getRequestIpAddress(req),
+      });
+    } catch (auditError) {
+      console.error("Write failed audit log after student import error:", auditError);
+    }
+
     res.status(500).json({ message: "Failed to import students" });
   }
 };
@@ -2095,12 +2200,20 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
       }
     }
 
+    const importSummary: ImportAuditSummary = {
+      total: normalizedRows.length,
+      created,
+      updated,
+      skipped,
+      failed: failures.length,
+    };
+
     try {
       await writeAuditLog({
         actorUserId,
         action: "admin.user.import",
         entityType: "StaffAccount",
-        description: `Imported staff batch (created=${created}, updated=${updated}, skipped=${skipped}, failed=${failures.length})`,
+        description: buildImportAuditDescription("Imported staff batch", importSummary, failures),
         ipAddress: getRequestIpAddress(req),
       });
     } catch (auditError) {
@@ -2110,11 +2223,8 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
     res.status(200).json({
       message: "Staff import completed",
       summary: {
-        total: normalizedRows.length,
-        created,
-        updated,
-        skipped,
-        failed: failures.length,
+        ...importSummary,
+        outcome: resolveImportAuditOutcome(importSummary),
       },
       failures,
       updatedUsers,
@@ -2125,6 +2235,32 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
     });
   } catch (error) {
     console.error("Import staff users error:", error);
+
+    try {
+      const failedSummary: ImportAuditSummary = {
+        total: normalizedRows.length,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        failed: normalizedRows.length,
+      };
+
+      await writeAuditLog({
+        actorUserId,
+        action: "admin.user.import",
+        entityType: "StaffAccount",
+        description: buildImportAuditDescription(
+          "Imported staff batch",
+          failedSummary,
+          [],
+          error instanceof Error ? error.message : "Unexpected import error"
+        ),
+        ipAddress: getRequestIpAddress(req),
+      });
+    } catch (auditError) {
+      console.error("Write failed audit log after staff import error:", auditError);
+    }
+
     res.status(500).json({ message: "Failed to import staff users" });
   }
 };

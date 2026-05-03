@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { facultyFullName } from "@/lib/brand";
 import {
   ArrowRight,
   BookOpen,
@@ -398,7 +399,7 @@ export default function HomePage() {
                 <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
                   Nucare<span className="text-cyan-500">.</span>
                 </span>
-                <span className="block text-[10px] font-medium leading-none text-slate-500 sm:text-[11px]">คณะพยาบาลศาสตร์</span>
+                <span className="block text-[10px] font-medium leading-none text-slate-500 sm:text-[11px]">{facultyFullName}</span>
               </div>
             </div>
 

@@ -25,12 +25,15 @@ type CsvStudentRow = {
   rowError?: string;
 };
 
+type ImportOutcome = "success" | "partial" | "failed";
+
 type ImportSummary = {
   total: number;
   created: number;
   updated: number;
   skipped: number;
   failed: number;
+  outcome: ImportOutcome;
 };
 
 type ImportResponse = {
@@ -259,6 +262,7 @@ export default function ImportStudentsPage() {
   const [rows, setRows] = useState<CsvStudentRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState("");
+  const [serverNotice, setServerNotice] = useState("");
 
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -463,6 +467,7 @@ export default function ImportStudentsPage() {
     setCsvFileName("");
     setCsvFileSize("");
     setServerError("");
+    setServerNotice("");
     setShowImportProgressOverlay(false);
     setImportProgressPercent(0);
     setImportProgressCurrent(0);
@@ -476,15 +481,18 @@ export default function ImportStudentsPage() {
   const handleSelectedFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith(".csv")) {
       setServerError("กรุณาอัปโหลดไฟล์ .csv เท่านั้น");
+      setServerNotice("");
       return;
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setServerError("ไฟล์มีขนาดใหญ่เกิน 5MB");
+      setServerNotice("");
       return;
     }
 
     setServerError("");
+    setServerNotice("");
     setSelectedFile(file);
     setCsvFileName(file.name);
     setCsvFileSize(formatFileSize(file.size));
@@ -494,6 +502,7 @@ export default function ImportStudentsPage() {
   const checkExistingBeforeImport = async (csvRows: CsvStudentRow[]) => {
     setExistingCheckLoading(true);
     setExistingCheckError("");
+    setServerNotice("");
     setPreviewExistingStudents([]);
 
     const validRows = csvRows
@@ -531,6 +540,7 @@ export default function ImportStudentsPage() {
 
     setPreviewing(true);
     setServerError("");
+    setServerNotice("");
     resetParsedState();
 
     try {
@@ -585,6 +595,8 @@ export default function ImportStudentsPage() {
   };
 
   const handleImport = async () => {
+    setServerNotice("");
+
     if (!canImport) {
       if (incompleteRowsCount > 0) {
         setServerError("กรุณาแก้ข้อมูลไม่ครบก่อน จึงจะนำเข้าระบบได้");
@@ -606,6 +618,7 @@ export default function ImportStudentsPage() {
 
     setImporting(true);
     setServerError("");
+    setServerNotice("");
     setImportProgressTotal(totalRows);
     setImportProgressCurrent(0);
     setImportProgressPercent(0);
@@ -645,18 +658,28 @@ export default function ImportStudentsPage() {
           .map((item) => `${formatStudentIdDisplay(item.studentId)}: ${item.reason}`)
           .join(" | ");
 
-        setServerError(
-          `นำเข้าได้บางส่วน (เพิ่มใหม่ ${totalCreated} รายการ, อัปเดต ${totalUpdated} รายการ, ข้าม ${totalSkipped} รายการ, ไม่สำเร็จ ${totalFailed} รายการ)${failurePreview ? ` | ตัวอย่างปัญหา: ${failurePreview}` : ""}`
-        );
+        const partialImportMessage = `นำเข้าได้บางส่วน (เพิ่มใหม่ ${totalCreated} รายการ, อัปเดต ${totalUpdated} รายการ, ข้าม ${totalSkipped} รายการ, ไม่สำเร็จ ${totalFailed} รายการ)${
+          failurePreview ? ` | ตัวอย่างปัญหา: ${failurePreview}` : ""
+        }`;
+
+        if (totalCreated + totalUpdated + totalSkipped > 0) {
+          setServerNotice(partialImportMessage);
+          setServerError("");
+        } else {
+          setServerError(partialImportMessage);
+          setServerNotice("");
+        }
         return;
       }
 
+      setServerNotice("");
       setSuccessImportedCount(totalCreated);
       setSuccessUpdatedCount(totalUpdated);
       setSuccessAnimationKey((current) => current + 1);
       setShowImportSuccessModal(true);
       removeFile();
     } catch (error) {
+      setServerNotice("");
       if (error instanceof Error) {
         setServerError(error.message);
       } else {
@@ -1091,6 +1114,13 @@ export default function ImportStudentsPage() {
                     )}
                   </button>
                 </div>
+              </section>
+            )}
+
+            {serverNotice && (
+              <section className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-800">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                <p className="text-sm font-medium">{serverNotice}</p>
               </section>
             )}
 
