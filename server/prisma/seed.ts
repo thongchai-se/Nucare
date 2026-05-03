@@ -3,7 +3,18 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const DEFAULT_PASSWORD = process.env.DEFAULT_SEED_PASSWORD || "Nucare@12345";
+const MINIMUM_SEED_PASSWORD_LENGTH = 12;
+
+const getDefaultSeedPassword = (): string => {
+  const password = process.env.DEFAULT_SEED_PASSWORD?.trim();
+  if (!password || password.length < MINIMUM_SEED_PASSWORD_LENGTH) {
+    throw new Error(
+      `DEFAULT_SEED_PASSWORD must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long`
+    );
+  }
+
+  return password;
+};
 
 type SeedUser = {
   name: string;
@@ -39,7 +50,6 @@ const createOrUpdateUser = async (
         role: user.role,
         studentId: user.studentId,
         employeeId: user.employeeId,
-        password: passwordHash,
         isActive: true,
       },
     });
@@ -63,7 +73,8 @@ const createOrUpdateUser = async (
 };
 
 async function main() {
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+  const defaultPassword = getDefaultSeedPassword();
+  const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
   const results = await Promise.all(seedUsers.map((user) => createOrUpdateUser(user, passwordHash)));
 
@@ -76,7 +87,7 @@ async function main() {
   for (const account of seedUsers) {
     console.log(`- ${account.role}: ${account.email}`);
   }
-  console.log(`[seed] Password for all accounts: ${DEFAULT_PASSWORD}`);
+  console.log(`[seed] Password for all accounts: ${defaultPassword}`);
 }
 
 main()
