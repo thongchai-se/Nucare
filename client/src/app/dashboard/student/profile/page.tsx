@@ -151,6 +151,8 @@ export default function StudentProfilePage() {
   }
 
   const identifier = formatStudentIdDisplay(user.studentId) || user.employeeId || user.email || "-";
+  const studyYearLabel = user.studyYear ? `ปีที่ ${user.studyYear}` : "-";
+  const sectionLabel = user.section?.trim() || "-";
   const userInitials =
     user.name
       .trim()
@@ -396,7 +398,11 @@ export default function StudentProfilePage() {
                     </div>
                     <div>
                       <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">ชั้นปีการศึกษา</p>
-                      <p className="text-sm font-medium text-slate-800">ปีที่ 2</p>
+                      <p className="text-sm font-medium text-slate-800">{studyYearLabel}</p>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">เซค / กลุ่ม</p>
+                      <p className="text-sm font-medium text-slate-800">{sectionLabel}</p>
                     </div>
                     <div>
                       <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">อาจารย์ที่ปรึกษา</p>

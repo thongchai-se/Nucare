@@ -1,13 +1,16 @@
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "./prisma";
+import { hasAssignedRole } from "./roles";
 
-export const isAdvisorRole = (role: Role | undefined): boolean => role === Role.ADVISOR;
+const hasRole = (role: Role | Role[] | undefined, expectedRole: Role): boolean => hasAssignedRole(role, expectedRole);
+
+export const isAdvisorRole = (role: Role | Role[] | undefined): boolean => hasRole(role, Role.ADVISOR);
 
 export const getStudentScopeWhere = async (
-  role: Role,
+  role: Role | Role[],
   userId: string
 ): Promise<Prisma.UserWhereInput> => {
-  if (role === Role.ADVISOR) {
+  if (hasRole(role, Role.ADVISOR)) {
     const assignments = await prisma.studentAdvisorAssignment.findMany({
       where: {
         advisorId: userId,
@@ -28,14 +31,14 @@ export const getStudentScopeWhere = async (
     };
   }
 
-  if (role === Role.MENTAL_HEALTH) {
+  if (hasRole(role, Role.MENTAL_HEALTH)) {
     return {
       role: Role.STUDENT,
       isActive: true,
     };
   }
 
-  if (role === Role.INSTRUCTOR) {
+  if (hasRole(role, Role.INSTRUCTOR)) {
     return {
       role: Role.STUDENT,
       isActive: true,
@@ -48,15 +51,15 @@ export const getStudentScopeWhere = async (
 };
 
 export const canAccessStudent = async (
-  role: Role,
+  role: Role | Role[],
   userId: string,
   studentId: string
 ): Promise<boolean> => {
-  if (role === Role.MENTAL_HEALTH || role === Role.ADMIN) {
+  if (hasRole(role, Role.MENTAL_HEALTH) || hasRole(role, Role.ADMIN)) {
     return true;
   }
 
-  if (role === Role.ADVISOR) {
+  if (hasRole(role, Role.ADVISOR)) {
     const assignment = await prisma.studentAdvisorAssignment.findFirst({
       where: {
         advisorId: userId,
@@ -71,7 +74,7 @@ export const canAccessStudent = async (
     return Boolean(assignment);
   }
 
-  if (role === Role.INSTRUCTOR) {
+  if (hasRole(role, Role.INSTRUCTOR)) {
     const student = await prisma.user.findFirst({
       where: {
         id: studentId,

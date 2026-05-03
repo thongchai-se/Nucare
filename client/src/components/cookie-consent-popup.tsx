@@ -194,7 +194,7 @@ export default function CookieConsentPopup() {
             onClick={() => setIsSettingsOpen(false)}
           />
 
-          <div className="fixed inset-0 z-10 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto px-4 py-6 sm:items-center">
             <div
               id="cookie-settings-dialog"
               ref={settingsDialogRef}
@@ -203,7 +203,7 @@ export default function CookieConsentPopup() {
               aria-labelledby="cookie-settings-title"
               aria-describedby="cookie-settings-description"
               tabIndex={-1}
-              className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+              className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[90vh]"
             >
               <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-5">
                 <h3 id="cookie-settings-title" className="flex items-center gap-2 text-lg font-bold text-slate-800">
@@ -219,7 +219,7 @@ export default function CookieConsentPopup() {
                 </button>
               </div>
 
-              <div className="space-y-6 overflow-y-auto p-6">
+              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
                 <p id="cookie-settings-description" className="text-sm leading-relaxed text-slate-600">
                   คุณสามารถเลือกเปิดหรือปิดคุกกี้แต่ละประเภทได้ ยกเว้นคุกกี้ที่จำเป็นต่อการทำงานของระบบซึ่งไม่สามารถปิดได้
                 </p>

@@ -29,7 +29,11 @@ import { useAuth } from "@/context/auth.context";
 import { AppBrand } from '@/components/app-brand';
 import { MenuSectionHeading } from '@/components/menu-section-heading';
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { RoleToast } from "@/components/role-toast";
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
 import api from "@/lib/axios";
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type InstructorStudent = {
   id: string;
@@ -71,15 +75,6 @@ type QuickCategory = {
   label: string;
 };
 
-const roleRedirects: Record<string, string> = {
-  ADMIN: "/dashboard/admin",
-  ADVISOR: "/dashboard/advisor",
-  EXECUTIVE: "/dashboard/executive",
-  MENTAL_HEALTH: "/dashboard/mental-health",
-  STUDENT_DEVELOPMENT: "/dashboard/student-development",
-  STUDENT: "/dashboard/student",
-};
-
 const quickCategories: QuickCategory[] = [
   { id: "attendance", label: "ขาดเรียน/ฝึกงานบ่อย" },
   { id: "mood", label: "ซึมเศร้า/ร้องไห้บ่อย" },
@@ -118,7 +113,7 @@ const severityLabelMap: Record<BehaviorSeverity, string> = {
 };
 
 const getInitials = (name: string, fallback = "อจ"): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const parts = stripKnownNamePrefix(name).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
     return fallback;
   }
@@ -203,13 +198,13 @@ function InstructorDashboardContent() {
       return;
     }
 
-    if (user.role !== "INSTRUCTOR") {
-      router.replace(roleRedirects[user.role] ?? "/dashboard");
+    if (!hasRole(user, "INSTRUCTOR")) {
+      router.replace(getRoleHomePath(user.role));
     }
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (loading || user?.role !== "INSTRUCTOR") {
+    if (loading || !hasRole(user, "INSTRUCTOR")) {
       return;
     }
 
@@ -233,7 +228,7 @@ function InstructorDashboardContent() {
     };
 
     void loadPageData();
-  }, [loading, user?.role]);
+  }, [loading, user]);
 
   useEffect(() => {
     if (!successMessage) {
@@ -472,7 +467,7 @@ function InstructorDashboardContent() {
     );
   }
 
-  if (!user || user.role !== "INSTRUCTOR") {
+  if (!user || !hasRole(user, "INSTRUCTOR")) {
     return null;
   }
 
@@ -859,8 +854,8 @@ function InstructorDashboardContent() {
   );
 
   const ModalOverlay = ({ children }: { children: React.ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
-      <div className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 px-4 py-6 backdrop-blur-md sm:items-center">
+      <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl sm:max-h-[90vh]">
         {children}
       </div>
     </div>
@@ -868,6 +863,12 @@ function InstructorDashboardContent() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC] font-sans text-slate-800">
+      <RoleToast
+        description={successMessage}
+        open={Boolean(successMessage)}
+        title="ส่งข้อมูลสำเร็จ"
+        tone="success"
+      />
       <aside className="sticky top-0 hidden h-screen w-64 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="flex h-16 items-center border-b border-slate-100 px-6">
           <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
@@ -933,6 +934,7 @@ function InstructorDashboardContent() {
         </div>
 
         <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+          <StaffRoleSwitcher className="mb-3" />
           <button
             type="button"
             onClick={() => {
@@ -981,6 +983,7 @@ function InstructorDashboardContent() {
               </div>
             </div>
             <div className="border-t border-slate-100 p-4">
+              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
               <button
                 type="button"
                 onClick={() => {
@@ -1031,7 +1034,6 @@ function InstructorDashboardContent() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10">
           <div className="mx-auto max-w-5xl">
             {serverError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>}
-            {successMessage && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{successMessage}</div>}
 
             {loadingData ? (
               <div className="flex min-h-[50vh] items-center justify-center">
@@ -1080,7 +1082,7 @@ function InstructorDashboardContent() {
             </button>
           </div>
 
-          <div className="space-y-6 overflow-y-auto p-6">
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">นักศึกษาที่พบปัญหา</label>
@@ -1183,11 +1185,11 @@ function InstructorDashboardContent() {
             </div>
           </div>
 
-          <div className="flex gap-3 border-t border-slate-100 bg-slate-50 p-6">
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
             <button
               type="button"
               onClick={closeReportModal}
-              className="flex-1 rounded-2xl border border-slate-200 bg-white py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-100"
+              className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-100 sm:flex-1"
             >
               ยกเลิก
             </button>
@@ -1197,7 +1199,7 @@ function InstructorDashboardContent() {
                 void handleSubmitReport();
               }}
               disabled={submittingReport}
-              className="flex flex-[2] items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-200 transition-all hover:bg-blue-700 disabled:opacity-70"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-200 transition-all hover:bg-blue-700 disabled:opacity-70 sm:flex-[2]"
             >
               {submittingReport ? <span className="loader h-4 w-4"></span> : "ส่งเรื่องแจ้งเตือน"}
             </button>

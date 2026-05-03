@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { AppBrand } from "@/components/app-brand";
 import { MenuSectionHeading } from "@/components/menu-section-heading";
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import { getNameInitials } from "@/lib/name-prefix";
 
 type AdminNavKey = "dashboard" | "students" | "staff" | "import" | "reports" | "audit" | "settings" | "changePassword";
 
@@ -97,20 +99,7 @@ const settingsNavItems: NavItem[] = [
   },
 ];
 
-const getInitials = (name: string, fallback = "AD"): string => {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return fallback;
-  }
-
-  const first = parts[0]?.[0] ?? "";
-  const second = parts[1]?.[0] ?? parts[0]?.[1] ?? "";
-  return `${first}${second}`.toUpperCase();
-};
+const getInitials = (name: string, fallback = "AD"): string => getNameInitials(name, fallback);
 
 export function AdminShell({
   activeNav,
@@ -220,6 +209,7 @@ export function AdminShell({
       </div>
 
       <div className="border-t border-slate-100 bg-slate-50/80 p-4">
+        <StaffRoleSwitcher className="mb-3" onRoleSelect={closeMobileMenu} />
         <button
           type="button"
           onClick={() => {

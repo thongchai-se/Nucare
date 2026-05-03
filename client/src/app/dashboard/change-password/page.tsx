@@ -30,6 +30,7 @@ import {
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { getNameInitials } from "@/lib/name-prefix";
 import type { Role } from "@/types/auth";
 
 const roleHomeMap: Record<Role, string> = {
@@ -100,20 +101,7 @@ const formatUserIdentifier = (studentId?: string | null, employeeId?: string | n
   return email ?? "-";
 };
 
-const getInitials = (name: string, fallback: string): string => {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return fallback;
-  }
-
-  const first = parts[0]?.[0] ?? "";
-  const second = parts[1]?.[0] ?? parts[0]?.[1] ?? "";
-  return `${first}${second}`.toUpperCase();
-};
+const getInitials = (name: string, fallback: string): string => getNameInitials(name, fallback);
 
 function StudentProfileStyledChangePasswordView({
   user,

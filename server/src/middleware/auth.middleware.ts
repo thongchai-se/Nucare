@@ -3,10 +3,12 @@ import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
+import { getAssignedRoles } from "../lib/roles";
 
 export interface AuthTokenPayload extends JwtPayload {
   userId: string;
   role: Role;
+  roles?: Role[];
 }
 
 declare global {
@@ -52,6 +54,7 @@ export const authenticateToken = async (
       select: {
         id: true,
         role: true,
+        additionalRoles: true,
         isActive: true,
       },
     });
@@ -61,10 +64,13 @@ export const authenticateToken = async (
       return;
     }
 
+    const assignedRoles = getAssignedRoles(user);
+
     req.user = {
       ...decoded,
       userId: user.id,
       role: user.role,
+      roles: assignedRoles,
     };
     next();
   } catch (error) {
@@ -81,7 +87,9 @@ export const authorizeRoles =
       return;
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    const assignedRoles = req.user.roles?.length ? req.user.roles : [req.user.role];
+
+    if (!assignedRoles.some((role) => allowedRoles.includes(role))) {
       res.status(403).json({ message: "Forbidden" });
       return;
     }

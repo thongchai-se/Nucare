@@ -119,6 +119,8 @@ const auditActionLabelMap: Record<string, string> = {
   "admin.student.delete": "ลบบัญชีนักศึกษา",
   "admin.user.delete": "ลบบัญชีบุคลากร",
   "admin.student.import": "นำเข้าข้อมูลนักศึกษา",
+  "admin.user.import": "นำเข้าข้อมูลบุคลากร",
+  "admin.student.study-year.bulk-update": "เลื่อนชั้นปีแบบกลุ่ม",
   "admin.advisor-assignment.assign": "มอบหมายอาจารย์ที่ปรึกษา",
   "advisor.student-history.view": "เปิดดูประวัตินักศึกษา",
   "advisor.referral.create": "สร้างรายการส่งต่อ",
@@ -146,6 +148,8 @@ const auditActionDetailMap: Record<string, string> = {
   "admin.student.delete": "ลบบัญชีนักศึกษาออกจากระบบ",
   "admin.user.delete": "ลบบัญชีบุคลากรออกจากระบบ",
   "admin.student.import": "นำเข้าข้อมูลนักศึกษาแบบกลุ่มจากไฟล์",
+  "admin.user.import": "นำเข้าข้อมูลบุคลากรแบบกลุ่มจากไฟล์ CSV",
+  "admin.student.study-year.bulk-update": "ปรับชั้นปีนักศึกษาแบบกลุ่มในครั้งเดียว",
   "admin.advisor-assignment.assign": "บันทึกการจับคู่นักศึกษากับอาจารย์ที่ปรึกษา",
   "advisor.student-history.view": "เข้าถึงหน้าประวัติและข้อมูลย้อนหลังของนักศึกษา",
   "advisor.referral.create": "สร้างคำขอส่งต่อไปยังหน่วยงานที่เกี่ยวข้อง",
@@ -161,6 +165,8 @@ const auditActionDetailMap: Record<string, string> = {
 const auditEntityLabelMap: Record<string, string> = {
   AuthSession: "เซสชันเข้าสู่ระบบ",
   User: "บัญชีผู้ใช้งาน",
+  StudentAccount: "บัญชีนักศึกษา",
+  StaffAccount: "บัญชีบุคลากร",
   Alert: "การแจ้งเตือน",
   StudentAssessment: "แบบประเมินนักศึกษา",
   EmergencyCase: "เคสฉุกเฉิน",
@@ -246,12 +252,44 @@ const getAuditTarget = (log: AuditLogItem): string => {
 
 const getAuditStatusLabel = (status: "Success" | "Failed"): string => (status === "Success" ? "สำเร็จ" : "ไม่สำเร็จ");
 
-const getAuditActionLabel = (action: string): string => auditActionLabelMap[action] ?? action;
+const getNormalizedAuditAction = (log: AuditLogItem): string => {
+  if (!log.action.startsWith("admin.user.")) {
+    return log.action;
+  }
+
+  if ((log.description || "").toUpperCase().includes("STUDENT ACCOUNT")) {
+    return log.action.replace("admin.user.", "admin.student.");
+  }
+
+  return log.action;
+};
+
+const getAuditActionLabel = (log: AuditLogItem): string => {
+  const normalizedAction = getNormalizedAuditAction(log);
+  return auditActionLabelMap[normalizedAction] ?? normalizedAction;
+};
 
 const getAuditActionDetail = (log: AuditLogItem): string =>
-  auditActionDetailMap[log.action] ?? log.description ?? "กิจกรรมภายในระบบ";
+  auditActionDetailMap[getNormalizedAuditAction(log)] ?? log.description ?? "กิจกรรมภายในระบบ";
+
+const getAuditActionScopedTargetLabel = (action: string): string | null => {
+  if (action.startsWith("admin.student.")) {
+    return "บัญชีนักศึกษา";
+  }
+
+  if (action.startsWith("admin.user.")) {
+    return "บัญชีบุคลากร";
+  }
+
+  return null;
+};
 
 const getAuditTargetLabel = (log: AuditLogItem): string => {
+  const actionScopedLabel = getAuditActionScopedTargetLabel(getNormalizedAuditAction(log));
+  if (actionScopedLabel) {
+    return actionScopedLabel;
+  }
+
   if (log.entityType) {
     return auditEntityLabelMap[log.entityType] ?? log.entityType;
   }
@@ -279,7 +317,7 @@ const getAuditSearchText = (log: AuditLogItem): string =>
     getAuditActorName(log),
     log.actor?.role ? roleLabelMap[log.actor.role] : "",
     log.action,
-    getAuditActionLabel(log.action),
+    getAuditActionLabel(log),
     getAuditActionDetail(log),
     log.description || "",
     log.ipAddress || "",
@@ -298,6 +336,8 @@ function AdminDashboardContent() {
   const { user, isAuthenticated, loading, logout } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [auditCurrentPage, setAuditCurrentPage] = useState(1);
+  const [auditRowsPerPage, setAuditRowsPerPage] = useState(8);
   const [students, setStudents] = useState<ManagedStudent[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
@@ -331,6 +371,24 @@ function AdminDashboardContent() {
     router.prefetch("/dashboard/admin/manage-staff");
     router.prefetch("/dashboard/admin/import-students");
   }, [router]);
+
+  useEffect(() => {
+    const updateAuditRowsPerPage = () => {
+      const viewportHeight = window.innerHeight;
+      const isMobileViewport = window.innerWidth < 768;
+      const reservedHeight = isMobileViewport ? 540 : 420;
+      const estimatedRowHeight = isMobileViewport ? 136 : 88;
+      const minRows = isMobileViewport ? 4 : 5;
+      const maxRows = isMobileViewport ? 8 : 10;
+      const computedRows = Math.max(minRows, Math.floor((viewportHeight - reservedHeight) / estimatedRowHeight));
+
+      setAuditRowsPerPage(Math.min(maxRows, computedRows));
+    };
+
+    updateAuditRowsPerPage();
+    window.addEventListener("resize", updateAuditRowsPerPage);
+    return () => window.removeEventListener("resize", updateAuditRowsPerPage);
+  }, []);
 
   useEffect(() => {
     if (loading || user?.role !== "ADMIN") {
@@ -376,6 +434,30 @@ function AdminDashboardContent() {
 
     return auditLogs.filter((log) => getAuditSearchText(log).includes(normalized));
   }, [auditLogs, searchQuery]);
+
+  const auditTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredAuditLogs.length / auditRowsPerPage)),
+    [filteredAuditLogs.length, auditRowsPerPage]
+  );
+
+  useEffect(() => {
+    setAuditCurrentPage(1);
+  }, [activeView, searchQuery]);
+
+  useEffect(() => {
+    setAuditCurrentPage((prev) => Math.min(prev, auditTotalPages));
+  }, [auditTotalPages]);
+
+  const paginatedAuditLogs = useMemo(() => {
+    const start = (auditCurrentPage - 1) * auditRowsPerPage;
+    return filteredAuditLogs.slice(start, start + auditRowsPerPage);
+  }, [auditCurrentPage, auditRowsPerPage, filteredAuditLogs]);
+
+  const auditStartItemIndex = filteredAuditLogs.length === 0 ? 0 : (auditCurrentPage - 1) * auditRowsPerPage;
+  const auditEndItemIndex =
+    filteredAuditLogs.length === 0 ? 0 : Math.min(auditStartItemIndex + paginatedAuditLogs.length, filteredAuditLogs.length);
+  const canGoPrevAudit = auditCurrentPage > 1;
+  const canGoNextAudit = auditCurrentPage < auditTotalPages;
 
   const filteredStaffUsers = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
@@ -477,7 +559,7 @@ function AdminDashboardContent() {
                 return (
                   <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-800">{getAuditActionLabel(log.action)}</p>
+                      <p className="truncate text-sm font-bold text-slate-800">{getAuditActionLabel(log)}</p>
                       <p className="mt-1 truncate text-xs text-slate-500">
                         {getAuditActorName(log)} • {getAuditTargetLabel(log)}
                       </p>
@@ -529,16 +611,24 @@ function AdminDashboardContent() {
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600">
             <UploadCloud size={32} />
           </div>
-          <h3 className="mb-2 text-lg font-bold text-slate-800">อัปเดตฐานข้อมูลนักศึกษา</h3>
+          <h3 className="mb-2 text-lg font-bold text-slate-800">อัปเดตฐานข้อมูลแบบกลุ่ม</h3>
           <p className="mb-6 max-w-sm text-sm text-slate-500">
-            นำเข้าข้อมูลนักศึกษาชั้นปีใหม่ หรืออัปเดตรายชื่อแบบกลุ่มผ่านไฟล์ CSV ที่ทีมทำ flow ไว้แล้ว
+            นำเข้าข้อมูลนักศึกษาหรือบุคลากรแบบกลุ่มผ่านไฟล์ CSV พร้อมตรวจสอบก่อนบันทึกเข้าสู่ระบบ
           </p>
-          <Link
-            href="/dashboard/admin/import-students"
-            className="rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white shadow-md transition-colors hover:bg-blue-700"
-          >
-            ไปที่หน้าต่างนำเข้าข้อมูล
-          </Link>
+          <div className="flex w-full max-w-sm flex-col gap-3">
+            <Link
+              href="/dashboard/admin/import-students"
+              className="rounded-xl bg-blue-600 px-6 py-2.5 text-center font-bold text-white shadow-md transition-colors hover:bg-blue-700"
+            >
+              นำเข้านักศึกษา
+            </Link>
+            <Link
+              href="/dashboard/admin/import-staff"
+              className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-center font-bold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              นำเข้าบุคลากร
+            </Link>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -613,7 +703,7 @@ function AdminDashboardContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredAuditLogs.map((log) => {
+              {paginatedAuditLogs.map((log) => {
                 const status = getAuditStatus(log);
                 return (
                   <tr key={log.id} className="transition-colors hover:bg-slate-50">
@@ -631,9 +721,9 @@ function AdminDashboardContent() {
                       <p className="mt-1 text-xs text-slate-500">{log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ"}</p>
                     </td>
                     <td className="p-4 align-top text-slate-700">
-                      <p className="font-semibold text-slate-800">{getAuditActionLabel(log.action)}</p>
+                      <p className="font-semibold text-slate-800">{getAuditActionLabel(log)}</p>
                       <p className="mt-1 text-xs leading-5 text-slate-500">{getAuditActionDetail(log)}</p>
-                      <p className="mt-1 font-mono text-[11px] leading-5 text-slate-400 break-all">{log.action}</p>
+                      <p className="mt-1 font-mono text-[11px] leading-5 text-slate-400 break-all">{getNormalizedAuditAction(log)}</p>
                     </td>
                     <td className="p-4 align-top text-slate-600">
                       <p className="font-medium text-slate-700">{getAuditTargetLabel(log)}</p>
@@ -665,6 +755,34 @@ function AdminDashboardContent() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <span className="text-sm tabular-nums text-slate-500">
+            แสดง <span className="font-medium text-slate-800">{filteredAuditLogs.length === 0 ? 0 : auditStartItemIndex + 1}</span>-
+            <span className="font-medium text-slate-800">{auditEndItemIndex}</span> จาก
+            <span className="font-medium text-slate-800"> {filteredAuditLogs.length}</span> รายการ
+          </span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              disabled={!canGoPrevAudit}
+              onClick={() => setAuditCurrentPage((prev) => Math.max(1, prev - 1))}
+              className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            >
+              ก่อนหน้า
+            </button>
+            <button type="button" className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white">
+              {auditCurrentPage}
+            </button>
+            <button
+              type="button"
+              disabled={!canGoNextAudit}
+              onClick={() => setAuditCurrentPage((prev) => Math.min(auditTotalPages, prev + 1))}
+              className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            >
+              ถัดไป
+            </button>
+          </div>
         </div>
       </div>
     </div>

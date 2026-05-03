@@ -34,8 +34,8 @@ const getBehaviorRecordFollowUpStatus = (
 
 export const listInstructorStudents = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || role !== Role.INSTRUCTOR) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !roles.includes(Role.INSTRUCTOR)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -49,7 +49,7 @@ export const listInstructorStudents = async (req: Request, res: Response): Promi
   const search = parsed.data.search?.trim();
 
   try {
-    const where = await getStudentScopeWhere(role, userId);
+    const where = await getStudentScopeWhere(roles, userId);
     const students = await prisma.user.findMany({
       where: {
         ...where,
@@ -87,8 +87,8 @@ export const listInstructorStudents = async (req: Request, res: Response): Promi
 
 export const listBehaviorRecords = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || role !== Role.INSTRUCTOR) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !roles.includes(Role.INSTRUCTOR)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -191,8 +191,8 @@ export const listBehaviorRecords = async (req: Request, res: Response): Promise<
 
 export const createBehaviorRecord = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || role !== Role.INSTRUCTOR) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !roles.includes(Role.INSTRUCTOR)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -204,7 +204,7 @@ export const createBehaviorRecord = async (req: Request, res: Response): Promise
   }
 
   try {
-    const canAccess = await canAccessStudent(role, userId, parsed.data.studentId);
+    const canAccess = await canAccessStudent(roles, userId, parsed.data.studentId);
     if (!canAccess) {
       res.status(403).json({ message: "Forbidden" });
       return;

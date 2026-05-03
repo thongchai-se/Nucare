@@ -30,7 +30,11 @@ import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { MenuSectionHeading } from "@/components/menu-section-heading";
+import { RoleToast } from "@/components/role-toast";
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
 import api from "@/lib/axios";
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type DashboardReferral = {
   id: string;
@@ -38,7 +42,12 @@ type DashboardReferral = {
   reason: string;
   isUrgent: boolean;
   createdAt: string;
+  updatedAt: string;
   advisorName: string;
+  currentOwnerName: string | null;
+  currentOwnerAssignedAt: string | null;
+  careSessionCount: number;
+  latestCareSessionAt: string | null;
   student: {
     id: string;
     studentId: string | null;
@@ -91,6 +100,10 @@ type ActiveCase = {
   reason: string;
   isUrgent: boolean;
   lastUpdatedAt: string;
+  currentOwnerName: string | null;
+  currentOwnerAssignedAt: string | null;
+  careSessionCount: number;
+  latestCareSessionAt: string | null;
   latestAssessment: DashboardReferral["student"]["latestAssessment"];
 };
 
@@ -126,15 +139,6 @@ type Notice = {
   message: string;
 } | null;
 
-const redirectByRole: Record<string, string> = {
-  ADMIN: "/dashboard/admin",
-  EXECUTIVE: "/dashboard/executive",
-  ADVISOR: "/dashboard/advisor",
-  INSTRUCTOR: "/dashboard/instructor",
-  STUDENT_DEVELOPMENT: "/dashboard/student-development",
-  STUDENT: "/dashboard/student",
-};
-
 const emptyCareModalState = (): CareModalState => ({
   sessionDate: new Date().toISOString().slice(0, 10),
   subjective: "",
@@ -153,7 +157,7 @@ const emptyAppointmentModalState = (): AppointmentModalState => ({
 });
 
 const getInitials = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const parts = stripKnownNamePrefix(name).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
     return "NU";
   }
@@ -283,8 +287,8 @@ const ModalShell = ({
   children: React.ReactNode;
   onClose: () => void;
 }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-    <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">{children}</div>
+  <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/40 px-4 py-6 backdrop-blur-sm sm:items-center">
+    <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[90vh]">{children}</div>
     <button type="button" onClick={onClose} className="sr-only">
       ปิดหน้าต่าง
     </button>
@@ -317,8 +321,8 @@ function MentalHealthDashboardContent() {
       return;
     }
 
-    if (!loading && user && user.role !== "MENTAL_HEALTH") {
-      router.replace(redirectByRole[user.role] || "/dashboard");
+    if (!loading && user && !hasRole(user, "MENTAL_HEALTH")) {
+      router.replace(getRoleHomePath(user.role));
     }
   }, [isAuthenticated, loading, router, user]);
 
@@ -347,10 +351,10 @@ function MentalHealthDashboardContent() {
   }, []);
 
   useEffect(() => {
-    if (!loading && user?.role === "MENTAL_HEALTH") {
+    if (!loading && hasRole(user, "MENTAL_HEALTH")) {
       void loadDashboard();
     }
-  }, [loadDashboard, loading, user?.role]);
+  }, [loadDashboard, loading, user]);
 
   useEffect(() => {
     if (!notice) {
@@ -395,7 +399,11 @@ function MentalHealthDashboardContent() {
         advisorName: referral.advisorName,
         reason: referral.reason,
         isUrgent: referral.isUrgent,
-        lastUpdatedAt: referral.createdAt,
+        lastUpdatedAt: referral.latestCareSessionAt || referral.updatedAt || referral.createdAt,
+        currentOwnerName: referral.currentOwnerName,
+        currentOwnerAssignedAt: referral.currentOwnerAssignedAt,
+        careSessionCount: referral.careSessionCount,
+        latestCareSessionAt: referral.latestCareSessionAt,
         latestAssessment: referral.student.latestAssessment,
       });
     });
@@ -449,6 +457,7 @@ function MentalHealthDashboardContent() {
         item.student.name,
         item.student.studentId || "",
         item.advisorName,
+        item.currentOwnerName || "",
         item.reason,
         item.student.year,
         item.id,
@@ -466,7 +475,10 @@ function MentalHealthDashboardContent() {
     }
 
     return activeCases.filter((item) =>
-      [item.name, item.maskedStudentId, item.advisorName, item.reason, item.year].join(" ").toLowerCase().includes(normalized)
+      [item.name, item.maskedStudentId, item.advisorName, item.currentOwnerName || "", item.reason, item.year]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized)
     );
   }, [activeCases, searchQuery]);
 
@@ -677,27 +689,24 @@ function MentalHealthDashboardContent() {
     );
   }
 
-  if (!user || user.role !== "MENTAL_HEALTH") {
+  if (!user || !hasRole(user, "MENTAL_HEALTH")) {
     return null;
   }
 
   return (
     <div className="min-h-screen bg-[#F4F7FB] text-slate-800">
-      {notice ? (
-        <div className="pointer-events-none fixed right-4 top-20 z-[60] max-w-sm">
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm shadow-lg ${
-              notice.tone === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : notice.tone === "error"
-                  ? "border-red-200 bg-red-50 text-red-800"
-                  : "border-blue-200 bg-blue-50 text-blue-800"
-            }`}
-          >
-            {notice.message}
-          </div>
-        </div>
-      ) : null}
+      <RoleToast
+        description={notice?.message}
+        open={Boolean(notice)}
+        title={
+          notice?.tone === "error"
+            ? "ไม่สามารถดำเนินการได้"
+            : notice?.tone === "info"
+              ? "มีข้อมูลอัปเดต"
+              : "ดำเนินการสำเร็จ"
+        }
+        tone={notice?.tone || "success"}
+      />
 
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
@@ -756,6 +765,7 @@ function MentalHealthDashboardContent() {
           </div>
 
           <div className="border-t border-slate-100 p-4">
+            <StaffRoleSwitcher className="mb-3" />
             <button
               type="button"
               onClick={handleLogout}
@@ -827,6 +837,7 @@ function MentalHealthDashboardContent() {
               </div>
 
               <div className="border-t border-slate-100 p-4">
+                <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -1259,6 +1270,7 @@ function MentalHealthDashboardContent() {
                                 </td>
                                 <td className="px-5 py-4 text-sm text-slate-600">
                                   <p className="truncate">{item.advisorName}</p>
+                                  {item.currentOwnerName ? <p className="mt-1 text-xs text-slate-500">Owner: {item.currentOwnerName}</p> : null}
                                 </td>
                                 <td className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{formatThaiDateTime(item.createdAt)}</td>
                                 <td className="px-5 py-4">
@@ -1321,6 +1333,7 @@ function MentalHealthDashboardContent() {
                             <span className={`rounded-md px-2.5 py-1 text-[10px] font-bold uppercase ${risk.badge}`}>{risk.label}</span>
                           </div>
                           <p className="mt-3 text-sm text-slate-600">{item.reason}</p>
+                          {item.currentOwnerName ? <p className="mt-2 text-xs text-slate-500">Owner: {item.currentOwnerName}</p> : null}
                           <div className="mt-4 flex flex-wrap gap-2">
                             {item.status === "PENDING" ? (
                               <button
@@ -1412,6 +1425,10 @@ function MentalHealthDashboardContent() {
                               <p className="mt-1 text-xs font-bold text-blue-700">{getCaseStatusLabel(item)}</p>
                             </div>
                             <div className="col-span-2 border-t border-slate-200 pt-2">
+                              <p className="text-[10px] font-bold uppercase text-slate-400">Case Owner</p>
+                              <p className="mt-1 text-xs font-medium text-slate-700">{item.currentOwnerName || "Unassigned"}</p>
+                            </div>
+                            <div className="col-span-2 border-t border-slate-200 pt-2">
                               <p className="text-[10px] font-bold uppercase text-slate-400">นัดหมายถัดไป</p>
                               <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-700">
                                 <CalendarDays className="h-3.5 w-3.5" />
@@ -1425,6 +1442,11 @@ function MentalHealthDashboardContent() {
                               <p className="text-[10px] font-bold uppercase text-slate-400">ผู้ส่งต่อและเหตุผล</p>
                               <p className="mt-1 text-xs font-medium text-slate-700">{item.advisorName}</p>
                               <p className="mt-2 line-clamp-3 text-sm text-slate-600">{item.reason}</p>
+                              <p className="mt-2 text-xs text-slate-500">
+                                {item.careSessionCount > 0
+                                  ? `SOAP ${item.careSessionCount} ครั้ง ล่าสุด ${formatThaiDate(item.latestCareSessionAt || item.lastUpdatedAt)}`
+                                  : `ยังไม่มี SOAP ล่าสุด อัปเดต ${formatThaiDate(item.lastUpdatedAt)}`}
+                              </p>
                             </div>
                             <div className="flex gap-2">
                               <button
@@ -1639,8 +1661,8 @@ function MentalHealthDashboardContent() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmitCareRecord}>
-            <div className="max-h-[65vh] space-y-5 overflow-y-auto p-6">
+          <form onSubmit={handleSubmitCareRecord} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
               <div className="space-y-1">
                 <label className="text-sm font-bold text-slate-700">วันที่ให้บริการ</label>
                 <input
@@ -1712,15 +1734,15 @@ function MentalHealthDashboardContent() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6">
+            <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
               <button
                 type="button"
                 onClick={closeCareModal}
-                className="rounded-xl px-6 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200"
+                className="w-full rounded-xl px-6 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200 sm:w-auto"
               >
                 ยกเลิก
               </button>
-              <button type="submit" className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700">
+              <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto">
                 <CheckCircle2 className="h-4 w-4" />
                 บันทึกข้อมูล
               </button>
@@ -1746,8 +1768,8 @@ function MentalHealthDashboardContent() {
             </div>
           </div>
 
-          <form onSubmit={handleCreateAppointment}>
-            <div className="max-h-[65vh] space-y-5 overflow-y-auto p-6">
+          <form onSubmit={handleCreateAppointment} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
               <div className="space-y-1">
                 <label className="text-xs font-bold uppercase text-slate-500">นักศึกษา</label>
                 <select
@@ -1816,15 +1838,15 @@ function MentalHealthDashboardContent() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6">
+            <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
               <button
                 type="button"
                 onClick={closeAppointmentModal}
-                className="rounded-xl px-6 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200"
+                className="w-full rounded-xl px-6 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200 sm:w-auto"
               >
                 ยกเลิก
               </button>
-              <button type="submit" className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700">
+              <button type="submit" className="w-full rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto">
                 บันทึกนัดหมาย
               </button>
             </div>

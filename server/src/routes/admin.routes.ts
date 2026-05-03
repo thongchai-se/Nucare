@@ -2,12 +2,15 @@ import { Role } from "@prisma/client";
 import { Router } from "express";
 import {
   assignAdvisorStudents,
+  bulkPromoteStudentStudyYear,
+  checkExistingStaffUsers,
   createUser,
   listAuditLogs,
   listStaffUsers,
   checkExistingStudents,
   deleteUser,
   createStudent,
+  importStaffUsers,
   listUsers,
   deleteStudent,
   importStudents,
@@ -24,6 +27,13 @@ router.post(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   checkExistingStudents
+);
+
+router.post(
+  "/staff/check-existing",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  checkExistingStaffUsers
 );
 
 router.get(
@@ -108,6 +118,20 @@ router.post(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   importStudents
+);
+
+router.post(
+  "/staff/import",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  importStaffUsers
+);
+
+router.post(
+  "/students/promote-study-year",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  bulkPromoteStudentStudyYear
 );
 
 export default router;

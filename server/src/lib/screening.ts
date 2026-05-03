@@ -7,6 +7,7 @@ import {
   Role,
 } from "@prisma/client";
 import { prisma } from "./prisma";
+import { buildUserHasRoleWhere } from "./roles";
 
 export const getRiskLevelForAssessment = (
   instrument: AssessmentInstrument,
@@ -86,7 +87,7 @@ export const createScreeningAlerts = async (studentId: string, totalScore: numbe
   ) {
     const mentalHealthUsers = await prisma.user.findMany({
       where: {
-        role: Role.MENTAL_HEALTH,
+        ...buildUserHasRoleWhere(Role.MENTAL_HEALTH),
         isActive: true,
       },
       select: {

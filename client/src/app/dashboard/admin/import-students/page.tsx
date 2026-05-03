@@ -13,11 +13,14 @@ import {
 import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
+import { normalizeImportedStudentName } from "@/lib/name-prefix";
 
 type CsvStudentRow = {
   studentId: string;
   name: string;
   email: string;
+  studyYear: number | null;
+  section: string;
   isIncomplete: boolean;
   rowError?: string;
 };
@@ -49,6 +52,8 @@ type ExistingCheckResponse = {
     studentId: string | null;
     name: string;
     email: string | null;
+    studyYear: number | null;
+    section: string | null;
     reason: string;
   }>;
 };
@@ -57,6 +62,8 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const IMPORT_CHUNK_SIZE = 100;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
+const STUDY_YEAR_RANGE_MESSAGE = "ชั้นปีต้องเป็นตัวเลข 1-8";
+const SECTION_REQUIRED_MESSAGE = "กรุณาระบุเซคหรือกลุ่ม";
 
 const normalizeHeader = (value: string): string =>
   value
@@ -126,6 +133,18 @@ const formatStudentIdDisplay = (studentId: string | null | undefined): string =>
 
 const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+const normalizeStudyYear = (raw: string): number => {
+  const normalized = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(normalized) || normalized < 1 || normalized > 8) {
+    throw new Error(STUDY_YEAR_RANGE_MESSAGE);
+  }
+
+  return normalized;
+};
+
+const normalizeComparableSection = (value: string | null | undefined): string =>
+  (value || "").trim().toLowerCase();
+
 const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: string[] } => {
   const lines = csvText
     .split(/\r?\n/)
@@ -140,11 +159,13 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
   const studentIdIndex = findHeaderIndex(headers, ["studentId", "student_id", "รหัสนักศึกษา"]);
   const nameIndex = findHeaderIndex(headers, ["name", "fullname", "ชื่อ", "ชื่อสกุล", "ชื่อ-นามสกุล"]);
   const emailIndex = findHeaderIndex(headers, ["email", "mail", "อีเมล"]);
+  const studyYearIndex = findHeaderIndex(headers, ["studyYear", "study_year", "year", "yearLevel", "ชั้นปี"]);
+  const sectionIndex = findHeaderIndex(headers, ["section", "group", "sec", "กลุ่ม", "เซค"]);
 
-  if (studentIdIndex === -1 || nameIndex === -1 || emailIndex === -1) {
+  if (studentIdIndex === -1 || nameIndex === -1 || emailIndex === -1 || studyYearIndex === -1 || sectionIndex === -1) {
     return {
       rows: [],
-      errors: ["หัวตารางต้องมี studentId, name และ email"],
+      errors: ["หัวตารางต้องมี studentId, name, email, studyYear และ section"],
     };
   }
 
@@ -156,11 +177,15 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
     const studentIdRaw = cols[studentIdIndex] || "";
     const nameRaw = cols[nameIndex] || "";
     const emailRaw = cols[emailIndex] || "";
+    const studyYearRaw = cols[studyYearIndex] || "";
+    const sectionRaw = cols[sectionIndex] || "";
 
-    const name = nameRaw.trim();
+    const name = normalizeImportedStudentName(nameRaw);
     const email = emailRaw.trim();
+    const section = sectionRaw.trim();
 
     let normalizedStudentId = "";
+    let studyYear: number | null = null;
     let rowError = "";
 
     if (studentIdRaw.trim().length > 0) {
@@ -171,18 +196,36 @@ const parseCsvStudents = (csvText: string): { rows: CsvStudentRow[]; errors: str
       }
     }
 
-    if (!rowError && (!studentIdRaw.trim() || !name || !email)) {
-      rowError = "ข้อมูล studentId, name หรือ email ว่าง";
+    if (!rowError && (!studentIdRaw.trim() || !name || !email || !studyYearRaw.trim() || !section)) {
+      rowError = "ข้อมูล studentId, name, email, studyYear หรือ section ว่าง";
     }
 
     if (!rowError && !isValidEmail(email)) {
       rowError = "รูปแบบอีเมลไม่ถูกต้อง";
     }
 
+    if (!rowError) {
+      try {
+        studyYear = normalizeStudyYear(studyYearRaw);
+      } catch (error) {
+        rowError = error instanceof Error ? error.message : "ข้อมูลชั้นปีไม่ถูกต้อง";
+      }
+    }
+
+    if (!rowError && !section) {
+      rowError = SECTION_REQUIRED_MESSAGE;
+    }
+
+    if (!rowError && section.length > 50) {
+      rowError = "เซคหรือกลุ่มยาวเกิน 50 ตัวอักษร";
+    }
+
     parsedRows.push({
       studentId: normalizedStudentId || studentIdRaw.trim(),
       name,
       email,
+      studyYear,
+      section,
       isIncomplete: rowError.length > 0,
       rowError: rowError || undefined,
     });
@@ -195,6 +238,15 @@ const formatFileSize = (sizeInBytes: number): string => `${(sizeInBytes / 1024).
 
 const normalizeComparableEmail = (value: string | null | undefined): string =>
   (value || "").trim().toLowerCase();
+
+const isSameStudentProfile = (
+  existing: ExistingCheckResponse["existingStudents"][number],
+  row: CsvStudentRow
+): boolean =>
+  existing.name.trim() === row.name &&
+  normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email) &&
+  existing.studyYear === row.studyYear &&
+  normalizeComparableSection(existing.section) === normalizeComparableSection(row.section);
 
 export default function ImportStudentsPage() {
   const router = useRouter();
@@ -237,6 +289,7 @@ export default function ImportStudentsPage() {
   useEffect(() => {
     router.prefetch("/dashboard/admin");
     router.prefetch("/dashboard/admin/manage-students");
+    router.prefetch("/dashboard/admin/import-staff");
   }, [router]);
 
   useEffect(() => {
@@ -292,10 +345,7 @@ export default function ImportStudentsPage() {
           return false;
         }
 
-        return (
-          existing.name.trim() === row.name &&
-          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
-        );
+        return isSameStudentProfile(existing, row);
       }).length,
     [rows, previewExistingByStudentId]
   );
@@ -312,10 +362,7 @@ export default function ImportStudentsPage() {
           return false;
         }
 
-        return !(
-          existing.name.trim() === row.name &&
-          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
-        );
+        return !isSameStudentProfile(existing, row);
       }).length,
     [rows, previewExistingByStudentId]
   );
@@ -367,10 +414,7 @@ export default function ImportStudentsPage() {
           return true;
         }
 
-        return !(
-          existing.name.trim() === row.name &&
-          normalizeComparableEmail(existing.email) === normalizeComparableEmail(row.email)
-        );
+        return !isSameStudentProfile(existing, row);
       }),
     [rows, previewEmailOwnerByEmail, previewExistingByStudentId]
   );
@@ -668,7 +712,7 @@ export default function ImportStudentsPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
-        className={`fixed inset-0 z-[80] flex items-center justify-center p-6 transition-all duration-300 ease-out ${
+        className={`fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 py-6 transition-all duration-300 ease-out sm:items-center ${
           showImportSuccessModal ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
         }`}
       >
@@ -693,9 +737,17 @@ export default function ImportStudentsPage() {
       </div>
 
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">นำเข้าข้อมูล (Import Data)</h2>
-          <p className="mt-1 text-sm text-slate-500">อัปเดตฐานข้อมูลนักศึกษาและบุคลากรผ่านไฟล์ CSV ด้วย flow batch import ที่ทีมทำไว้แล้ว</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">นำเข้าข้อมูล (Import Data)</h2>
+            <p className="mt-1 text-sm text-slate-500">อัปเดตฐานข้อมูลนักศึกษาผ่านไฟล์ CSV ด้วย flow batch import ที่ทีมทำไว้แล้ว</p>
+          </div>
+          <Link
+            href="/dashboard/admin/import-staff"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            ไปหน้านำเข้าบุคลากร
+          </Link>
         </div>
 
         <div className="relative">
@@ -710,7 +762,10 @@ export default function ImportStudentsPage() {
                     <div className="w-full">
                       <h3 className="mb-2 text-lg font-medium text-gray-800">รูปแบบไฟล์ CSV ที่รองรับ</h3>
                       <p className="mb-4 text-sm leading-relaxed text-gray-600">
-                        กรุณาอัปโหลดไฟล์ .csv โดยต้องมีหัวตาราง studentId, name และ email ครบทุกช่อง
+                        กรุณาอัปโหลดไฟล์ .csv โดยต้องมีหัวตาราง studentId, name, email, studyYear และ section ครบทุกช่อง
+                      </p>
+                      <p className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                        บัญชีนักศึกษาที่ถูกสร้างใหม่จากการนำเข้าจะได้รหัสผ่านเริ่มต้นเป็น <span className="font-semibold">Nu + รหัสนักศึกษาแบบไม่มีขีด</span>
                       </p>
 
                       <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs sm:hidden">
@@ -727,6 +782,14 @@ export default function ImportStudentsPage() {
                             <p className="font-semibold text-gray-500">email *</p>
                             <p className="mt-1 break-all text-gray-800">somchai.j@university.ac.th</p>
                           </div>
+                          <div className="rounded-md border border-gray-200 bg-white p-2.5">
+                            <p className="font-semibold text-gray-500">studyYear *</p>
+                            <p className="mt-1 text-gray-800">2</p>
+                          </div>
+                          <div className="rounded-md border border-gray-200 bg-white p-2.5">
+                            <p className="font-semibold text-gray-500">section *</p>
+                            <p className="mt-1 text-gray-800">A</p>
+                          </div>
                         </div>
                       </div>
 
@@ -734,9 +797,11 @@ export default function ImportStudentsPage() {
                         <table className="w-full table-fixed text-left">
                           <thead className="bg-gray-100 text-gray-600">
                             <tr>
-                              <th className="w-[28%] border-b border-gray-200 px-4 py-2 font-medium">studentId *</th>
-                              <th className="w-[32%] border-b border-gray-200 px-4 py-2 font-medium">name *</th>
-                              <th className="w-[40%] border-b border-gray-200 px-4 py-2 font-medium">email *</th>
+                              <th className="w-[22%] border-b border-gray-200 px-4 py-2 font-medium">studentId</th>
+                              <th className="w-[24%] border-b border-gray-200 px-4 py-2 font-medium">name</th>
+                              <th className="w-[24%] border-b border-gray-200 px-4 py-2 font-medium">email</th>
+                              <th className="w-[12%] border-b border-gray-200 px-4 py-2 font-medium">studyYear</th>
+                              <th className="w-[18%] border-b border-gray-200 px-4 py-2 font-medium">section</th>
                             </tr>
                           </thead>
                           <tbody className="font-mono text-xs text-gray-600">
@@ -744,6 +809,8 @@ export default function ImportStudentsPage() {
                               <td className="border-b border-gray-100 px-4 py-2">663380595-6</td>
                               <td className="border-b border-gray-100 px-4 py-2">สมชาย ใจดี</td>
                               <td className="border-b border-gray-100 px-4 py-2 text-gray-400">somchai.j@university.ac.th</td>
+                              <td className="border-b border-gray-100 px-4 py-2">2</td>
+                              <td className="border-b border-gray-100 px-4 py-2">A</td>
                             </tr>
                           </tbody>
                         </table>
@@ -914,13 +981,15 @@ export default function ImportStudentsPage() {
                 )}
 
                 <div className="mb-6 min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+                  <table className="w-full min-w-[1080px] table-fixed text-left text-sm">
                     <colgroup>
                       <col className="w-16" />
+                      <col className="w-[18%]" />
                       <col className="w-[22%]" />
-                      <col className="w-[26%]" />
-                      <col className="w-[24%]" />
-                      <col className="w-[28%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[16%]" />
                     </colgroup>
                     <thead className="sticky top-0 border-b border-gray-200 bg-gray-50 text-gray-600">
                       <tr>
@@ -928,6 +997,8 @@ export default function ImportStudentsPage() {
                         <th className="px-4 py-3 font-medium">รหัสนักศึกษา</th>
                         <th className="px-4 py-3 font-medium">ชื่อ-นามสกุล</th>
                         <th className="px-4 py-3 font-medium">อีเมล</th>
+                        <th className="px-4 py-3 font-medium">ชั้นปี</th>
+                        <th className="px-4 py-3 font-medium">เซค/กลุ่ม</th>
                         <th className="px-4 py-3 font-medium">สถานะ</th>
                       </tr>
                     </thead>
@@ -935,10 +1006,7 @@ export default function ImportStudentsPage() {
                       {rows.map((row, index) => {
                         const duplicated = !row.isIncomplete && previewExistingStudentIdSet.has(row.studentId);
                         const existing = duplicated ? previewExistingByStudentId.get(row.studentId) : undefined;
-                        const unchanged =
-                          Boolean(existing) &&
-                          existing!.name.trim() === row.name &&
-                          normalizeComparableEmail(existing!.email) === normalizeComparableEmail(row.email);
+                        const unchanged = existing ? isSameStudentProfile(existing, row) : false;
                         const emailOwnerStudentId = previewEmailOwnerByEmail.get(
                           normalizeComparableEmail(row.email)
                         );
@@ -958,6 +1026,10 @@ export default function ImportStudentsPage() {
                             </td>
                             <td className="px-4 py-3 text-xs text-gray-500">
                               <p className="truncate">{row.email || "-"}</p>
+                            </td>
+                            <td className="px-4 py-3 text-gray-700">{row.studyYear ?? "-"}</td>
+                            <td className="px-4 py-3 text-gray-700">
+                              <p className="truncate">{row.section || "-"}</p>
                             </td>
                             <td className="px-4 py-3">
                               {row.isIncomplete ? (
@@ -988,7 +1060,7 @@ export default function ImportStudentsPage() {
 
                       {rows.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                          <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                             ไม่พบข้อมูลที่พร้อมสำหรับพรีวิว
                           </td>
                         </tr>

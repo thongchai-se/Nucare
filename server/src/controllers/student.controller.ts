@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { writeAuditLog, getRequestIpAddress } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
+import { buildUserHasRoleWhere } from "../lib/roles";
 import {
   createScreeningAlerts,
   getRiskLevelForAssessment,
@@ -42,6 +43,8 @@ export const getStudentDashboard = async (req: Request, res: Response): Promise<
           name: true,
           studentId: true,
           email: true,
+          studyYear: true,
+          section: true,
         },
       }),
       prisma.studentAssessment.findMany({
@@ -76,6 +79,8 @@ export const getStudentDashboard = async (req: Request, res: Response): Promise<
         ? {
             ...student,
             studentId: formatStudentIdForResponse(student.studentId),
+            studyYear: student.studyYear ?? null,
+            section: student.section ?? null,
           }
         : null,
       latestAssessments,
@@ -189,7 +194,7 @@ export const createSosCase = async (req: Request, res: Response): Promise<void> 
 
     const mentalHealthUsers = await prisma.user.findMany({
       where: {
-        role: Role.MENTAL_HEALTH,
+        ...buildUserHasRoleWhere(Role.MENTAL_HEALTH),
         isActive: true,
       },
       select: { id: true },

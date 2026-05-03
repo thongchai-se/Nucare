@@ -12,6 +12,7 @@ import advisorRoutes from "./routes/advisor.routes";
 import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import studentRoutes from "./routes/student.routes";
+import studentDevelopmentRoutes from "./routes/student-development.routes";
 
 const app = express();
 const port = Number(readEnv("PORT")) || 5000;
@@ -191,6 +192,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/advisor", advisorRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/student-development", studentDevelopmentRoutes);
 app.use("/api/instructor", instructorRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
 app.use("/api/alerts", alertsRoutes);

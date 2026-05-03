@@ -31,7 +31,10 @@ import {
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from '@/components/app-brand';
 import { MenuSectionHeading } from '@/components/menu-section-heading';
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type ActiveView = "dashboard" | "reports" | "departments" | "trends" | "change-password";
 
@@ -79,15 +82,6 @@ type DepartmentItem = {
   riskScore: number;
 };
 
-const redirectByRole: Record<string, string> = {
-  ADMIN: "/dashboard/admin",
-  ADVISOR: "/dashboard/advisor",
-  INSTRUCTOR: "/dashboard/instructor",
-  MENTAL_HEALTH: "/dashboard/mental-health",
-  STUDENT_DEVELOPMENT: "/dashboard/student-development",
-  STUDENT: "/dashboard/student",
-};
-
 const kpis: KPISet = {
   totalStudents: 750,
   screenedPercentage: 92,
@@ -133,7 +127,7 @@ const departmentData: DepartmentItem[] = [
 ];
 
 const getInitials = (name: string, fallback = "ผบ"): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const parts = stripKnownNamePrefix(name).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
     return fallback;
   }
@@ -161,12 +155,12 @@ function ExecutiveDashboardContent() {
       return;
     }
 
-    if (user.role !== "EXECUTIVE") {
-      router.replace(redirectByRole[user.role] ?? "/dashboard");
+    if (!hasRole(user, "EXECUTIVE")) {
+      router.replace(getRoleHomePath(user.role));
     }
   }, [loading, router, user]);
 
-  const isExecutive = useMemo(() => user?.role === "EXECUTIVE", [user]);
+  const isExecutive = useMemo(() => hasRole(user, "EXECUTIVE"), [user]);
 
   const executiveProfile = useMemo(
     () => ({
@@ -584,6 +578,7 @@ function ExecutiveDashboardContent() {
         </div>
 
         <div className="border-t border-slate-100 p-4">
+          <StaffRoleSwitcher className="mb-3" />
           <button
             type="button"
             onClick={() => {
@@ -627,6 +622,7 @@ function ExecutiveDashboardContent() {
               </div>
             </div>
             <div className="border-t border-slate-100 p-4">
+              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
               <button
                 type="button"
                 onClick={() => {

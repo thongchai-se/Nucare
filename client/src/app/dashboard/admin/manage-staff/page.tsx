@@ -8,6 +8,7 @@ import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { RoleToast } from "@/components/role-toast";
 import type { Role } from "@/types/auth";
 
 type UserStatus = "active" | "inactive";
@@ -21,6 +22,7 @@ type ManagedUser = {
   studentId: string | null;
   employeeId: string | null;
   role: Role;
+  roles: StaffRole[];
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
@@ -38,7 +40,7 @@ type UserMutationResponse = {
 };
 
 type UserFormSnapshot = {
-  role: StaffRole;
+  roles: StaffRole[];
   employeeId: string;
   name: string;
   email: string;
@@ -49,6 +51,7 @@ type FormErrors = {
   email: string;
   employeeId: string;
   name: string;
+  roles: string;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -80,10 +83,46 @@ const roleLabelMap: Record<StaffRole, string> = {
   MENTAL_HEALTH: "ผู้เชี่ยวชาญ",
 };
 
+const roleEmployeeIdPrefixMap: Record<StaffRole, string> = {
+  STUDENT_DEVELOPMENT: "SDV",
+  ADMIN: "ADM",
+  ADVISOR: "ADV",
+  EXECUTIVE: "EXE",
+  INSTRUCTOR: "INS",
+  MENTAL_HEALTH: "MHT",
+};
+
+const EMPLOYEE_ID_SEQUENCE_PAD_LENGTH = 3;
+
+const buildPreviewEmployeeId = (prefix: string, sequence: number): string =>
+  `${prefix}${String(sequence).padStart(EMPLOYEE_ID_SEQUENCE_PAD_LENGTH, "0")}`;
+
 const emptyErrors: FormErrors = {
   email: "",
   employeeId: "",
   name: "",
+  roles: "",
+};
+
+const staffRolePriorityOrder: StaffRole[] = [
+  "ADMIN",
+  "EXECUTIVE",
+  "STUDENT_DEVELOPMENT",
+  "MENTAL_HEALTH",
+  "ADVISOR",
+  "INSTRUCTOR",
+];
+
+const normalizeStaffRoles = (roles: StaffRole[]): StaffRole[] =>
+  Array.from(new Set(roles)).sort(
+    (left, right) => staffRolePriorityOrder.indexOf(left) - staffRolePriorityOrder.indexOf(right)
+  );
+
+const areSameStaffRoles = (left: StaffRole[], right: StaffRole[]): boolean => {
+  const normalizedLeft = normalizeStaffRoles(left);
+  const normalizedRight = normalizeStaffRoles(right);
+
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((role, index) => normalizedRight[index] === role);
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -122,7 +161,7 @@ export default function ManageStaffPage() {
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
-  const [formRole, setFormRole] = useState<StaffRole>("ADVISOR");
+  const [formRoles, setFormRoles] = useState<StaffRole[]>(["ADVISOR"]);
   const [formEmployeeId, setFormEmployeeId] = useState("");
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
@@ -131,10 +170,13 @@ export default function ManageStaffPage() {
   const [initialFormSnapshot, setInitialFormSnapshot] = useState<UserFormSnapshot | null>(null);
 
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  const [successAnimationKey, setSuccessAnimationKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState("บันทึกข้อมูลสำเร็จ");
   const [successTemporaryPassword, setSuccessTemporaryPassword] = useState("");
   const [pendingDeleteUser, setPendingDeleteUser] = useState<ManagedUser | null>(null);
+  const successAnimationKey = 0;
+  const showLegacySuccessPopup = false;
+
+  const primaryFormRole = useMemo<StaffRole>(() => normalizeStaffRoles(formRoles)[0] || "ADVISOR", [formRoles]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -146,6 +188,7 @@ export default function ManageStaffPage() {
     router.prefetch("/dashboard/admin");
     router.prefetch("/dashboard/admin/manage-students");
     router.prefetch("/dashboard/admin/import-students");
+    router.prefetch("/dashboard/admin/import-staff");
   }, [router]);
 
   useEffect(() => {
@@ -186,6 +229,57 @@ export default function ManageStaffPage() {
 
   const isAdmin = useMemo(() => user?.role === "ADMIN", [user]);
 
+  const usersForEmployeeIdPreview = useMemo(() => {
+    if (!user || user.role === "STUDENT") {
+      return users;
+    }
+
+    const alreadyIncluded = users.some((managedUser) => managedUser.id === user.id);
+    if (alreadyIncluded) {
+      return users;
+    }
+
+    return [
+      ...users,
+      {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        studentId: user.studentId,
+        employeeId: user.employeeId,
+        role: user.role,
+        roles: (user.roles || [user.role]).filter((role): role is StaffRole => role !== "STUDENT"),
+        status: "active" as const,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    ];
+  }, [user, users]);
+
+  const generatedEmployeeId = useMemo(() => {
+    const prefix = roleEmployeeIdPrefixMap[primaryFormRole];
+    let maxSequence = 0;
+
+    for (const managedUser of usersForEmployeeIdPreview) {
+      if (managedUser.role !== primaryFormRole) {
+        continue;
+      }
+
+      const normalizedEmployeeId = managedUser.employeeId?.trim().toUpperCase() || "";
+      const match = new RegExp(`^${prefix}(\\d+)$`).exec(normalizedEmployeeId);
+      if (!match) {
+        continue;
+      }
+
+      const sequence = Number.parseInt(match[1], 10);
+      if (Number.isFinite(sequence)) {
+        maxSequence = Math.max(maxSequence, sequence);
+      }
+    }
+
+    return buildPreviewEmployeeId(prefix, maxSequence + 1);
+  }, [primaryFormRole, usersForEmployeeIdPreview]);
+
   const filteredUsers = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
 
@@ -194,7 +288,7 @@ export default function ManageStaffPage() {
         return false;
       }
 
-      const matchesRole = roleFilter === "ALL" || managedUser.role === roleFilter;
+      const matchesRole = roleFilter === "ALL" || managedUser.roles.includes(roleFilter);
       if (!matchesRole) {
         return false;
       }
@@ -203,7 +297,9 @@ export default function ManageStaffPage() {
         return true;
       }
 
-      return [managedUser.name, managedUser.email || "", managedUser.employeeId || "", roleLabelMap[managedUser.role as StaffRole]]
+      const roleKeywords = managedUser.roles.map((role) => roleLabelMap[role]).join(" ");
+
+      return [managedUser.name, managedUser.email || "", managedUser.employeeId || "", roleKeywords]
         .join(" ")
         .toLowerCase()
         .includes(keyword);
@@ -220,6 +316,15 @@ export default function ManageStaffPage() {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
+  useEffect(() => {
+    if (modalMode !== "add") {
+      return;
+    }
+
+    setFormEmployeeId(generatedEmployeeId);
+    setFormErrors((current) => ({ ...current, employeeId: "" }));
+  }, [generatedEmployeeId, modalMode]);
+
   const paginatedUsers = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredUsers.slice(start, start + rowsPerPage);
@@ -234,12 +339,13 @@ export default function ManageStaffPage() {
     const trimmedName = formName.trim();
     const trimmedEmail = formEmail.trim();
     const trimmedEmployeeId = formEmployeeId.trim();
+    const normalizedRoles = normalizeStaffRoles(formRoles);
 
-    if (!trimmedName || !trimmedEmployeeId) {
+    if (!trimmedName || !trimmedEmployeeId || !trimmedEmail || normalizedRoles.length === 0) {
       return false;
     }
 
-    if (trimmedEmail && !EMAIL_PATTERN.test(trimmedEmail)) {
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
       return false;
     }
 
@@ -252,13 +358,13 @@ export default function ManageStaffPage() {
     }
 
     return (
-      initialFormSnapshot.role !== formRole ||
+      !areSameStaffRoles(initialFormSnapshot.roles, formRoles) ||
       initialFormSnapshot.employeeId !== trimmedEmployeeId ||
       initialFormSnapshot.name !== trimmedName ||
       initialFormSnapshot.email !== trimmedEmail.toLowerCase() ||
       initialFormSnapshot.status !== formStatus
     );
-  }, [formEmail, formEmployeeId, formName, formRole, formStatus, initialFormSnapshot, modalMode]);
+  }, [formEmail, formEmployeeId, formName, formRoles, formStatus, initialFormSnapshot, modalMode]);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -279,8 +385,8 @@ export default function ManageStaffPage() {
     router.replace("/login");
   };
 
-  const resetForm = (role: StaffRole = "ADVISOR") => {
-    setFormRole(role);
+  const resetForm = (roles: StaffRole[] = ["ADVISOR"]) => {
+    setFormRoles(normalizeStaffRoles(roles));
     setFormEmployeeId("");
     setFormName("");
     setFormEmail("");
@@ -292,7 +398,7 @@ export default function ManageStaffPage() {
     setModalMode("add");
     setEditingUserId(null);
     setInitialFormSnapshot(null);
-    resetForm("ADVISOR");
+    resetForm(["ADVISOR"]);
     setModalOpen(true);
   };
 
@@ -303,14 +409,14 @@ export default function ManageStaffPage() {
 
     setModalMode("edit");
     setEditingUserId(managedUser.id);
-    setFormRole(managedUser.role);
+    setFormRoles(normalizeStaffRoles(managedUser.roles));
     setFormEmployeeId(managedUser.employeeId || "");
     setFormName(managedUser.name);
     setFormEmail(managedUser.email || "");
     setFormStatus(managedUser.status);
     setFormErrors(emptyErrors);
     setInitialFormSnapshot({
-      role: managedUser.role,
+      roles: normalizeStaffRoles(managedUser.roles),
       employeeId: managedUser.employeeId || "",
       name: managedUser.name.trim(),
       email: (managedUser.email || "").trim().toLowerCase(),
@@ -332,26 +438,34 @@ export default function ManageStaffPage() {
   const showSuccess = (message: string, temporaryPassword = "") => {
     setSuccessMessage(message);
     setSuccessTemporaryPassword(temporaryPassword);
-    setSuccessAnimationKey((current) => current + 1);
     setShowSuccessPopup(true);
   };
 
-  const validateForm = (): { email: string | null; employeeId: string } | null => {
+  const validateForm = (): { email: string; employeeId: string } | null => {
     const nextErrors: FormErrors = { ...emptyErrors };
     const trimmedName = formName.trim();
     const trimmedEmail = formEmail.trim();
     const trimmedEmployeeId = formEmployeeId.trim();
+    const normalizedRoles = normalizeStaffRoles(formRoles);
 
     if (!trimmedName) {
       nextErrors.name = "กรุณาระบุชื่อ-นามสกุล";
+    }
+
+    if (normalizedRoles.length === 0) {
+      nextErrors.roles = "กรุณาเลือกอย่างน้อย 1 role";
     }
 
     if (!trimmedEmployeeId) {
       nextErrors.employeeId = "กรุณาระบุรหัสพนักงาน/บุคลากร";
     }
 
-    if (trimmedEmail && !EMAIL_PATTERN.test(trimmedEmail)) {
+    if (!trimmedEmail) {
       nextErrors.email = "รูปแบบอีเมลไม่ถูกต้อง";
+    }
+
+    if (trimmedEmail && !EMAIL_PATTERN.test(trimmedEmail)) {
+      nextErrors.email = "Email format is invalid";
     }
 
     setFormErrors(nextErrors);
@@ -360,7 +474,7 @@ export default function ManageStaffPage() {
     }
 
     return {
-      email: trimmedEmail || null,
+      email: trimmedEmail.toLowerCase(),
       employeeId: trimmedEmployeeId,
     };
   };
@@ -377,10 +491,10 @@ export default function ManageStaffPage() {
     setSubmitting(true);
 
     const payload = {
-      role: formRole,
-      employeeId: validated.employeeId,
+      employeeId: modalMode === "add" ? undefined : validated.employeeId,
       name: formName.trim(),
-      email: validated.email || undefined,
+      email: validated.email,
+      roles: normalizeStaffRoles(formRoles),
       status: formStatus,
     };
 
@@ -421,6 +535,11 @@ export default function ManageStaffPage() {
 
     setPendingDeleteUser(managedUser);
   };
+
+  const editingManagedUser = useMemo(
+    () => users.find((managedUser) => managedUser.id === editingUserId) ?? null,
+    [editingUserId, users]
+  );
 
   const confirmDeleteUser = async () => {
     if (!pendingDeleteUser) {
@@ -481,8 +600,8 @@ export default function ManageStaffPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
-        className={`fixed inset-0 z-[80] flex items-center justify-center px-4 transition-all duration-300 ease-out ${
-          showSuccessPopup ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
+        className={`fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 py-6 transition-all duration-300 ease-out sm:items-center ${
+          showLegacySuccessPopup && showSuccessPopup ? "scale-100 opacity-100" : "hidden pointer-events-none scale-95 opacity-0"
         }`}
       >
         <div className="w-fit max-w-[92vw] rounded-[2rem] border border-gray-100 bg-white/95 px-8 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] backdrop-blur-sm sm:px-10">
@@ -502,6 +621,17 @@ export default function ManageStaffPage() {
           </div>
         </div>
       </div>
+
+      <RoleToast
+        open={showSuccessPopup}
+        title={successMessage}
+        description={
+          successTemporaryPassword
+            ? `รหัสผ่านชั่วคราว: ${successTemporaryPassword}`
+            : "ระบบบันทึกการเปลี่ยนแปลงข้อมูลบุคลากรเรียบร้อยแล้ว"
+        }
+        tone="success"
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDeleteUser)}
@@ -530,14 +660,22 @@ export default function ManageStaffPage() {
             <h2 className="text-2xl font-bold text-slate-800">จัดการบุคลากร</h2>
             <p className="mt-1 text-sm text-slate-500">ดูแลบัญชีอาจารย์ ผู้เชี่ยวชาญ ผู้บริหาร และผู้ดูแลระบบ แยกจากบัญชีนักศึกษาอย่างชัดเจน</p>
           </div>
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow sm:w-auto"
-          >
-            <Plus className="h-5 w-5" />
-            เพิ่มบุคลากรใหม่
-          </button>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            <Link
+              href="/dashboard/admin/import-staff"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 font-medium text-slate-700 shadow-sm transition-all duration-200 hover:bg-slate-50 sm:w-auto"
+            >
+              นำเข้าบุคลากร
+            </Link>
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow sm:w-auto"
+            >
+              <Plus className="h-5 w-5" />
+              เพิ่มบุคลากรใหม่
+            </button>
+          </div>
         </div>
 
         {serverError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>}
@@ -587,9 +725,13 @@ export default function ManageStaffPage() {
                         <p className="text-xs text-slate-500">ลำดับที่ {startItemIndex + index + 1}</p>
                         <p className="mt-0.5 font-medium text-slate-900">{managedUser.name}</p>
                       </div>
-                      <span className={`rounded-md px-2.5 py-1 text-[10px] font-bold ${roleBadgeMap[managedUser.role as StaffRole]}`}>
-                        {roleLabelMap[managedUser.role as StaffRole]}
-                      </span>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {managedUser.roles.map((role) => (
+                          <span key={role} className={`rounded-md px-2.5 py-1 text-[10px] font-bold ${roleBadgeMap[role]}`}>
+                            {roleLabelMap[role]}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="space-y-2 text-sm">
@@ -620,7 +762,7 @@ export default function ManageStaffPage() {
                           type="button"
                           disabled={isDeleting}
                           onClick={() => handleDeleteUser(managedUser)}
-                          className="text-sm font-medium text-red-500 disabled:opacity-60"
+                          className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
                         >
                           {isDeleting ? "กำลังลบ..." : "ลบ"}
                         </button>
@@ -671,9 +813,13 @@ export default function ManageStaffPage() {
                           <p className="truncate">{managedUser.name}</p>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex max-w-full truncate rounded-md px-2.5 py-1 text-[10px] font-bold ${roleBadgeMap[managedUser.role as StaffRole]}`}>
-                            {roleLabelMap[managedUser.role as StaffRole]}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {managedUser.roles.map((role) => (
+                              <span key={role} className={`inline-flex max-w-full truncate rounded-md px-2.5 py-1 text-[10px] font-bold ${roleBadgeMap[role]}`}>
+                                {roleLabelMap[role]}
+                              </span>
+                            ))}
+                          </div>
                         </td>
                         <td className="px-6 py-4 font-mono text-sm text-slate-700 whitespace-nowrap">{managedUser.employeeId || "-"}</td>
                         <td className="px-6 py-4 text-slate-500">
@@ -697,7 +843,7 @@ export default function ManageStaffPage() {
                             type="button"
                             disabled={isDeleting}
                             onClick={() => handleDeleteUser(managedUser)}
-                            className="text-sm font-medium text-red-500 disabled:opacity-60"
+                            className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
                           >
                             {isDeleting ? "กำลังลบ..." : "ลบ"}
                           </button>
@@ -747,9 +893,9 @@ export default function ManageStaffPage() {
         }`}
         onClick={closeModal}
       />
-      <div className={`fixed inset-0 z-[70] flex items-center justify-center p-4 ${modalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center ${modalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`w-full max-w-lg overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 ${
+          className={`flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[90vh] ${
             modalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
@@ -760,15 +906,15 @@ export default function ManageStaffPage() {
             </button>
           </div>
 
-          <form className="space-y-4 p-6" onSubmit={saveUser}>
+          <form className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6" onSubmit={saveUser}>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 บทบาท (Role) <span className="text-red-500">*</span>
               </label>
               <select
-                value={formRole}
-                onChange={(event) => setFormRole(event.target.value as StaffRole)}
-                disabled={modalMode === "edit"}
+                value={primaryFormRole}
+                onChange={() => undefined}
+                disabled
                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-slate-900 focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
               >
                 {roleOptions.map((option) => (
@@ -777,6 +923,39 @@ export default function ManageStaffPage() {
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-slate-500">Role เริ่มต้นหลัง login จะอิงจาก role ที่มีลำดับสูงสุดโดยอัตโนมัติ</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {roleOptions.map((option) => {
+                  const checked = formRoles.includes(option.value);
+
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                        checked ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          setFormRoles((current) => {
+                            const nextRoles = event.target.checked
+                              ? [...current, option.value]
+                              : current.filter((role) => role !== option.value);
+
+                            return normalizeStaffRoles(nextRoles);
+                          });
+                          setFormErrors((current) => ({ ...current, roles: "" }));
+                        }}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                      />
+                      <span className="text-sm text-slate-700">{option.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {formErrors.roles && <p className="mt-1 text-xs text-red-500">{formErrors.roles}</p>}
               {modalMode === "edit" && <p className="mt-1 text-xs text-slate-500">ล็อก role ไว้เพื่อไม่ให้กระทบสิทธิ์และความสัมพันธ์ของข้อมูลเดิม</p>}
             </div>
 
@@ -792,13 +971,20 @@ export default function ManageStaffPage() {
                   setFormErrors((current) => ({ ...current, employeeId: "" }));
                 }}
                 required
+                readOnly={modalMode === "add"}
+                disabled={modalMode === "add"}
                 className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none transition-all ${
                   formErrors.employeeId
                     ? "border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500"
                     : "border-gray-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
-                }`}
-                placeholder="เช่น EMP-001"
+                } ${modalMode === "add" ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""}`}
+                placeholder="ระบบจะสร้างให้อัตโนมัติ"
               />
+              {modalMode === "add" ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  ระบบจะสร้างรหัสอัตโนมัติตาม role ที่เลือก เช่น <span className="font-mono text-slate-700">{generatedEmployeeId}</span>
+                </p>
+              ) : null}
               {formErrors.employeeId && <p className="mt-1 text-xs text-red-500">{formErrors.employeeId}</p>}
             </div>
 
@@ -833,6 +1019,7 @@ export default function ManageStaffPage() {
                   setFormEmail(event.target.value);
                   setFormErrors((current) => ({ ...current, email: "" }));
                 }}
+                required
                 className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none transition-all ${
                   formErrors.email
                     ? "border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500"
@@ -840,6 +1027,7 @@ export default function ManageStaffPage() {
                 }`}
                 placeholder="example@nucare.local"
               />
+              <p className="mt-1 text-xs text-slate-500">Default password: `Nu` + lowercase email</p>
               {formErrors.email && <p className="mt-1 text-xs text-red-500">{formErrors.email}</p>}
             </div>
 
@@ -854,6 +1042,23 @@ export default function ManageStaffPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+
+            {modalMode === "edit" && editingManagedUser ? (
+              <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-semibold text-red-800">Danger Zone</p>
+                <p className="mt-1 text-xs leading-5 text-red-700">
+                  ปุ่มลบถูกย้ายมาไว้ท้ายฟอร์ม เพื่อให้ตรวจข้อมูลให้ครบก่อนตัดสินใจลบบัญชีบุคลากร
+                </p>
+                <button
+                  type="button"
+                  disabled={deletingId === editingManagedUser.id}
+                  onClick={() => handleDeleteUser(editingManagedUser)}
+                  className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีบุคลากร"}
+                </button>
+              </div>
+            ) : null}
 
             <div className="mt-2 flex justify-end gap-3 pt-4">
               <button type="button" onClick={closeModal} className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50">

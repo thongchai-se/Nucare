@@ -4,12 +4,23 @@ import { randomBytes } from "crypto";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { normalizePersonNameForRole } from "../lib/name-prefix";
 import { prisma } from "../lib/prisma";
+import {
+  buildUserHasRoleWhere,
+  getAssignedRoles,
+  managedStaffRoleValues,
+  ManagedStaffRole,
+  splitPrimaryAndAdditionalStaffRoles,
+} from "../lib/roles";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "Student ID must be in the format 663380696-6";
+const STUDY_YEAR_RANGE_MESSAGE = "Study year must be between 1 and 8";
+const SECTION_REQUIRED_MESSAGE = "Section is required";
+const SECTION_LENGTH_MESSAGE = "Section must be 50 characters or fewer";
 
 const parsePositiveIntFromEnv = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -67,6 +78,8 @@ const importStudentRowSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+  studyYear: z.coerce.number().int().min(1).max(8),
+  section: z.string().trim().min(1).max(50),
 });
 
 const importStudentsSchema = z.object({
@@ -92,27 +105,60 @@ const listAuditLogsQuerySchema = z.object({
 
 const studentStatusSchema = z.enum(["active", "inactive"]);
 const managedRoleSchema = z.nativeEnum(Role);
+const managedStaffRoleSchema = z.enum(managedStaffRoleValues);
 
 const createStudentSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+  studyYear: z.coerce.number().int().min(1).max(8),
+  section: z.string().trim().min(1).max(50),
   status: studentStatusSchema,
 });
 
-const managedUserSchema = z.object({
-  role: managedRoleSchema,
-  studentId: z.string().trim().optional(),
-  employeeId: z.string().trim().optional(),
-  name: z.string().trim().min(2).max(120),
-  email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  status: studentStatusSchema,
-});
+const managedUserSchema = z
+  .object({
+    role: managedRoleSchema.optional(),
+    roles: z.array(managedStaffRoleSchema).min(1).max(managedStaffRoleValues.length).optional(),
+    studentId: z.string().trim().optional(),
+    employeeId: z.string().trim().optional(),
+    advisorId: z.union([z.string().trim(), z.literal(""), z.null(), z.undefined()]).optional(),
+    studyYear: z.coerce.number().int().min(1).max(8).nullable().optional(),
+    section: z.union([z.string().trim().max(50), z.literal(""), z.null(), z.undefined()]).optional(),
+    name: z.string().trim().min(2).max(120),
+    email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+    status: studentStatusSchema,
+  })
+  .superRefine((data, context) => {
+    const explicitRole = data.role;
+    const selectedRoles = data.roles || (explicitRole ? [explicitRole as ManagedStaffRole] : []);
+
+    if (selectedRoles.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["roles"],
+        message: "At least one role is required",
+      });
+      return;
+    }
+
+    const containsStudentRole = selectedRoles.includes(Role.STUDENT as never);
+
+    if (containsStudentRole && selectedRoles.length > 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["roles"],
+        message: "Student accounts cannot have multiple roles",
+      });
+    }
+  });
 
 const updateStudentSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+  studyYear: z.coerce.number().int().min(1).max(8),
+  section: z.string().trim().min(1).max(50),
   status: studentStatusSchema,
 });
 
@@ -121,11 +167,32 @@ const assignAdvisorStudentsSchema = z.object({
   studentIds: z.array(z.string().trim().min(1)).min(1).max(500),
 });
 
+const bulkUpdateStudentStudyYearSchema = z.object({
+  fromStudyYear: z.coerce.number().int().min(1).max(8),
+  toStudyYear: z.coerce.number().int().min(1).max(8),
+});
+
+const importStaffRowSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email(),
+  roles: z.array(managedStaffRoleSchema).min(1).max(managedStaffRoleValues.length),
+});
+
+const importStaffUsersSchema = z.object({
+  rows: z.array(importStaffRowSchema).min(1).max(2000),
+});
+
+const checkExistingStaffUsersSchema = z.object({
+  emails: z.array(z.string().trim().email()).min(1).max(2000),
+});
+
 type StudentRecord = {
   id: string;
   studentId: string | null;
   name: string;
   email: string | null;
+  studyYear: number | null;
+  section: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -135,6 +202,14 @@ type ImportStudentRow = {
   studentId: string;
   name: string;
   email: string | null;
+  studyYear: number;
+  section: string;
+};
+
+type ImportStaffRow = {
+  name: string;
+  email: string;
+  roles: ManagedStaffRole[];
 };
 
 const normalizeStudentId = (raw: string): string => {
@@ -171,21 +246,172 @@ const normalizeEmail = (raw?: string | null): string | null => {
   return trimmed.length > 0 ? trimmed.toLowerCase() : null;
 };
 
+const normalizeStudyYear = (raw: number): number => {
+  const normalized = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(normalized) || normalized < 1 || normalized > 8) {
+    throw new Error(STUDY_YEAR_RANGE_MESSAGE);
+  }
+
+  return normalized;
+};
+
+const normalizeSection = (raw?: string | null): string => {
+  const trimmed = raw?.trim() || "";
+  if (!trimmed) {
+    throw new Error(SECTION_REQUIRED_MESSAGE);
+  }
+
+  if (trimmed.length > 50) {
+    throw new Error(SECTION_LENGTH_MESSAGE);
+  }
+
+  return trimmed;
+};
+
+const normalizeComparableSection = (raw?: string | null): string => (raw?.trim() || "").toLowerCase();
+
 const createTemporaryPassword = (): string => randomBytes(18).toString("base64url");
 
+const createImportedStudentPassword = (studentId: string): string => `Nu${studentId.replace(/\D/g, "")}`;
+
+const staffEmployeeIdPrefixMap: Record<ManagedStaffRole, string> = {
+  ADMIN: "ADM",
+  ADVISOR: "ADV",
+  EXECUTIVE: "EXE",
+  INSTRUCTOR: "INS",
+  MENTAL_HEALTH: "MHT",
+  STUDENT_DEVELOPMENT: "SDV",
+};
+
+const EMPLOYEE_ID_SEQUENCE_PAD_LENGTH = 3;
+
+const getAdminUserAuditMetadata = (role: Role) => {
+  if (role === Role.STUDENT) {
+    return {
+      actionPrefix: "admin.student",
+      descriptionLabel: "student account",
+      entityType: "StudentAccount",
+    } as const;
+  }
+
+  return {
+    actionPrefix: "admin.user",
+    descriptionLabel: `${role} account`,
+    entityType: "StaffAccount",
+  } as const;
+};
+
+const createManagedUserPassword = (email: string): string => `Nu${email.toLowerCase()}`;
+
+const normalizeAdvisorId = (raw?: string | null): string | null => {
+  const trimmed = raw?.trim() || "";
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const syncStudentAdvisorAssignment = async (
+  tx: Prisma.TransactionClient,
+  studentId: string,
+  advisorId: string | null
+): Promise<{ advisorId: string | null; advisorName: string | null }> => {
+  await tx.studentAdvisorAssignment.updateMany({
+    where: {
+      studentId,
+      isActive: true,
+    },
+    data: {
+      isActive: false,
+    },
+  });
+
+  if (!advisorId) {
+    return {
+      advisorId: null,
+      advisorName: null,
+    };
+  }
+
+  const advisor = await tx.user.findFirst({
+    where: {
+      id: advisorId,
+      ...buildUserHasRoleWhere(Role.ADVISOR),
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  if (!advisor) {
+    throw new Error("Advisor not found");
+  }
+
+  await tx.studentAdvisorAssignment.create({
+    data: {
+      studentId,
+      advisorId: advisor.id,
+      isActive: true,
+    },
+  });
+
+  return {
+    advisorId: advisor.id,
+    advisorName: advisor.name,
+  };
+};
+
 const hasStudentProfileChanges = (
-  student: Pick<StudentRecord, "name" | "email" | "isActive">,
+  student: Pick<StudentRecord, "name" | "email" | "studyYear" | "section" | "isActive">,
   row: ImportStudentRow
 ): boolean =>
-  student.name.trim() !== row.name.trim() ||
+  normalizePersonNameForRole(student.name, Role.STUDENT) !==
+  normalizePersonNameForRole(row.name, Role.STUDENT) ||
   normalizeEmail(student.email) !== normalizeEmail(row.email) ||
+  student.studyYear !== row.studyYear ||
+  normalizeComparableSection(student.section) !== normalizeComparableSection(row.section) ||
   !student.isActive;
+
+const hasStaffProfileChanges = (
+  user: {
+    name: string;
+    email: string | null;
+    role: Role;
+    additionalRoles?: Role[] | null;
+    isActive: boolean;
+  },
+  row: ImportStaffRow
+): boolean => {
+  const existingRoles = getAssignedRoles(user);
+  const nextRoles = splitPrimaryAndAdditionalStaffRoles(row.roles).assignedRoles;
+  const primaryRole = nextRoles[0] ?? Role.ADVISOR;
+
+  return (
+    normalizePersonNameForRole(user.name, primaryRole) !==
+    normalizePersonNameForRole(row.name, primaryRole) ||
+    normalizeEmail(user.email) !== normalizeEmail(row.email) ||
+    existingRoles.length !== nextRoles.length ||
+    existingRoles.some((role, index) => role !== nextRoles[index]) ||
+    !user.isActive
+  );
+};
+
+type ExistingStaffImportUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  employeeId: string | null;
+  role: Role;
+  additionalRoles?: Role[] | null;
+  isActive: boolean;
+};
 
 const mapStudent = (user: StudentRecord) => ({
   id: user.id,
   studentId: formatStudentIdForResponse(user.studentId),
   name: user.name,
   email: user.email,
+  studyYear: user.studyYear ?? null,
+  section: user.section ?? null,
   status: user.isActive ? "active" : "inactive",
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
@@ -197,12 +423,17 @@ const mapStaff = (user: {
   email: string | null;
   employeeId: string | null;
   role: Role;
+  additionalRoles?: Role[];
 }) => ({
   id: user.id,
   name: user.name,
   email: user.email,
   employeeId: user.employeeId,
   role: user.role,
+  roles: getAssignedRoles({
+    role: user.role,
+    additionalRoles: user.additionalRoles || [],
+  }),
 });
 
 const mapManagedUser = (user: {
@@ -211,17 +442,34 @@ const mapManagedUser = (user: {
   email: string | null;
   studentId: string | null;
   employeeId: string | null;
+  studyYear: number | null;
+  section: string | null;
   role: Role;
+  additionalRoles?: Role[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  studentAssignments?: Array<{
+    advisor: {
+      id: string;
+      name: string;
+    };
+  }>;
 }) => ({
   id: user.id,
   name: user.name,
   email: user.email,
   studentId: formatStudentIdForResponse(user.studentId),
   employeeId: user.employeeId,
+  studyYear: user.studyYear ?? null,
+  section: user.section ?? null,
   role: user.role,
+  roles: getAssignedRoles({
+    role: user.role,
+    additionalRoles: user.additionalRoles || [],
+  }),
+  advisorId: user.studentAssignments?.[0]?.advisor.id ?? null,
+  advisorName: user.studentAssignments?.[0]?.advisor.name ?? null,
   status: user.isActive ? "active" : "inactive",
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
@@ -232,23 +480,100 @@ const normalizeEmployeeId = (raw?: string): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const parseManagedUserPayload = (input: z.infer<typeof managedUserSchema>) => {
-  const role = input.role;
+const buildStaffEmployeeId = (prefix: string, sequence: number): string =>
+  `${prefix}${String(sequence).padStart(EMPLOYEE_ID_SEQUENCE_PAD_LENGTH, "0")}`;
+
+const generateNextStaffEmployeeId = async (
+  tx: Prisma.TransactionClient,
+  role: ManagedStaffRole
+): Promise<string> => {
+  const prefix = staffEmployeeIdPrefixMap[role];
+  const existingUsers = await tx.user.findMany({
+    where: {
+      role,
+      employeeId: {
+        not: null,
+      },
+    },
+    select: {
+      employeeId: true,
+    },
+  });
+
+  let maxSequence = 0;
+
+  for (const user of existingUsers) {
+    const normalizedEmployeeId = user.employeeId?.trim().toUpperCase() || "";
+    const match = new RegExp(`^${prefix}(\\d+)$`).exec(normalizedEmployeeId);
+    if (!match) {
+      continue;
+    }
+
+    const sequence = Number.parseInt(match[1], 10);
+    if (Number.isFinite(sequence)) {
+      maxSequence = Math.max(maxSequence, sequence);
+    }
+  }
+
+  return buildStaffEmployeeId(prefix, maxSequence + 1);
+};
+
+const parseManagedUserPayload = (
+  input: z.infer<typeof managedUserSchema>,
+  options?: {
+    allowGeneratedEmployeeId?: boolean;
+  }
+) => {
+  const selectedRoles = input.roles?.length
+    ? input.roles
+    : input.role
+      ? [input.role]
+      : [];
   const email = normalizeEmail(input.email);
   const employeeId = normalizeEmployeeId(input.employeeId);
+  const advisorId = normalizeAdvisorId(input.advisorId);
   let studentId: string | null = null;
+  let studyYear: number | null = null;
+  let section: string | null = null;
+  let role: Role;
+  let roles: Role[] = [];
+  let additionalRoles: Role[] = [];
 
-  if (role === Role.STUDENT) {
+  if (selectedRoles.length === 1 && selectedRoles[0] === Role.STUDENT) {
+    role = Role.STUDENT;
+    roles = [Role.STUDENT];
     studentId = normalizeStudentId(input.studentId || "");
-  } else if (!employeeId) {
+    studyYear = normalizeStudyYear(input.studyYear ?? Number.NaN);
+    section = normalizeSection(input.section);
+  } else {
+    const resolvedRoles = splitPrimaryAndAdditionalStaffRoles(selectedRoles);
+    role = resolvedRoles.primaryRole;
+    roles = resolvedRoles.assignedRoles;
+    additionalRoles = resolvedRoles.additionalRoles;
+
+    if (!employeeId && !options?.allowGeneratedEmployeeId) {
+      throw new Error("Employee ID is required for non-student roles");
+    }
+
+    if (!email) {
+      throw new Error("Email is required for non-student roles");
+    }
+  }
+
+  if (role !== Role.STUDENT && !employeeId && !options?.allowGeneratedEmployeeId) {
     throw new Error("Employee ID is required for non-student roles");
   }
 
   return {
     role,
+    roles,
+    additionalRoles,
     studentId,
     employeeId: role === Role.STUDENT ? null : employeeId,
-    name: input.name.trim(),
+    advisorId: role === Role.STUDENT ? advisorId : null,
+    studyYear: role === Role.STUDENT ? studyYear : null,
+    section: role === Role.STUDENT ? section : null,
+    name: normalizePersonNameForRole(input.name, role),
     email,
     isActive: input.status === "active",
   };
@@ -329,6 +654,8 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
         studentId: true,
         name: true,
         email: true,
+        studyYear: true,
+        section: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -349,6 +676,7 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
 };
 
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
   const parsed = listUsersQuerySchema.safeParse(req.query);
 
   if (!parsed.success) {
@@ -362,8 +690,15 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
   const search = parsed.data.search?.trim();
 
   try {
-    const users = await prisma.user.findMany({
-      where: search
+    const where: Prisma.UserWhereInput = {
+      ...(actorUserId
+        ? {
+            id: {
+              not: actorUserId,
+            },
+          }
+        : {}),
+      ...(search
         ? {
             OR: [
               {
@@ -392,17 +727,38 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
               },
             ],
           }
-        : undefined,
+        : {}),
+    };
+
+    const users = await prisma.user.findMany({
+      where,
       select: {
         id: true,
         name: true,
         email: true,
         studentId: true,
         employeeId: true,
+        studyYear: true,
+        section: true,
         role: true,
+        additionalRoles: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        studentAssignments: {
+          where: {
+            isActive: true,
+          },
+          take: 1,
+          select: {
+            advisor: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
     });
@@ -440,6 +796,8 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
   }
 
   const email = normalizeEmail(parsed.data.email);
+  const studyYear = normalizeStudyYear(parsed.data.studyYear);
+  const section = normalizeSection(parsed.data.section);
 
   try {
     const conflict = await prisma.user.findFirst({
@@ -462,8 +820,10 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
     const created = await prisma.user.create({
       data: {
         studentId,
-        name: parsed.data.name.trim(),
+        name: normalizePersonNameForRole(parsed.data.name, Role.STUDENT),
         email,
+        studyYear,
+        section,
         role: Role.STUDENT,
         password: passwordHash,
         isActive: parsed.data.status === "active",
@@ -473,18 +833,22 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
         studentId: true,
         name: true,
         email: true,
+        studyYear: true,
+        section: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
+    const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+
     await writeAuditLog({
       actorUserId,
-      action: "admin.student.create",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.create`,
+      entityType: auditMetadata.entityType,
       entityId: created.id,
-      description: `Created student account ${studentId}`,
+      description: `Created ${auditMetadata.descriptionLabel} ${studentId}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -519,7 +883,9 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
   let payload: ReturnType<typeof parseManagedUserPayload>;
   try {
-    payload = parseManagedUserPayload(parsed.data);
+    payload = parseManagedUserPayload(parsed.data, {
+      allowGeneratedEmployeeId: true,
+    });
   } catch (error) {
     res.status(400).json({
       message: error instanceof Error ? error.message : "Invalid user payload",
@@ -546,38 +912,105 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const temporaryPassword = createTemporaryPassword();
+    const temporaryPassword =
+      payload.role === Role.STUDENT ? createTemporaryPassword() : createManagedUserPassword(payload.email as string);
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+    const shouldAutoGenerateEmployeeId = payload.role !== Role.STUDENT && !payload.employeeId;
+    let created: Parameters<typeof mapManagedUser>[0] | null = null;
 
-    const created = await prisma.user.create({
-      data: {
-        name: payload.name,
-        email: payload.email,
-        role: payload.role,
-        studentId: payload.studentId,
-        employeeId: payload.employeeId,
-        isActive: payload.isActive,
-        password: passwordHash,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        studentId: true,
-        employeeId: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    for (let attempt = 0; attempt < (shouldAutoGenerateEmployeeId ? 3 : 1); attempt += 1) {
+      try {
+        created = await prisma.$transaction(async (tx) => {
+          const resolvedEmployeeId =
+            payload.role === Role.STUDENT
+              ? payload.employeeId
+              : payload.employeeId ?? (await generateNextStaffEmployeeId(tx, payload.role));
+
+          const createdUser = await tx.user.create({
+            data: {
+              name: payload.name,
+              email: payload.email,
+              role: payload.role,
+              additionalRoles: payload.additionalRoles,
+              studentId: payload.studentId,
+              employeeId: resolvedEmployeeId,
+              studyYear: payload.studyYear,
+              section: payload.section,
+              isActive: payload.isActive,
+              password: passwordHash,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+          if (payload.role === Role.STUDENT) {
+            await syncStudentAdvisorAssignment(tx, createdUser.id, payload.advisorId);
+          }
+
+          return tx.user.findUniqueOrThrow({
+            where: {
+              id: createdUser.id,
+            },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              additionalRoles: true,
+              studentId: true,
+              employeeId: true,
+              studyYear: true,
+              section: true,
+              isActive: true,
+              createdAt: true,
+              updatedAt: true,
+              studentAssignments: {
+                where: {
+                  isActive: true,
+                },
+                take: 1,
+                select: {
+                  advisor: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        break;
+      } catch (error) {
+        const shouldRetryGeneratedEmployeeId =
+          shouldAutoGenerateEmployeeId &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002" &&
+          attempt < 2;
+
+        if (shouldRetryGeneratedEmployeeId) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (!created) {
+      throw new Error("Failed to create user");
+    }
+
+    const auditMetadata = getAdminUserAuditMetadata(payload.role);
 
     await writeAuditLog({
       actorUserId,
-      action: "admin.user.create",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.create`,
+      entityType: auditMetadata.entityType,
       entityId: created.id,
-      description: `Created ${payload.role} account ${payload.studentId ?? payload.employeeId ?? created.id}`,
+      description: `Created ${auditMetadata.descriptionLabel} ${payload.studentId ?? payload.employeeId ?? created.id}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -585,9 +1018,17 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       message: "User created successfully",
       user: mapManagedUser(created),
       temporaryPassword,
-      onboardingHint: "Use the temporary password once or reset the password via the forgot-password flow.",
+      onboardingHint:
+        payload.role === Role.STUDENT
+          ? "Use the temporary password once or reset the password via the forgot-password flow."
+          : "Default password uses the format Nu + lowercase email.",
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "Advisor not found") {
+      res.status(404).json({ message: "Advisor not found" });
+      return;
+    }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       res.status(409).json({ message: "Student ID, employee ID or email already exists" });
       return;
@@ -622,6 +1063,8 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
   }
 
   const email = normalizeEmail(parsed.data.email);
+  const studyYear = normalizeStudyYear(parsed.data.studyYear);
+  const section = normalizeSection(parsed.data.section);
 
   try {
     const existing = await prisma.user.findFirst({
@@ -658,8 +1101,10 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
       where: { id: studentUserId },
       data: {
         studentId,
-        name: parsed.data.name.trim(),
+        name: normalizePersonNameForRole(parsed.data.name, Role.STUDENT),
         email,
+        studyYear,
+        section,
         isActive: parsed.data.status === "active",
       },
       select: {
@@ -667,18 +1112,22 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
         studentId: true,
         name: true,
         email: true,
+        studyYear: true,
+        section: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
+    const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+
     await writeAuditLog({
       actorUserId,
-      action: "admin.student.update",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.update`,
+      entityType: auditMetadata.entityType,
       entityId: updated.id,
-      description: `Updated student account ${studentId}`,
+      description: `Updated ${auditMetadata.descriptionLabel} ${studentId}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -728,6 +1177,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       select: {
         id: true,
         role: true,
+        additionalRoles: true,
         isActive: true,
       },
     });
@@ -773,37 +1223,74 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const updated = await prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        name: payload.name,
-        email: payload.email,
-        role: payload.role,
-        studentId: payload.studentId,
-        employeeId: payload.employeeId,
-        isActive: payload.isActive,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        studentId: true,
-        employeeId: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: {
+          id: userId,
+        },
+        data: {
+          name: payload.name,
+          email: payload.email,
+          role: payload.role,
+          additionalRoles: payload.additionalRoles,
+          studentId: payload.studentId,
+          employeeId: payload.employeeId,
+          studyYear: payload.studyYear,
+          section: payload.section,
+          isActive: payload.isActive,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (payload.role === Role.STUDENT) {
+        await syncStudentAdvisorAssignment(tx, userId, payload.advisorId);
+      }
+
+      return tx.user.findUniqueOrThrow({
+        where: {
+          id: userId,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          additionalRoles: true,
+          studentId: true,
+          employeeId: true,
+          studyYear: true,
+          section: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          studentAssignments: {
+            where: {
+              isActive: true,
+            },
+            take: 1,
+            select: {
+              advisor: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
     });
+
+    const auditMetadata = getAdminUserAuditMetadata(payload.role);
 
     await writeAuditLog({
       actorUserId,
-      action: "admin.user.update",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.update`,
+      entityType: auditMetadata.entityType,
       entityId: updated.id,
-      description: `Updated ${payload.role} account ${payload.studentId ?? payload.employeeId ?? updated.id}`,
+      description: `Updated ${auditMetadata.descriptionLabel} ${payload.studentId ?? payload.employeeId ?? updated.id}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -812,6 +1299,11 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       user: mapManagedUser(updated),
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "Advisor not found") {
+      res.status(404).json({ message: "Advisor not found" });
+      return;
+    }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       res.status(409).json({ message: "Student ID, employee ID or email already exists" });
       return;
@@ -858,12 +1350,14 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+
     await writeAuditLog({
       actorUserId,
-      action: "admin.student.delete",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.delete`,
+      entityType: auditMetadata.entityType,
       entityId: studentUserId,
-      description: `Deleted student account ${existing.studentId ?? studentUserId}`,
+      description: `Deleted ${auditMetadata.descriptionLabel} ${existing.studentId ?? studentUserId}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -919,12 +1413,14 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       },
     });
 
+    const auditMetadata = getAdminUserAuditMetadata(existing.role);
+
     await writeAuditLog({
       actorUserId,
-      action: "admin.user.delete",
-      entityType: "User",
+      action: `${auditMetadata.actionPrefix}.delete`,
+      entityType: auditMetadata.entityType,
       entityId: userId,
-      description: `Deleted ${existing.role} account ${existing.studentId ?? existing.employeeId ?? userId}`,
+      description: `Deleted ${auditMetadata.descriptionLabel} ${existing.studentId ?? existing.employeeId ?? userId}`,
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1004,6 +1500,8 @@ export const checkExistingStudents = async (req: Request, res: Response): Promis
         studentId: true,
         name: true,
         email: true,
+        studyYear: true,
+        section: true,
       },
     });
 
@@ -1019,6 +1517,8 @@ export const checkExistingStudents = async (req: Request, res: Response): Promis
             studentId: user.studentId,
             name: user.name,
             email: user.email,
+            studyYear: user.studyYear ?? null,
+            section: user.section ?? null,
             reason:
               user.studentId && uniqueStudentIds.includes(user.studentId)
                 ? "Student already exists in the system"
@@ -1062,8 +1562,10 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
     try {
       normalizedRows.push({
         studentId: normalizeStudentId(row.studentId),
-        name: row.name.trim(),
+        name: normalizePersonNameForRole(row.name, Role.STUDENT),
         email: normalizeEmail(row.email),
+        studyYear: normalizeStudyYear(row.studyYear),
+        section: normalizeSection(row.section),
       });
     } catch (error) {
       res.status(400).json({
@@ -1129,6 +1631,8 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
         studentId: true,
         name: true,
         email: true,
+        studyYear: true,
+        section: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
@@ -1183,6 +1687,8 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
             data: {
               name: row.name,
               email: row.email,
+              studyYear: row.studyYear,
+              section: row.section,
               isActive: true,
             },
           });
@@ -1195,7 +1701,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
           return;
         }
 
-        const temporaryPassword = createTemporaryPassword();
+        const temporaryPassword = createImportedStudentPassword(row.studentId);
         const passwordHash = await bcrypt.hash(temporaryPassword, IMPORT_BCRYPT_ROUNDS);
 
         await prisma.user.create({
@@ -1203,6 +1709,8 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
             name: row.name,
             studentId: row.studentId,
             email: row.email,
+            studyYear: row.studyYear,
+            section: row.section,
             role: Role.STUDENT,
             password: passwordHash,
             isActive: true,
@@ -1230,10 +1738,12 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
       }
     });
 
+    const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+
     await writeAuditLog({
       actorUserId,
       action: "admin.student.import",
-      entityType: "User",
+      entityType: auditMetadata.entityType,
       description: `Imported student batch (created=${created}, updated=${updated}, skipped=${skipped}, failed=${failures.length})`,
       ipAddress: getRequestIpAddress(req),
     });
@@ -1252,7 +1762,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
       skippedStudents,
       createdCredentials,
       onboardingHint:
-        "New accounts receive random temporary passwords. Students can also use the forgot-password flow to set a new password securely.",
+        "New imported student accounts use the default password format Nu + studentId without a dash.",
     });
   } catch (error) {
     console.error("Import students error:", error);
@@ -1260,12 +1770,380 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const listStaffUsers = async (_req: Request, res: Response): Promise<void> => {
+export const bulkPromoteStudentStudyYear = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const parsed = bulkUpdateStudentStudyYearSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const fromStudyYear = normalizeStudyYear(parsed.data.fromStudyYear);
+  const toStudyYear = normalizeStudyYear(parsed.data.toStudyYear);
+
+  if (fromStudyYear === toStudyYear) {
+    res.status(400).json({ message: "Source and target study year must be different" });
+    return;
+  }
+
+  try {
+    const result = await prisma.user.updateMany({
+      where: {
+        role: Role.STUDENT,
+        studyYear: fromStudyYear,
+      },
+      data: {
+        studyYear: toStudyYear,
+      },
+    });
+
+    const auditMetadata = getAdminUserAuditMetadata(Role.STUDENT);
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.student.study-year.bulk-update",
+      entityType: auditMetadata.entityType,
+      description: `Bulk updated study year from ${fromStudyYear} to ${toStudyYear} for ${result.count} students`,
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message:
+        result.count > 0
+          ? `Updated ${result.count} students from year ${fromStudyYear} to year ${toStudyYear}`
+          : `No students found in study year ${fromStudyYear}`,
+      fromStudyYear,
+      toStudyYear,
+      updatedCount: result.count,
+    });
+  } catch (error) {
+    console.error("Bulk promote student study year error:", error);
+    res.status(500).json({ message: "Failed to bulk update student study year" });
+  }
+};
+
+export const checkExistingStaffUsers = async (req: Request, res: Response): Promise<void> => {
+  const parsed = checkExistingStaffUsersSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  try {
+    const normalizedEmails = Array.from(
+      new Set(parsed.data.emails.map((email) => normalizeEmail(email)).filter((email): email is string => Boolean(email)))
+    );
+
+    if (normalizedEmails.length === 0) {
+      res.status(200).json({
+        summary: {
+          total: 0,
+          existing: 0,
+          available: 0,
+        },
+        existingUsers: [],
+      });
+      return;
+    }
+
+    const existingUsers = await prisma.user.findMany({
+      where: {
+        OR: normalizedEmails.map((email) => ({
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
+        })),
+      },
+      select: {
+        name: true,
+        email: true,
+        employeeId: true,
+        role: true,
+        additionalRoles: true,
+        isActive: true,
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
+
+    res.status(200).json({
+      summary: {
+        total: normalizedEmails.length,
+        existing: existingUsers.length,
+        available: Math.max(0, normalizedEmails.length - existingUsers.length),
+      },
+      existingUsers: existingUsers.map((user) => ({
+        name: user.name,
+        email: user.email,
+        employeeId: user.employeeId,
+        role: user.role,
+        roles: getAssignedRoles(user),
+        reason:
+          user.role === Role.STUDENT
+            ? "Email already belongs to a student account"
+            : user.isActive
+              ? "Staff account already exists in the system"
+              : "Inactive staff account will be reactivated",
+      })),
+    });
+  } catch (error) {
+    console.error("Check existing staff users error:", error);
+    res.status(500).json({ message: "Failed to check existing staff users" });
+  }
+};
+
+export const importStaffUsers = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  const parsed = importStaffUsersSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid payload",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  let normalizedRows: ImportStaffRow[];
+
+  try {
+    normalizedRows = parsed.data.rows.map((row) => ({
+      name: normalizePersonNameForRole(
+        row.name,
+        splitPrimaryAndAdditionalStaffRoles(row.roles).primaryRole
+      ),
+      email: normalizeEmail(row.email) as string,
+      roles: splitPrimaryAndAdditionalStaffRoles(row.roles).assignedRoles,
+    }));
+  } catch (error) {
+    res.status(400).json({
+      message: error instanceof Error ? error.message : "Invalid staff import row",
+    });
+    return;
+  }
+
+  try {
+    const existingUsers = await prisma.user.findMany({
+      where: {
+        OR: normalizedRows.map((row) => ({
+          email: {
+            equals: row.email,
+            mode: "insensitive",
+          },
+        })),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        employeeId: true,
+        role: true,
+        additionalRoles: true,
+        isActive: true,
+      },
+    });
+
+    const existingUsersByEmail = new Map<string, ExistingStaffImportUser>();
+
+    for (const user of existingUsers) {
+      if (!user.email) {
+        continue;
+      }
+
+      existingUsersByEmail.set(normalizeEmail(user.email) as string, user);
+    }
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const failures: Array<{ email: string; reason: string }> = [];
+    const updatedUsers: Array<{ email: string; reason: string }> = [];
+    const skippedUsers: Array<{ email: string; reason: string }> = [];
+    const createdUsers: Array<{ email: string; employeeId: string; role: ManagedStaffRole; roles: ManagedStaffRole[] }> = [];
+
+    for (const row of normalizedRows) {
+      const existing = existingUsersByEmail.get(row.email);
+
+      if (existing?.role === Role.STUDENT) {
+        failures.push({
+          email: row.email,
+          reason: "Email already belongs to a student account",
+        });
+        continue;
+      }
+
+      try {
+        if (existing) {
+          if (!hasStaffProfileChanges(existing, row)) {
+            skipped += 1;
+            skippedUsers.push({
+              email: row.email,
+              reason: "Staff profile is already up to date",
+            });
+            continue;
+          }
+
+          const updatedUser = await prisma.$transaction(async (tx) => {
+            const nextRoles = splitPrimaryAndAdditionalStaffRoles(row.roles);
+            const existingRoles = getAssignedRoles(existing);
+            const roleChanged =
+              existing.role !== nextRoles.primaryRole ||
+              existingRoles.length !== nextRoles.assignedRoles.length ||
+              existingRoles.some((role, index) => role !== nextRoles.assignedRoles[index]);
+            const employeeId =
+              roleChanged || !existing.employeeId
+                ? await generateNextStaffEmployeeId(tx, nextRoles.primaryRole)
+                : existing.employeeId;
+
+            return tx.user.update({
+              where: {
+                id: existing.id,
+              },
+              data: {
+                name: row.name,
+                email: row.email,
+                role: nextRoles.primaryRole,
+                additionalRoles: nextRoles.additionalRoles,
+                employeeId,
+                isActive: true,
+              },
+              select: {
+                id: true,
+                email: true,
+                employeeId: true,
+                role: true,
+                additionalRoles: true,
+                name: true,
+                isActive: true,
+              },
+            });
+          });
+
+          updated += 1;
+          updatedUsers.push({
+            email: row.email,
+            reason:
+              existing.role !== updatedUser.role
+                ? `Updated profile and reassigned employee ID to ${updatedUser.employeeId}`
+                : "Updated existing staff profile",
+          });
+          if (updatedUser.email) {
+            existingUsersByEmail.set(normalizeEmail(updatedUser.email) as string, updatedUser);
+          }
+          continue;
+        }
+
+        const temporaryPassword = createManagedUserPassword(row.email);
+        const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+        const createdUser = await prisma.$transaction(async (tx) => {
+          const nextRoles = splitPrimaryAndAdditionalStaffRoles(row.roles);
+          const employeeId = await generateNextStaffEmployeeId(tx, nextRoles.primaryRole);
+
+          return tx.user.create({
+            data: {
+              name: row.name,
+              email: row.email,
+              role: nextRoles.primaryRole,
+              additionalRoles: nextRoles.additionalRoles,
+              employeeId,
+              password: passwordHash,
+              isActive: true,
+            },
+            select: {
+              id: true,
+              email: true,
+              employeeId: true,
+              role: true,
+              additionalRoles: true,
+              name: true,
+              isActive: true,
+            },
+          });
+        });
+
+        created += 1;
+        createdUsers.push({
+          email: row.email,
+          employeeId: createdUser.employeeId || "-",
+          role: createdUser.role as ManagedStaffRole,
+          roles: getAssignedRoles(createdUser) as ManagedStaffRole[],
+        });
+        if (createdUser.email) {
+          existingUsersByEmail.set(normalizeEmail(createdUser.email) as string, createdUser);
+        }
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          failures.push({
+            email: row.email,
+            reason: "Unique field conflict while importing staff",
+          });
+          continue;
+        }
+
+        failures.push({
+          email: row.email,
+          reason: "Failed to save this row",
+        });
+      }
+    }
+
+    try {
+      await writeAuditLog({
+        actorUserId,
+        action: "admin.user.import",
+        entityType: "StaffAccount",
+        description: `Imported staff batch (created=${created}, updated=${updated}, skipped=${skipped}, failed=${failures.length})`,
+        ipAddress: getRequestIpAddress(req),
+      });
+    } catch (auditError) {
+      console.error("Write audit log after staff import error:", auditError);
+    }
+
+    res.status(200).json({
+      message: "Staff import completed",
+      summary: {
+        total: normalizedRows.length,
+        created,
+        updated,
+        skipped,
+        failed: failures.length,
+      },
+      failures,
+      updatedUsers,
+      skippedUsers,
+      createdUsers,
+      onboardingHint:
+        "New imported staff accounts use the default password format Nu + lowercase email.",
+    });
+  } catch (error) {
+    console.error("Import staff users error:", error);
+    res.status(500).json({ message: "Failed to import staff users" });
+  }
+};
+
+export const listStaffUsers = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+
   try {
     const staffUsers = await prisma.user.findMany({
       where: {
+        ...(actorUserId
+          ? {
+              id: {
+                not: actorUserId,
+              },
+            }
+          : {}),
         role: {
-          in: [Role.ADMIN, Role.ADVISOR, Role.INSTRUCTOR, Role.MENTAL_HEALTH, Role.EXECUTIVE],
+          not: Role.STUDENT,
         },
       },
       select: {
@@ -1274,6 +2152,7 @@ export const listStaffUsers = async (_req: Request, res: Response): Promise<void
         email: true,
         employeeId: true,
         role: true,
+        additionalRoles: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
     });
@@ -1303,7 +2182,7 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
     const advisor = await prisma.user.findFirst({
       where: {
         id: parsed.data.advisorId,
-        role: Role.ADVISOR,
+        ...buildUserHasRoleWhere(Role.ADVISOR),
       },
       select: {
         id: true,

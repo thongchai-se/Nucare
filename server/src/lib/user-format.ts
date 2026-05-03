@@ -1,4 +1,5 @@
 import { RiskLevel } from "@prisma/client";
+import { stripKnownNamePrefix } from "./name-prefix";
 
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 
@@ -18,34 +19,23 @@ export const formatStudentIdForResponse = (studentId: string | null): string | n
   return studentId;
 };
 
-export const inferStudyYear = (studentId: string | null): string => {
-  if (!studentId) {
-    return "-";
+export const inferStudyYear = (
+  _studentId: string | null,
+  explicitStudyYear?: number | null
+): string => {
+  if (
+    typeof explicitStudyYear === "number" &&
+    Number.isFinite(explicitStudyYear) &&
+    explicitStudyYear >= 1
+  ) {
+    return `${Math.min(Math.trunc(explicitStudyYear), 8)}`;
   }
 
-  const compact = studentId.replace(/\D/g, "");
-  if (compact.length < 2) {
-    return "-";
-  }
-
-  const admissionYearShort = Number.parseInt(compact.slice(0, 2), 10);
-  if (!Number.isFinite(admissionYearShort)) {
-    return "-";
-  }
-
-  const admissionYearBuddhist = 2500 + admissionYearShort;
-  const currentYearBuddhist = new Date().getFullYear() + 543;
-  const computedYear = currentYearBuddhist - admissionYearBuddhist + 1;
-
-  if (!Number.isFinite(computedYear) || computedYear < 1) {
-    return "-";
-  }
-
-  return `${Math.min(computedYear, 8)}`;
+  return "-";
 };
 
 export const getUserInitials = (name: string, fallback = "NU"): string => {
-  const parts = name
+  const parts = stripKnownNamePrefix(name)
     .trim()
     .split(/\s+/)
     .map((part) => part.replace(/[^A-Za-zก-๙]/g, ""))

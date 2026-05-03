@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Bell,
   BookOpen,
-  CheckCircle2,
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
@@ -27,8 +26,11 @@ import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { MenuSectionHeading } from "@/components/menu-section-heading";
+import { RoleToast } from "@/components/role-toast";
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
 import api from "@/lib/axios";
-import type { Role } from "@/types/auth";
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type StudentRiskLevel = "high" | "medium" | "normal";
 type ActiveView = "dashboard" | "advisees" | "referrals" | "academic" | "change-password";
@@ -78,11 +80,16 @@ type AdvisorReferralItem = {
   status: ReferralStatus;
   createdAt: string;
   updatedAt: string;
+  currentOwnerName: string | null;
+  currentOwnerAssignedAt: string | null;
+  careSessionCount: number;
+  latestCareSessionAt: string | null;
 };
 
 type ToastState = {
+  description: string;
   show: boolean;
-  message: string;
+  title: string;
   type: "success" | "info";
 };
 
@@ -98,17 +105,6 @@ type StudentHistoryResponse = {
 
 type AdvisorReferralsResponse = {
   referrals: AdvisorReferralItem[];
-};
-
-const advisorRoles = new Set<Role>(["ADVISOR"]);
-
-const redirectByRole: Partial<Record<Role, string>> = {
-  ADMIN: "/dashboard/admin",
-  EXECUTIVE: "/dashboard/executive",
-  MENTAL_HEALTH: "/dashboard/mental-health",
-  INSTRUCTOR: "/dashboard/instructor",
-  STUDENT_DEVELOPMENT: "/dashboard/student-development",
-  STUDENT: "/dashboard/student",
 };
 
 const riskMeta: Record<
@@ -249,7 +245,7 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 const getInitials = (name: string, fallback = "อจ"): string => {
-  const parts = name
+  const parts = stripKnownNamePrefix(name)
     .trim()
     .split(/\s+/)
     .filter(Boolean);
@@ -331,7 +327,7 @@ function AdvisorDashboardContent() {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
-  const [toast, setToast] = useState<ToastState>({ show: false, message: "", type: "success" });
+  const [toast, setToast] = useState<ToastState>({ show: false, title: "", description: "", type: "success" });
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.id === selectedStudentId) ?? null,
@@ -463,13 +459,13 @@ function AdvisorDashboardContent() {
       return;
     }
 
-    if (!advisorRoles.has(user.role)) {
-      router.replace(redirectByRole[user.role] ?? "/dashboard");
+    if (!hasRole(user, "ADVISOR")) {
+      router.replace(getRoleHomePath(user.role));
     }
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (loading || !user || !advisorRoles.has(user.role)) {
+    if (loading || !user || !hasRole(user, "ADVISOR")) {
       return;
     }
 
@@ -491,7 +487,7 @@ function AdvisorDashboardContent() {
     }
 
     const timer = window.setTimeout(() => {
-      setToast({ show: false, message: "", type: "success" });
+      setToast({ show: false, title: "", description: "", type: "success" });
     }, 3000);
 
     return () => window.clearTimeout(timer);
@@ -504,7 +500,12 @@ function AdvisorDashboardContent() {
   };
 
   const showToast = (message: string, type: "success" | "info" = "success") => {
-    setToast({ show: true, message, type });
+    setToast({
+      show: true,
+      title: type === "info" ? "อัปเดตข้อมูลแล้ว" : "ดำเนินการสำเร็จ",
+      description: message,
+      type,
+    });
   };
 
   const handleLogout = async () => {
@@ -589,7 +590,7 @@ function AdvisorDashboardContent() {
     );
   }
 
-  if (!user || !advisorRoles.has(user.role)) {
+  if (!user || !hasRole(user, "ADVISOR")) {
     return null;
   }
 
@@ -670,6 +671,7 @@ function AdvisorDashboardContent() {
       </div>
 
       <div className="border-t border-slate-100 bg-slate-50/80 p-4">
+        <StaffRoleSwitcher className="mb-3" />
         <button
           type="button"
           onClick={handleLogout}
@@ -1173,6 +1175,12 @@ function AdvisorDashboardContent() {
                             <span className="rounded-md bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">SOS</span>
                           )}
                         </div>
+                        {referral.currentOwnerName ? (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Owner: {referral.currentOwnerName}
+                            {referral.latestCareSessionAt ? ` | SOAP ล่าสุด ${formatThaiDate(referral.latestCareSessionAt)}` : ""}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -1194,6 +1202,12 @@ function AdvisorDashboardContent() {
                   </div>
                   <p className="text-sm text-slate-600">{referralTargetMap[referral.target]}</p>
                   <p className="mt-1 text-xs text-slate-500">{formatThaiDateTime(referral.createdAt)}</p>
+                  {referral.currentOwnerName ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Owner: {referral.currentOwnerName}
+                      {referral.latestCareSessionAt ? ` | SOAP ล่าสุด ${formatThaiDate(referral.latestCareSessionAt)}` : ""}
+                    </p>
+                  ) : null}
                   <p className="mt-3 text-xs text-slate-500">{referral.reason}</p>
                 </div>
               ))}
@@ -1219,8 +1233,8 @@ function AdvisorDashboardContent() {
   );
 
   const ModalOverlay = ({ children }: { children: ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/40 px-4 py-6 backdrop-blur-sm sm:items-center">
+      <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[90vh]">
         {children}
       </div>
     </div>
@@ -1283,6 +1297,7 @@ function AdvisorDashboardContent() {
             </div>
 
             <div className="border-t border-slate-100 p-4">
+              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
               <button
                 type="button"
                 onClick={handleLogout}
@@ -1336,26 +1351,12 @@ function AdvisorDashboardContent() {
         </main>
       </div>
 
-      <div
-        className={`fixed right-4 top-4 z-[60] transform transition-all duration-300 sm:right-6 ${
-          toast.show ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-4 opacity-0"
-        }`}
-      >
-        <div
-          className={`flex min-w-[280px] items-center gap-3 rounded-2xl border bg-white p-4 shadow-xl ${
-            toast.type === "info" ? "border-blue-100" : "border-emerald-100"
-          }`}
-        >
-          <div
-            className={`flex h-9 w-9 items-center justify-center rounded-full ${
-              toast.type === "info" ? "bg-blue-100 text-blue-600" : "bg-emerald-100 text-emerald-600"
-            }`}
-          >
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-          <p className="text-sm font-medium text-slate-700">{toast.message}</p>
-        </div>
-      </div>
+      <RoleToast
+        description={toast.description}
+        open={toast.show}
+        title={toast.title}
+        tone={toast.type}
+      />
 
       {showSoapModal && selectedStudent && (
         <ModalOverlay>
@@ -1373,8 +1374,8 @@ function AdvisorDashboardContent() {
             </button>
           </div>
 
-          <form onSubmit={handleSaveSoapNote} className="flex flex-1 flex-col">
-            <div className="space-y-4 overflow-y-auto p-5">
+          <form onSubmit={handleSaveSoapNote} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-700">วันที่บันทึก</label>
@@ -1443,17 +1444,17 @@ function AdvisorDashboardContent() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5">
+            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowSoapModal(false)}
-                className="rounded-xl px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200"
+                className="w-full rounded-xl px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200 sm:w-auto"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-700"
+                className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-700 sm:w-auto"
               >
                 บันทึกข้อมูล
               </button>
@@ -1478,8 +1479,8 @@ function AdvisorDashboardContent() {
             </button>
           </div>
 
-          <form onSubmit={handleReferralSubmit} className="flex flex-1 flex-col">
-            <div className="space-y-5 overflow-y-auto p-5">
+          <form onSubmit={handleReferralSubmit} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
               <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-600">
                   {selectedStudent.image}
@@ -1560,17 +1561,17 @@ function AdvisorDashboardContent() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5">
+            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowReferralModal(false)}
-                className="rounded-xl px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200"
+                className="w-full rounded-xl px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200 sm:w-auto"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto"
               >
                 ยืนยันการส่งต่อ <ArrowRight size={16} />
               </button>

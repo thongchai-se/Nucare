@@ -4,6 +4,7 @@ import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere, isAdvisorRole } from "../lib/access-control";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
+import { getAcceptedReferralOwners } from "../lib/referral-ownership";
 import {
   formatStudentIdForResponse,
   getUserInitials,
@@ -57,6 +58,7 @@ const resolveStudent = async (studentUserId: string) =>
     select: {
       id: true,
       studentId: true,
+      studyYear: true,
       name: true,
       isActive: true,
       studentAssessments: {
@@ -113,12 +115,23 @@ const mapHistoryEntry = (
         actorName: string;
         isUrgent: boolean;
       }
+    | {
+        id: string;
+        kind: "SPECIALIZED_CARE";
+        date: Date;
+        type: string;
+        topic: string;
+        action: string;
+        outcome: string | null;
+        actorName: string;
+        isUrgent: boolean;
+      }
 ) => item;
 
 export const listAdvisorStudents = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || !isAdvisorRole(role)) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !isAdvisorRole(roles)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -161,6 +174,7 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
       select: {
         id: true,
         studentId: true,
+        studyYear: true,
         name: true,
         studentAssessments: {
           orderBy: { assessedAt: "desc" },
@@ -195,7 +209,7 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
         studentId: formatStudentIdForResponse(student.studentId),
         name: student.name,
         image: getUserInitials(student.name, "นศ"),
-        year: inferStudyYear(student.studentId),
+        year: inferStudyYear(student.studentId, student.studyYear),
         riskLevel: normalizeRiskLevel(student.studentAssessments[0]?.riskLevel ?? RiskLevel.NORMAL),
         lastAssessment: student.studentAssessments[0]?.assessedAt ?? null,
         careRecordCount: student._count.studentCareRecords,
@@ -213,8 +227,8 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
 
 export const listAdvisorReferrals = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || !isAdvisorRole(role)) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !isAdvisorRole(roles)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -237,6 +251,24 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
             id: true,
             name: true,
             studentId: true,
+            studyYear: true,
+          },
+        },
+        specializedCareRecords: {
+          orderBy: [{ sessionDate: "desc" }, { createdAt: "desc" }],
+          take: 1,
+          select: {
+            sessionDate: true,
+            mentalHealthUser: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            specializedCareRecords: true,
           },
         },
       },
@@ -248,20 +280,31 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
       take: 200,
     });
 
+    const acceptedOwnerByReferralId = await getAcceptedReferralOwners(referrals.map((referral) => referral.id));
+
     res.status(200).json({
-      referrals: referrals.map((referral) => ({
-        id: referral.id,
-        studentId: referral.student.id,
-        studentName: referral.student.name,
-        studentCode: formatStudentIdForResponse(referral.student.studentId),
-        year: inferStudyYear(referral.student.studentId),
-        target: referral.target,
-        reason: referral.reason,
-        isUrgent: referral.isUrgent,
-        status: referral.status,
-        createdAt: referral.createdAt,
-        updatedAt: referral.updatedAt,
-      })),
+      referrals: referrals.map((referral) => {
+        const latestCareRecord = referral.specializedCareRecords[0] ?? null;
+        const acceptedOwner = acceptedOwnerByReferralId.get(referral.id) ?? null;
+
+        return {
+          id: referral.id,
+          studentId: referral.student.id,
+          studentName: referral.student.name,
+          studentCode: formatStudentIdForResponse(referral.student.studentId),
+          year: inferStudyYear(referral.student.studentId, referral.student.studyYear),
+          target: referral.target,
+          reason: referral.reason,
+          isUrgent: referral.isUrgent,
+          status: referral.status,
+          createdAt: referral.createdAt,
+          updatedAt: referral.updatedAt,
+          currentOwnerName: latestCareRecord?.mentalHealthUser.name ?? acceptedOwner?.actorName ?? null,
+          currentOwnerAssignedAt: acceptedOwner?.createdAt ?? null,
+          careSessionCount: referral._count.specializedCareRecords,
+          latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
+        };
+      }),
     });
   } catch (error) {
     console.error("List advisor referrals error:", error);
@@ -271,8 +314,8 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
 
 export const getStudentHistory = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  const role = req.user?.role;
-  if (!userId || !isAdvisorRole(role)) {
+  const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!userId || !isAdvisorRole(roles)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -299,7 +342,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const [careRecords, referrals, behaviorRecords] = await Promise.all([
+    const [careRecords, referrals, behaviorRecords, specializedCareRecords] = await Promise.all([
       prisma.careRecord.findMany({
         where: {
           studentId: student.id,
@@ -365,7 +408,48 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         },
         take: 100,
       }),
+      prisma.specializedCareRecord.findMany({
+        where: {
+          studentId: student.id,
+        },
+        select: {
+          id: true,
+          sessionDate: true,
+          summary: true,
+          interventionPlan: true,
+          referralId: true,
+          mentalHealthUser: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          sessionDate: "desc",
+        },
+        take: 100,
+      }),
     ]);
+
+    const acceptedOwnerByReferralId = await getAcceptedReferralOwners(referrals.map((referral) => referral.id));
+    const latestSpecializedCareByReferralId = new Map<
+      string,
+      {
+        sessionDate: Date;
+        providerName: string;
+      }
+    >();
+
+    specializedCareRecords.forEach((record) => {
+      if (!record.referralId || latestSpecializedCareByReferralId.has(record.referralId)) {
+        return;
+      }
+
+      latestSpecializedCareByReferralId.set(record.referralId, {
+        sessionDate: record.sessionDate,
+        providerName: record.mentalHealthUser.name,
+      });
+    });
 
     const history = [
       ...careRecords.map((record) =>
@@ -424,7 +508,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         studentId: formatStudentIdForResponse(student.studentId),
         name: student.name,
         image: getUserInitials(student.name, "นศ"),
-        year: inferStudyYear(student.studentId),
+        year: inferStudyYear(student.studentId, student.studyYear),
         riskLevel: normalizeRiskLevel(student.studentAssessments[0]?.riskLevel ?? RiskLevel.NORMAL),
         lastAssessment: student.studentAssessments[0]?.assessedAt ?? null,
         careRecordCount: student._count.studentCareRecords,
@@ -442,8 +526,8 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
 
 export const createCareRecord = async (req: Request, res: Response): Promise<void> => {
   const advisorId = req.user?.userId;
-  const advisorRole = req.user?.role;
-  if (!advisorId || !isAdvisorRole(advisorRole)) {
+  const advisorRoles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!advisorId || !isAdvisorRole(advisorRoles)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -523,8 +607,8 @@ export const createCareRecord = async (req: Request, res: Response): Promise<voi
 
 export const createReferral = async (req: Request, res: Response): Promise<void> => {
   const advisorId = req.user?.userId;
-  const advisorRole = req.user?.role;
-  if (!advisorId || !isAdvisorRole(advisorRole)) {
+  const advisorRoles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
+  if (!advisorId || !isAdvisorRole(advisorRoles)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -578,9 +662,14 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
       },
     });
 
-    const mentalHealthUsers = await prisma.user.findMany({
+    const recipientRole =
+      parsedBody.data.target === ReferralTarget.COUNSELING_CENTER
+        ? Role.MENTAL_HEALTH
+        : Role.STUDENT_DEVELOPMENT;
+
+    const recipientUsers = await prisma.user.findMany({
       where: {
-        role: Role.MENTAL_HEALTH,
+        role: recipientRole,
         isActive: true,
       },
       select: {
@@ -588,9 +677,9 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
       },
     });
 
-    if (parsedBody.data.target === ReferralTarget.COUNSELING_CENTER && mentalHealthUsers.length > 0) {
+    if (recipientUsers.length > 0) {
       await prisma.alert.createMany({
-        data: mentalHealthUsers.map((user) => ({
+        data: recipientUsers.map((user) => ({
           recipientUserId: user.id,
           actorUserId: advisorId,
           studentId: student.id,

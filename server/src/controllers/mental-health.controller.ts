@@ -3,6 +3,8 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
+import { getAcceptedReferralOwners } from "../lib/referral-ownership";
+import { hasAssignedRole } from "../lib/roles";
 import { formatStudentIdForResponse, inferStudyYear, normalizeRiskLevel } from "../lib/user-format";
 
 const referralParamSchema = z.object({
@@ -28,7 +30,7 @@ const createSpecializedCareRecordSchema = z.object({
 
 export const getMentalHealthDashboard = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+  if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -46,6 +48,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
             select: {
               id: true,
               studentId: true,
+              studyYear: true,
               name: true,
               studentAssessments: {
                 orderBy: { assessedAt: "desc" },
@@ -62,6 +65,24 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           advisor: {
             select: {
               name: true,
+            },
+          },
+          specializedCareRecords: {
+            orderBy: [{ sessionDate: "desc" }, { createdAt: "desc" }],
+            take: 1,
+            select: {
+              sessionDate: true,
+              createdAt: true,
+              mentalHealthUser: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+          _count: {
+            select: {
+              specializedCareRecords: true,
             },
           },
         },
@@ -98,23 +119,35 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
       }),
     ]);
 
+    const acceptedOwnerByReferralId = await getAcceptedReferralOwners(referrals.map((referral) => referral.id));
+
     res.status(200).json({
-      referrals: referrals.map((referral) => ({
-        id: referral.id,
-        status: referral.status,
-        reason: referral.reason,
-        isUrgent: referral.isUrgent,
-        createdAt: referral.createdAt,
-        advisorName: referral.advisor.name,
-        student: {
-          id: referral.student.id,
-          studentId: formatStudentIdForResponse(referral.student.studentId),
-          name: referral.student.name,
-          year: inferStudyYear(referral.student.studentId),
-          riskLevel: normalizeRiskLevel(referral.student.studentAssessments[0]?.riskLevel || "NORMAL"),
-          latestAssessment: referral.student.studentAssessments[0] || null,
-        },
-      })),
+      referrals: referrals.map((referral) => {
+        const latestCareRecord = referral.specializedCareRecords[0] ?? null;
+        const acceptedOwner = acceptedOwnerByReferralId.get(referral.id) ?? null;
+
+        return {
+          id: referral.id,
+          status: referral.status,
+          reason: referral.reason,
+          isUrgent: referral.isUrgent,
+          createdAt: referral.createdAt,
+          updatedAt: referral.updatedAt,
+          advisorName: referral.advisor.name,
+          currentOwnerName: latestCareRecord?.mentalHealthUser.name ?? acceptedOwner?.actorName ?? null,
+          currentOwnerAssignedAt: acceptedOwner?.createdAt ?? null,
+          careSessionCount: referral._count.specializedCareRecords,
+          latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
+          student: {
+            id: referral.student.id,
+            studentId: formatStudentIdForResponse(referral.student.studentId),
+            name: referral.student.name,
+            year: inferStudyYear(referral.student.studentId, referral.student.studyYear),
+            riskLevel: normalizeRiskLevel(referral.student.studentAssessments[0]?.riskLevel || "NORMAL"),
+            latestAssessment: referral.student.studentAssessments[0] || null,
+          },
+        };
+      }),
       emergencyCases: emergencyCases.map((item) => ({
         id: item.id,
         summary: item.summary,
@@ -136,7 +169,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
 
 export const updateReferralStatus = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+  if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -190,7 +223,7 @@ export const updateReferralStatus = async (req: Request, res: Response): Promise
 
 export const createSpecializedCareRecord = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+  if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -281,7 +314,7 @@ export const createSpecializedCareRecord = async (req: Request, res: Response): 
 
 export const resolveEmergencyCase = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.MENTAL_HEALTH) {
+  if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }

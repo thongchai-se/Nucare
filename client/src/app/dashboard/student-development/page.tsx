@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -29,20 +29,28 @@ import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { MenuSectionHeading } from "@/components/menu-section-heading";
-import type { Role } from "@/types/auth";
+import { RoleToast } from "@/components/role-toast";
+import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import api from "@/lib/axios";
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type ActiveView = "dashboard" | "tracking" | "wellness" | "welfare" | "change-password";
 
 type PendingStudent = {
   id: string;
+  studentCode?: string;
   name: string;
   year: string;
+  section?: string;
+  advisorName?: string | null;
+  latestReminderAt?: string | null;
   lastActive: string;
   status: string;
 };
 
 type WellnessActivity = {
-  id: number;
+  id: string;
   name: string;
   date: string;
   registered: number;
@@ -66,21 +74,70 @@ type ToastState = {
   tone: "success" | "info";
 };
 
+type ScreeningStats = {
+  totalTarget: number;
+  completed: number;
+  pending: number;
+  percentage: number;
+  normalRiskCount: number;
+  mediumRiskCount: number;
+  highRiskCount: number;
+};
+
+type StudentDevelopmentDashboardResponse = {
+  screeningStats: ScreeningStats;
+  pendingStudents: Array<{
+    id: string;
+    studentCode: string;
+    name: string;
+    year: string;
+    section: string;
+    advisorName: string | null;
+    latestReminderAt: string | null;
+    status: string;
+  }>;
+  riskInsights: Array<{
+    id: string;
+    title: string;
+    tone: "normal" | "attention" | "critical";
+    count: number;
+    description: string;
+  }>;
+  supportCases: Array<{
+    id: string;
+    status: "PENDING" | "ACCEPTED" | "CLOSED";
+    isUrgent: boolean;
+    reason: string;
+    createdAt: string;
+    updatedAt: string;
+    advisorName: string;
+    student: {
+      id: string;
+      name: string;
+      studentCode: string;
+      year: string;
+      section: string;
+      riskLevel: "high" | "medium" | "normal";
+      latestAssessment: {
+        totalScore: number;
+        instrument: string;
+        assessedAt: string;
+      } | null;
+    };
+    latestCareRecord: {
+      careDate: string;
+      careType: string;
+      outcome: string | null;
+    } | null;
+  }>;
+};
+
 const isStudentDevelopmentView = (value: string | null): value is ActiveView =>
   value === "dashboard" ||
   value === "tracking" ||
   value === "wellness" ||
   value === "welfare" ||
   value === "change-password";
-
-const redirectByRole: Partial<Record<Role, string>> = {
-  ADMIN: "/dashboard/admin",
-  ADVISOR: "/dashboard/advisor",
-  EXECUTIVE: "/dashboard/executive",
-  INSTRUCTOR: "/dashboard/instructor",
-  MENTAL_HEALTH: "/dashboard/mental-health",
-  STUDENT: "/dashboard/student",
-};
 
 const screeningStats = {
   totalTarget: 750,
@@ -98,7 +155,7 @@ const pendingStudents: PendingStudent[] = [
 
 const wellnessActivities: WellnessActivity[] = [
   {
-    id: 1,
+    id: "1",
     name: "Workshop: จัดการความเครียดช่วงสอบ",
     date: "20 พ.ค. 2569",
     registered: 45,
@@ -107,7 +164,7 @@ const wellnessActivities: WellnessActivity[] = [
     focus: "สำหรับนักศึกษากลุ่มปกติที่ต้องการเครื่องมือดูแลตัวเอง",
   },
   {
-    id: 2,
+    id: "2",
     name: "กิจกรรม Art Therapy ศิลปะบำบัดใจ",
     date: "25 พ.ค. 2569",
     registered: 30,
@@ -144,6 +201,8 @@ const welfareTasks: WelfareTask[] = [
   },
 ];
 
+void { screeningStats, pendingStudents, wellnessActivities, welfareTasks };
+
 const campaignHighlights = [
   {
     title: "Checklist ก่อนปิดรอบประเมิน",
@@ -163,7 +222,7 @@ const campaignHighlights = [
 ];
 
 const getInitials = (name: string, fallback = "SD"): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const parts = stripKnownNamePrefix(name).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
     return fallback;
   }
@@ -181,6 +240,78 @@ const formatIdentifier = (employeeId?: string | null, email?: string | null): st
   return email ?? "-";
 };
 
+const emptyScreeningStats: ScreeningStats = {
+  totalTarget: 0,
+  completed: 0,
+  pending: 0,
+  percentage: 0,
+  normalRiskCount: 0,
+  mediumRiskCount: 0,
+  highRiskCount: 0,
+};
+
+const emptyPendingStudent: PendingStudent = {
+  id: "",
+  studentCode: "",
+  name: "",
+  year: "",
+  section: "",
+  advisorName: null,
+  latestReminderAt: null,
+  lastActive: "",
+  status: "",
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
+  ) {
+    return (error as { response?: { data?: { message?: string } } }).response?.data?.message || "เกิดข้อผิดพลาด";
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
+};
+
+const formatThaiDate = (value: string | null | undefined): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("th-TH", {
+    dateStyle: "medium",
+  }).format(date);
+};
+
+void formatThaiDate;
+
+const formatThaiDateTime = (value: string | null | undefined): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("th-TH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+};
+
 function StudentDevelopmentDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -188,12 +319,19 @@ function StudentDevelopmentDashboardContent() {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
-  const [selectedReminderTarget, setSelectedReminderTarget] = useState<PendingStudent | null>(null);
+  const [selectedReminderTarget, setSelectedReminderTarget] = useState<PendingStudent>(emptyPendingStudent);
   const [reminderMessage, setReminderMessage] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [yearFilter, setYearFilter] = useState<"ALL" | PendingStudent["year"]>("ALL");
-  const [sendViaAppNotification, setSendViaAppNotification] = useState(true);
-  const [sendViaEmail, setSendViaEmail] = useState(true);
+  const [loadingData, setLoadingData] = useState(false);
+  const [serverError, setServerError] = useState("");
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
+  const [dashboardData, setDashboardData] = useState<StudentDevelopmentDashboardResponse>({
+    screeningStats: emptyScreeningStats,
+    pendingStudents: [],
+    riskInsights: [],
+    supportCases: [],
+  });
   const [toast, setToast] = useState<ToastState>({ show: false, message: "", tone: "success" });
 
   useEffect(() => {
@@ -207,10 +345,30 @@ function StudentDevelopmentDashboardContent() {
       return;
     }
 
-    if (user.role !== "STUDENT_DEVELOPMENT") {
-      router.replace(redirectByRole[user.role] ?? "/dashboard");
+    if (!hasRole(user, "STUDENT_DEVELOPMENT")) {
+      router.replace(getRoleHomePath(user.role));
     }
   }, [loading, router, user]);
+
+  const loadDashboard = useCallback(async () => {
+    setLoadingData(true);
+    setServerError("");
+
+    try {
+      const response = await api.get<StudentDevelopmentDashboardResponse>("/api/student-development/dashboard");
+      setDashboardData(response.data);
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loading && hasRole(user, "STUDENT_DEVELOPMENT")) {
+      void loadDashboard();
+    }
+  }, [loadDashboard, loading, user]);
 
   useEffect(() => {
     if (!toast.show) {
@@ -239,6 +397,62 @@ function StudentDevelopmentDashboardContent() {
     [user?.email, user?.employeeId, user?.name]
   );
 
+  const screeningStats = dashboardData.screeningStats;
+
+  const pendingStudents = useMemo<PendingStudent[]>(
+    () =>
+      dashboardData.pendingStudents.map((student) => ({
+        ...student,
+        lastActive: student.latestReminderAt ? `แจ้งเตือนล่าสุด ${formatThaiDateTime(student.latestReminderAt)}` : "ยังไม่เคยแจ้งเตือน",
+      })),
+    [dashboardData.pendingStudents]
+  );
+
+  const wellnessActivities = useMemo<WellnessActivity[]>(
+    () =>
+      dashboardData.riskInsights.map((insight, index) => ({
+        id: String(index + 1),
+        name: insight.title,
+        date: "อ้างอิงจากผลประเมินล่าสุด",
+        registered: insight.count,
+        max: Math.max(screeningStats.completed, 1),
+        status: insight.tone === "critical" ? "เต็มแล้ว" : "เปิดรับสมัคร",
+        focus: insight.description,
+      })) as unknown as WellnessActivity[],
+    [dashboardData.riskInsights, screeningStats.completed]
+  );
+
+  const welfareTasks = useMemo<WelfareTask[]>(
+    () =>
+      dashboardData.supportCases.map((caseItem) => ({
+        id: caseItem.id,
+        title: `${caseItem.student.name} (${caseItem.student.studentCode})`,
+        owner: caseItem.advisorName,
+        status:
+          caseItem.status === "PENDING"
+            ? "เธฃเธญเธเนเธญเธกเธนเธฅเน€เธเธดเนเธกเน€เธ•เธดเธก"
+            : caseItem.status === "ACCEPTED"
+              ? "เธเธณเธฅเธฑเธเธเธฃเธฐเธชเธฒเธเธเธฒเธ"
+              : "เธเธฃเนเธญเธกเธ”เธณเน€เธเธดเธเธเธฒเธฃ",
+        updatedAt: `อัปเดต ${formatThaiDateTime(caseItem.updatedAt)}`,
+        note: caseItem.reason,
+        isUrgent: caseItem.isUrgent,
+      })) as unknown as WelfareTask[],
+    [dashboardData.supportCases]
+  );
+
+  const yearOptions = useMemo(
+    () => Array.from(new Set(pendingStudents.map((student) => student.year).filter(Boolean))),
+    [pendingStudents]
+  );
+
+  void yearOptions;
+
+  const sendViaAppNotification = true;
+  const sendViaEmail = false;
+  const setSendViaAppNotification = () => undefined;
+  const setSendViaEmail = () => undefined;
+
   const filteredPendingStudents = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
 
@@ -252,17 +466,15 @@ function StudentDevelopmentDashboardContent() {
         return true;
       }
 
-      return [student.id, student.name, student.year, student.status, student.lastActive]
+      return [student.studentCode, student.name, student.year, student.section, student.advisorName || "", student.status, student.lastActive]
         .join(" ")
         .toLowerCase()
         .includes(keyword);
     });
-  }, [searchKeyword, yearFilter]);
+  }, [pendingStudents, searchKeyword, yearFilter]);
 
   const openReminderModal = (student: PendingStudent | null) => {
-    setSelectedReminderTarget(student);
-    setSendViaAppNotification(true);
-    setSendViaEmail(true);
+    setSelectedReminderTarget(student ?? emptyPendingStudent);
 
     const defaultMessage = student
       ? `ประกาศจากฝ่ายพัฒนานักศึกษา: กรุณาเข้าสู่ระบบ Nucare เพื่อทำแบบประเมินสุขภาพจิต (9Q) ประจำเดือนพฤษภาคม โดยเร็วที่สุด หากต้องการความช่วยเหลือสามารถติดต่อเจ้าหน้าที่ได้ทันที`
@@ -282,9 +494,50 @@ function StudentDevelopmentDashboardContent() {
     router.replace("/login");
   };
 
-  const handleReminderSubmit = () => {
+  const handleReminderSubmit = async () => {
+    if (!reminderMessage.trim()) {
+      return;
+    }
+
+    const hasSpecificTarget = Boolean(selectedReminderTarget.id);
+
+    setIsSendingReminder(true);
+    setServerError("");
+
+    try {
+      const response = await api.post<{ sentCount: number }>("/api/student-development/screening-reminders", {
+        message: reminderMessage.trim(),
+        studentUserIds: hasSpecificTarget ? [selectedReminderTarget.id] : undefined,
+      });
+
+      setShowReminderModal(false);
+      setSelectedReminderTarget(emptyPendingStudent);
+      setToast({
+        show: true,
+        message:
+          response.data.sentCount > 1
+            ? `ส่งแจ้งเตือนแล้ว ${response.data.sentCount} ราย`
+            : hasSpecificTarget
+              ? `ส่งแจ้งเตือนถึง ${selectedReminderTarget.name} เรียบร้อยแล้ว`
+              : "ส่งแจ้งเตือนเรียบร้อยแล้ว",
+        tone: "success",
+      });
+      await loadDashboard();
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+      setToast({
+        show: true,
+        message: "ไม่สามารถส่งแจ้งเตือนได้",
+        tone: "info",
+      });
+    } finally {
+      setIsSendingReminder(false);
+    }
+
+    return;
+
     setShowReminderModal(false);
-    setSelectedReminderTarget(null);
+    setSelectedReminderTarget(emptyPendingStudent);
     setToast({
       show: true,
       message: selectedReminderTarget
@@ -313,7 +566,7 @@ function StudentDevelopmentDashboardContent() {
     );
   }
 
-  if (!user || user.role !== "STUDENT_DEVELOPMENT") {
+  if (!user || !hasRole(user, "STUDENT_DEVELOPMENT")) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
         <span className="loader h-7 w-7 text-blue-600"></span>
@@ -362,8 +615,8 @@ function StudentDevelopmentDashboardContent() {
                   <p className="mt-1 text-xs font-medium text-slate-500">นักศึกษาที่ยังต้องติดตาม</p>
                 </div>
                 <div className="rounded-2xl border border-white bg-white/80 p-4 shadow-sm">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Wellness</p>
-                  <p className="mt-2 text-2xl font-black text-emerald-600">{wellnessActivities.length}</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Support</p>
+                  <p className="mt-2 text-2xl font-black text-emerald-600">{screeningStats.mediumRiskCount + screeningStats.highRiskCount}</p>
                   <p className="mt-1 text-xs font-medium text-slate-500">กิจกรรมที่เปิดอยู่ในรอบนี้</p>
                 </div>
               </div>
@@ -442,11 +695,11 @@ function StudentDevelopmentDashboardContent() {
               <div key={student.id} className="flex flex-col gap-3 rounded-2xl border border-transparent px-3 py-3 transition-colors hover:border-slate-100 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-sm font-black text-amber-600">
-                    {student.id.slice(-2)}
+                    {(student.studentCode || student.id).slice(-2)}
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-900">{student.name}</p>
-                    <p className="mt-1 text-xs text-slate-500">{student.id} • {student.year} • ใช้งานล่าสุด {student.lastActive}</p>
+                    <p className="mt-1 text-xs text-slate-500">{student.studentCode || student.id} • {student.year} • {student.lastActive}</p>
                     <span className={`mt-2 inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       student.status.includes("2 รอบ") ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
                     }`}>
@@ -600,7 +853,7 @@ function StudentDevelopmentDashboardContent() {
               <tr>
                 <th className="px-5 py-4 font-black text-slate-500">นักศึกษา</th>
                 <th className="px-5 py-4 font-black text-slate-500">ชั้นปี</th>
-                <th className="px-5 py-4 font-black text-slate-500">การใช้งานล่าสุด</th>
+                <th className="px-5 py-4 font-black text-slate-500">แจ้งเตือนล่าสุด</th>
                 <th className="px-5 py-4 font-black text-slate-500">สถานะการประเมิน</th>
                 <th className="px-5 py-4 text-center font-black text-slate-500">จัดการ</th>
               </tr>
@@ -611,11 +864,11 @@ function StudentDevelopmentDashboardContent() {
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-sm font-black text-slate-500">
-                        {student.id.slice(-2)}
+                        {(student.studentCode || student.id).slice(-2)}
                       </div>
                       <div>
                         <p className="font-bold text-slate-900">{student.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">{student.id}</p>
+                        <p className="mt-1 text-xs text-slate-500">{student.studentCode || student.id}</p>
                       </div>
                     </div>
                   </td>
@@ -650,7 +903,7 @@ function StudentDevelopmentDashboardContent() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-bold text-slate-900">{student.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">{student.id} • {student.year}</p>
+                  <p className="mt-1 text-xs text-slate-500">{student.studentCode || student.id} • {student.year}</p>
                 </div>
                 <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${
                   student.status.includes("2 รอบ") ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
@@ -658,7 +911,7 @@ function StudentDevelopmentDashboardContent() {
                   {student.status}
                 </span>
               </div>
-              <p className="mt-3 text-sm text-slate-500">ใช้งานล่าสุด {student.lastActive}</p>
+              <p className="mt-3 text-sm text-slate-500">{student.lastActive}</p>
               <button
                 type="button"
                 onClick={() => openReminderModal(student)}
@@ -882,6 +1135,7 @@ function StudentDevelopmentDashboardContent() {
             </div>
             <p className="mt-1 text-xs leading-relaxed text-rose-700">ตรวจสอบนักศึกษาที่ค้างประเมินและส่ง reminder ให้ครบก่อนปิดรอบ เพื่อให้ข้อมูลของคณะสมบูรณ์ที่สุด</p>
           </div>
+          <StaffRoleSwitcher className="mb-3" />
           <button
             type="button"
             onClick={() => {
@@ -952,6 +1206,7 @@ function StudentDevelopmentDashboardContent() {
             </div>
 
             <div className="border-t border-slate-100 p-4">
+              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
               <button
                 type="button"
                 onClick={() => {
@@ -1008,6 +1263,12 @@ function StudentDevelopmentDashboardContent() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl pb-10">
+            {serverError ? (
+              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {serverError}
+              </div>
+            ) : null}
+
             {activeView === "dashboard" && <DashboardView />}
             {activeView === "tracking" && <TrackingView />}
             {activeView === "wellness" && <WellnessView />}
@@ -1027,20 +1288,25 @@ function StudentDevelopmentDashboardContent() {
         </main>
       </div>
 
-      <div
-        className={`pointer-events-none fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-xl transition-all duration-300 ${
-          toast.show ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
-        } ${toast.tone === "success" ? "border-emerald-200 bg-white text-emerald-700" : "border-blue-200 bg-white text-blue-700"}`}
-      >
-        <div className={`rounded-full p-2 ${toast.tone === "success" ? "bg-emerald-100" : "bg-blue-100"}`}>
-          <CheckCircle2 className="h-4 w-4" />
+      {loadingData ? (
+        <div className="pointer-events-none fixed bottom-20 right-6 z-40 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="loader h-4 w-4 text-blue-600"></span>
+            กำลังอัปเดตข้อมูล...
+          </div>
         </div>
-        <p className="text-sm font-bold">{toast.message}</p>
-      </div>
+      ) : null}
+
+      <RoleToast
+        description={toast.message}
+        open={toast.show}
+        title={toast.tone === "success" ? "ดำเนินการสำเร็จ" : "มีข้อมูลอัปเดต"}
+        tone={toast.tone}
+      />
 
       {showReminderModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 px-4 py-6 backdrop-blur-sm sm:items-center">
+          <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
@@ -1048,7 +1314,7 @@ function StudentDevelopmentDashboardContent() {
                   ส่งแจ้งเตือนนักศึกษา
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {selectedReminderTarget ? `ผู้รับ: ${selectedReminderTarget.name}` : "ผู้รับ: นักศึกษาที่ค้างประเมินทั้งหมด"}
+                  {selectedReminderTarget.id ? `ผู้รับ: ${selectedReminderTarget.name}` : "ผู้รับ: นักศึกษาที่ค้างประเมินทั้งหมด"}
                 </p>
               </div>
               <button
@@ -1060,7 +1326,7 @@ function StudentDevelopmentDashboardContent() {
               </button>
             </div>
 
-            <div className="space-y-5 bg-slate-50/70 px-6 py-6">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50/70 px-6 py-6">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Channel</p>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row">
@@ -1068,7 +1334,7 @@ function StudentDevelopmentDashboardContent() {
                     <input
                       type="checkbox"
                       checked={sendViaAppNotification}
-                      onChange={(event) => setSendViaAppNotification(event.target.checked)}
+                      onChange={() => setSendViaAppNotification()}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     App Notification
@@ -1077,7 +1343,7 @@ function StudentDevelopmentDashboardContent() {
                     <input
                       type="checkbox"
                       checked={sendViaEmail}
-                      onChange={(event) => setSendViaEmail(event.target.checked)}
+                      onChange={() => setSendViaEmail()}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     Email มหาวิทยาลัย
@@ -1096,19 +1362,19 @@ function StudentDevelopmentDashboardContent() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-5">
+            <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 px-6 py-5 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowReminderModal(false)}
-                className="rounded-2xl px-4 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-100"
+                className="w-full rounded-2xl px-4 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-100 sm:w-auto"
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
-                disabled={!sendViaAppNotification && !sendViaEmail}
+                disabled={isSendingReminder || !sendViaAppNotification}
                 onClick={handleReminderSubmit}
-                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
               >
                 <Send className="h-4 w-4" />
                 ยืนยันการส่งข้อความ

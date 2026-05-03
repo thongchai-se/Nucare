@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { readEnv, requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
+import { getAssignedRoles } from "../lib/roles";
 import { AuthTokenPayload } from "../middleware/auth.middleware";
 
 const ACCESS_TOKEN_COOKIE = "accessToken";
@@ -157,11 +158,11 @@ const clearCookieOptions: CookieOptions = {
 
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
-const createAccessToken = (user: { id: string; role: Role }): string =>
-  jwt.sign({ userId: user.id, role: user.role }, getAccessSecret(), { expiresIn: "15m" });
+const createAccessToken = (user: { id: string; role: Role; additionalRoles?: Role[] | null }): string =>
+  jwt.sign({ userId: user.id, role: user.role, roles: getAssignedRoles(user) }, getAccessSecret(), { expiresIn: "15m" });
 
-const createRefreshToken = (user: { id: string; role: Role }): string =>
-  jwt.sign({ userId: user.id, role: user.role }, getRefreshSecret(), {
+const createRefreshToken = (user: { id: string; role: Role; additionalRoles?: Role[] | null }): string =>
+  jwt.sign({ userId: user.id, role: user.role, roles: getAssignedRoles(user) }, getRefreshSecret(), {
     expiresIn: "7d",
     jwtid: randomBytes(16).toString("hex"),
   });
@@ -213,7 +214,10 @@ const sanitizeUser = (user: {
   studentId: string | null;
   employeeId: string | null;
   email: string | null;
+  studyYear: number | null;
+  section: string | null;
   role: Role;
+  additionalRoles?: Role[] | null;
   image: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -223,7 +227,13 @@ const sanitizeUser = (user: {
   studentId: formatStudentIdForResponse(user.studentId),
   employeeId: user.employeeId,
   email: user.email,
+  studyYear: user.studyYear ?? null,
+  section: user.section ?? null,
   role: user.role,
+  roles: getAssignedRoles({
+    role: user.role,
+    additionalRoles: user.additionalRoles || [],
+  }),
   image: user.image,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
@@ -238,7 +248,10 @@ const findActiveUserForSession = async (userId: string) =>
       studentId: true,
       employeeId: true,
       email: true,
+      studyYear: true,
+      section: true,
       role: true,
+      additionalRoles: true,
       image: true,
       isActive: true,
       createdAt: true,
@@ -558,6 +571,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         id: true,
         password: true,
         role: true,
+        additionalRoles: true,
         isActive: true,
       },
     });

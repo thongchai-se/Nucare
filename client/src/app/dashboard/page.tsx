@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth.context";
+import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
 
 export default function DashboardEntryPage() {
   const router = useRouter();
@@ -18,37 +19,8 @@ export default function DashboardEntryPage() {
       return;
     }
 
-    if (user.role === "ADMIN") {
-      router.replace("/dashboard/admin");
-      return;
-    }
-
-    if (user.role === "EXECUTIVE") {
-      router.replace("/dashboard/executive");
-      return;
-    }
-
-    if (user.role === "ADVISOR") {
-      router.replace("/dashboard/advisor");
-      return;
-    }
-
-    if (user.role === "STUDENT_DEVELOPMENT") {
-      router.replace("/dashboard/student-development");
-      return;
-    }
-
-    if (user.role === "MENTAL_HEALTH") {
-      router.replace("/dashboard/mental-health");
-      return;
-    }
-
-    if (user.role === "INSTRUCTOR") {
-      router.replace("/dashboard/instructor");
-      return;
-    }
-
-    router.replace("/dashboard/student");
+    const defaultRole = getDefaultRole(user);
+    router.replace(defaultRole ? getRoleHomePath(defaultRole) : "/dashboard/student");
   }, [isAuthenticated, loading, router, user]);
 
   return (

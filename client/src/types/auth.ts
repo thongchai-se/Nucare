@@ -13,7 +13,10 @@ export interface User {
   studentId: string | null;
   employeeId: string | null;
   email: string | null;
+  studyYear: number | null;
+  section: string | null;
   role: Role;
+  roles: Role[];
   image: string | null;
   createdAt: string;
   updatedAt: string;

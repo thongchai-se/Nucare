@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
+import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import api from "@/lib/axios";
 
 type StudentAssessmentSummary = {
@@ -43,6 +44,13 @@ type StudentAssessmentSummary = {
   assessedAt: string;
 };
 
+type StudentToastState = {
+  description: string;
+  open: boolean;
+  title: string;
+  tone: RoleToastTone;
+};
+
 export default function StudentDashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, loading, logout } = useAuth();
@@ -50,7 +58,13 @@ export default function StudentDashboardPage() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [assessmentModalOpen, setAssessmentModalOpen] = useState(false);
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
-  const [showAssessmentToast, setShowAssessmentToast] = useState(false);
+  const [studentToast, setStudentToast] = useState<StudentToastState>({
+    open: false,
+    tone: "success",
+    title: "",
+    description: "",
+  });
+  const showAssessmentToast = false;
   const [showPriorityBanner, setShowPriorityBanner] = useState(true);
   const [studentServerError, setStudentServerError] = useState("");
   const [latestAssessment, setLatestAssessment] = useState<StudentAssessmentSummary | null>(null);
@@ -120,6 +134,18 @@ export default function StudentDashboardPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!studentToast.open) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setStudentToast((current) => ({ ...current, open: false }));
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [studentToast.open]);
 
   useEffect(() => {
     if (loading || user?.role !== "STUDENT") {
@@ -238,9 +264,13 @@ export default function StudentDashboardPage() {
       setLatestAssessment(response.data.assessment);
       setIsSubmittingAssessment(false);
       setAssessmentModalOpen(false);
-      setShowAssessmentToast(true);
+      setStudentToast({
+        open: true,
+        tone: "success",
+        title: "ส่งผลประเมินสำเร็จ",
+        description: "ขอบคุณที่ให้เราช่วยดูแลสุขภาพใจของคุณ",
+      });
       setShowPriorityBanner(false);
-      window.setTimeout(() => setShowAssessmentToast(false), 4000);
     } catch (error) {
       setIsSubmittingAssessment(false);
       setStudentServerError(error instanceof Error ? error.message : "ไม่สามารถส่งแบบประเมินได้");
@@ -252,8 +282,12 @@ export default function StudentDashboardPage() {
       await api.post("/api/student/sos", {
         summary: "นักศึกษาร้องขอความช่วยเหลือด่วนผ่านปุ่ม SOS จาก dashboard",
       });
-      setShowAssessmentToast(true);
-      window.setTimeout(() => setShowAssessmentToast(false), 4000);
+      setStudentToast({
+        open: true,
+        tone: "success",
+        title: "ส่งคำขอช่วยเหลือสำเร็จ",
+        description: "ระบบได้รับเคส SOS ของคุณแล้วและจะเร่งประสานงานให้",
+      });
     } catch (error) {
       setStudentServerError(error instanceof Error ? error.message : "ไม่สามารถส่งเคส SOS ได้");
     }
@@ -261,6 +295,13 @@ export default function StudentDashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800">
+      <RoleToast
+        description={studentToast.description}
+        open={studentToast.open}
+        title={studentToast.title}
+        tone={studentToast.tone}
+        zIndexClassName="z-[300]"
+      />
       {showAssessmentToast && (
         <div className="fixed bottom-6 right-6 z-[300] flex translate-y-0 items-center gap-3 rounded-xl border-l-4 border-emerald-500 bg-white px-5 py-4 shadow-xl transition-all duration-300">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -733,8 +774,8 @@ export default function StudentDashboardPage() {
             onClick={() => setAssessmentModalOpen(false)}
           />
 
-          <div className="fixed inset-0 z-10 flex items-center justify-center p-4">
-            <div className="flex max-h-[90vh] w-full max-w-2xl translate-y-0 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl transition-all duration-300">
+          <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center">
+            <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-2xl translate-y-0 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl transition-all duration-300 sm:max-h-[90vh]">
               <div className="flex shrink-0 items-center justify-between bg-blue-700 px-6 py-5">
                 <h3 className="flex items-center gap-2 text-lg font-bold text-white">
                   <ClipboardEdit className="h-5 w-5 text-blue-200" /> แบบประเมินสุขภาพจิต (9Q)
@@ -748,7 +789,7 @@ export default function StudentDashboardPage() {
                 </button>
               </div>
 
-              <div className="flex-1 space-y-6 overflow-y-auto bg-slate-50 p-6 sm:p-8">
+              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto bg-slate-50 p-6 sm:p-8">
                 <div className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm">
                   <p className="mb-2 text-sm text-slate-600">ในช่วง 2 สัปดาห์ที่ผ่านมา ท่านมีอาการเหล่านี้บ่อยแค่ไหน?</p>
                   <p className="text-xs font-medium text-blue-600">*กรุณาตอบตามความเป็นจริง ข้อมูลจะถูกเก็บเป็นความลับ</p>
@@ -776,11 +817,11 @@ export default function StudentDashboardPage() {
                 </div>
               </div>
 
-              <div className="flex shrink-0 gap-3 border-t border-slate-200 bg-white p-5">
+              <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white p-5 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => setAssessmentModalOpen(false)}
-                  className="w-1/3 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200"
+                  className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 sm:w-1/3"
                 >
                   ยกเลิก
                 </button>
@@ -788,7 +829,7 @@ export default function StudentDashboardPage() {
                   type="button"
                   onClick={handleSubmitAssessment}
                   disabled={isSubmittingAssessment}
-                  className="flex w-2/3 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-80"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-80 sm:w-2/3"
                 >
                   {isSubmittingAssessment ? (
                     <>

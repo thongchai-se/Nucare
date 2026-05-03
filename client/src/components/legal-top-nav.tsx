@@ -5,6 +5,7 @@ import { ChevronDown, ClipboardCheck, HeartPulse, LogIn, Menu, User, X } from "l
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/auth.context";
 import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-config";
+import { getNameInitials } from "@/lib/name-prefix";
 
 type LegalPageKey = "terms" | "privacy" | "cookies";
 
@@ -12,16 +13,7 @@ type LegalTopNavProps = {
   active: LegalPageKey;
 };
 
-const getUserInitials = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return "NU";
-  }
-
-  const first = parts[0]?.[0] ?? "";
-  const second = parts[1]?.[0] ?? parts[0]?.[1] ?? "";
-  return `${first}${second}`.toUpperCase();
-};
+const getUserInitials = (name: string): string => getNameInitials(name, "NU");
 
 export default function LegalTopNav({ active }: LegalTopNavProps) {
   const { user, isAuthenticated, logout } = useAuth();

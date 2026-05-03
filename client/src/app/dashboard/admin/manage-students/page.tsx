@@ -8,6 +8,7 @@ import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { RoleToast } from "@/components/role-toast";
 
 type UserStatus = "active" | "inactive";
 
@@ -17,7 +18,11 @@ type ApiUser = {
   email: string | null;
   studentId: string | null;
   employeeId: string | null;
+  studyYear: number | null;
+  section: string | null;
   role: string;
+  advisorId: string | null;
+  advisorName: string | null;
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
@@ -32,6 +37,19 @@ type UsersResponse = {
   total: number;
 };
 
+type StaffUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  employeeId: string | null;
+  role: string;
+  roles?: string[];
+};
+
+type StaffResponse = {
+  staff: StaffUser[];
+};
+
 type UserMutationResponse = {
   message: string;
   user: ManagedUser;
@@ -42,22 +60,38 @@ type UserFormSnapshot = {
   studentId: string;
   name: string;
   email: string;
+  studyYear: number;
+  section: string;
+  advisorId: string;
   status: UserStatus;
 };
 
 type FormErrors = {
   email: string;
   name: string;
+  section: string;
+  studyYear: string;
   studentId: string;
+};
+
+type BulkStudyYearUpdateResponse = {
+  message: string;
+  fromStudyYear: number;
+  toStudyYear: number;
+  updatedCount: number;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
+const STUDY_YEAR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+const SECTION_MAX_LENGTH = 50;
 
 const emptyErrors: FormErrors = {
   email: "",
   name: "",
+  section: "",
+  studyYear: "",
   studentId: "",
 };
 
@@ -77,6 +111,15 @@ const formatStudentIdInput = (value: string): string => {
   }
 
   return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
+};
+
+const normalizeStudyYear = (value: string): number => {
+  const parsed = Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 8) {
+    throw new Error("กรุณาเลือกชั้นปี 1-8");
+  }
+
+  return parsed;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -117,15 +160,24 @@ export default function ManageStudentsPage() {
   const [formStudentId, setFormStudentId] = useState("");
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formStudyYear, setFormStudyYear] = useState("1");
+  const [formSection, setFormSection] = useState("");
+  const [formAdvisorId, setFormAdvisorId] = useState("");
   const [formStatus, setFormStatus] = useState<UserStatus>("active");
   const [formErrors, setFormErrors] = useState<FormErrors>(emptyErrors);
   const [initialFormSnapshot, setInitialFormSnapshot] = useState<UserFormSnapshot | null>(null);
+  const [advisorOptions, setAdvisorOptions] = useState<StaffUser[]>([]);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkFromStudyYear, setBulkFromStudyYear] = useState("1");
+  const [bulkToStudyYear, setBulkToStudyYear] = useState("2");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  const [successAnimationKey, setSuccessAnimationKey] = useState(0);
   const [successMessage, setSuccessMessage] = useState("บันทึกข้อมูลสำเร็จ");
   const [successTemporaryPassword, setSuccessTemporaryPassword] = useState("");
   const [pendingDeleteUser, setPendingDeleteUser] = useState<ManagedUser | null>(null);
+  const successAnimationKey = 0;
+  const showLegacySuccessPopup = false;
 
   useEffect(() => {
     if (!loading && !user) {
@@ -185,7 +237,7 @@ export default function ManageStudentsPage() {
         return true;
       }
 
-      return [managedUser.name, managedUser.email || "", managedUser.studentId || ""]
+      return [managedUser.name, managedUser.email || "", managedUser.studentId || "", managedUser.studyYear || "", managedUser.section || "", managedUser.advisorName || ""]
         .join(" ")
         .toLowerCase()
         .includes(keyword);
@@ -211,13 +263,33 @@ export default function ManageStudentsPage() {
   const endItemIndex = filteredUsers.length === 0 ? 0 : Math.min(startItemIndex + paginatedUsers.length, filteredUsers.length);
   const canGoPrev = currentPage > 1;
   const canGoNext = currentPage < totalPages;
+  const studentCountsByStudyYear = useMemo(
+    () =>
+      STUDY_YEAR_OPTIONS.map((studyYear) => ({
+        count: users.filter((managedUser) => managedUser.studyYear === studyYear).length,
+        studyYear,
+      })),
+    [users]
+  );
+  const bulkPromotionMatchCount = useMemo(
+    () => users.filter((managedUser) => managedUser.studyYear === Number.parseInt(bulkFromStudyYear, 10)).length,
+    [bulkFromStudyYear, users]
+  );
+  const bulkPromotionHasChanges = bulkFromStudyYear !== bulkToStudyYear;
+
+  useEffect(() => {
+    const nextStudyYear = Math.min(8, Number.parseInt(bulkFromStudyYear, 10) + 1);
+    setBulkToStudyYear(String(nextStudyYear));
+  }, [bulkFromStudyYear]);
 
   const canSubmit = useMemo(() => {
     const trimmedName = formName.trim();
     const trimmedEmail = formEmail.trim();
     const trimmedStudentId = formStudentId.trim();
+    const trimmedSection = formSection.trim();
+    const normalizedStudyYear = Number.parseInt(formStudyYear, 10);
 
-    if (!trimmedName || !trimmedStudentId) {
+    if (!trimmedName || !trimmedStudentId || !trimmedSection) {
       return false;
     }
 
@@ -228,6 +300,14 @@ export default function ManageStudentsPage() {
     try {
       normalizeStudentId(trimmedStudentId);
     } catch {
+      return false;
+    }
+
+    if (!Number.isFinite(normalizedStudyYear) || normalizedStudyYear < 1 || normalizedStudyYear > 8) {
+      return false;
+    }
+
+    if (trimmedSection.length > SECTION_MAX_LENGTH) {
       return false;
     }
 
@@ -243,17 +323,25 @@ export default function ManageStudentsPage() {
       initialFormSnapshot.studentId !== trimmedStudentId ||
       initialFormSnapshot.name !== trimmedName ||
       initialFormSnapshot.email !== trimmedEmail.toLowerCase() ||
+      initialFormSnapshot.studyYear !== normalizedStudyYear ||
+      initialFormSnapshot.section !== trimmedSection ||
+      initialFormSnapshot.advisorId !== formAdvisorId ||
       initialFormSnapshot.status !== formStatus
     );
-  }, [formEmail, formName, formStatus, formStudentId, initialFormSnapshot, modalMode]);
+  }, [formAdvisorId, formEmail, formName, formSection, formStatus, formStudentId, formStudyYear, initialFormSnapshot, modalMode]);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
     setServerError("");
 
     try {
-      const response = await api.get<UsersResponse>("/api/admin/users");
-      setUsers(response.data.users.filter((managedUser): managedUser is ManagedUser => managedUser.role === "STUDENT"));
+      const [usersResponse, staffResponse] = await Promise.all([
+        api.get<UsersResponse>("/api/admin/users"),
+        api.get<StaffResponse>("/api/admin/staff"),
+      ]);
+
+      setUsers(usersResponse.data.users.filter((managedUser): managedUser is ManagedUser => managedUser.role === "STUDENT"));
+      setAdvisorOptions(staffResponse.data.staff.filter((staffUser) => (staffUser.roles || [staffUser.role]).includes("ADVISOR")));
     } catch (error) {
       setServerError(getErrorMessage(error));
     } finally {
@@ -270,6 +358,9 @@ export default function ManageStudentsPage() {
     setFormStudentId("");
     setFormName("");
     setFormEmail("");
+    setFormStudyYear("1");
+    setFormSection("");
+    setFormAdvisorId("");
     setFormStatus("active");
     setFormErrors(emptyErrors);
   };
@@ -288,12 +379,18 @@ export default function ManageStudentsPage() {
     setFormStudentId(managedUser.studentId || "");
     setFormName(managedUser.name);
     setFormEmail(managedUser.email || "");
+    setFormStudyYear(String(managedUser.studyYear || 1));
+    setFormSection(managedUser.section || "");
+    setFormAdvisorId(managedUser.advisorId || "");
     setFormStatus(managedUser.status);
     setFormErrors(emptyErrors);
     setInitialFormSnapshot({
       studentId: managedUser.studentId || "",
       name: managedUser.name.trim(),
       email: (managedUser.email || "").trim().toLowerCase(),
+      studyYear: managedUser.studyYear || 1,
+      section: (managedUser.section || "").trim(),
+      advisorId: managedUser.advisorId || "",
       status: managedUser.status,
     });
     setModalOpen(true);
@@ -312,16 +409,17 @@ export default function ManageStudentsPage() {
   const showSuccess = (message: string, temporaryPassword = "") => {
     setSuccessMessage(message);
     setSuccessTemporaryPassword(temporaryPassword);
-    setSuccessAnimationKey((current) => current + 1);
     setShowSuccessPopup(true);
   };
 
-  const validateForm = (): { email: string | null; studentId: string } | null => {
+  const validateForm = (): { email: string | null; section: string; studentId: string; studyYear: number } | null => {
     const nextErrors: FormErrors = { ...emptyErrors };
     const trimmedName = formName.trim();
     const trimmedEmail = formEmail.trim();
+    const trimmedSection = formSection.trim();
     const trimmedStudentId = formStudentId.trim();
     let normalizedStudentId = "";
+    let normalizedStudyYear = 1;
 
     if (!trimmedName) {
       nextErrors.name = "กรุณาระบุชื่อ-นามสกุล";
@@ -341,6 +439,18 @@ export default function ManageStudentsPage() {
       }
     }
 
+    try {
+      normalizedStudyYear = normalizeStudyYear(formStudyYear);
+    } catch (error) {
+      nextErrors.studyYear = error instanceof Error ? error.message : "ข้อมูลชั้นปีไม่ถูกต้อง";
+    }
+
+    if (!trimmedSection) {
+      nextErrors.section = "กรุณาระบุเซคหรือกลุ่ม";
+    } else if (trimmedSection.length > SECTION_MAX_LENGTH) {
+      nextErrors.section = `เซคหรือกลุ่มต้องไม่เกิน ${SECTION_MAX_LENGTH} ตัวอักษร`;
+    }
+
     setFormErrors(nextErrors);
 
     if (Object.values(nextErrors).some(Boolean)) {
@@ -349,7 +459,9 @@ export default function ManageStudentsPage() {
 
     return {
       email: trimmedEmail || null,
+      section: trimmedSection,
       studentId: normalizedStudentId,
+      studyYear: normalizedStudyYear,
     };
   };
 
@@ -369,6 +481,9 @@ export default function ManageStudentsPage() {
       studentId: validated.studentId,
       name: formName.trim(),
       email: validated.email || undefined,
+      studyYear: validated.studyYear,
+      section: validated.section,
+      advisorId: formAdvisorId || null,
       status: formStatus,
     };
 
@@ -410,6 +525,11 @@ export default function ManageStudentsPage() {
     setPendingDeleteUser(managedUser);
   };
 
+  const editingManagedUser = useMemo(
+    () => users.find((managedUser) => managedUser.id === editingUserId) ?? null,
+    [editingUserId, users]
+  );
+
   const confirmDeleteUser = async () => {
     if (!pendingDeleteUser) {
       return;
@@ -427,6 +547,47 @@ export default function ManageStudentsPage() {
     } finally {
       setDeletingId(null);
       setPendingDeleteUser(null);
+    }
+  };
+
+  const openBulkPromotionModal = () => {
+    const firstAvailableStudyYear = studentCountsByStudyYear.find((item) => item.count > 0)?.studyYear ?? 1;
+    setBulkFromStudyYear(String(firstAvailableStudyYear));
+    setBulkToStudyYear(String(Math.min(8, firstAvailableStudyYear + 1)));
+    setBulkModalOpen(true);
+  };
+
+  const closeBulkPromotionModal = () => {
+    if (bulkUpdating) {
+      return;
+    }
+
+    setBulkModalOpen(false);
+  };
+
+  const submitBulkPromotion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setServerError("");
+
+    if (!bulkPromotionHasChanges) {
+      setServerError("กรุณาเลือกชั้นปีก่อนหน้าและชั้นปีเป้าหมายให้ต่างกัน");
+      return;
+    }
+
+    setBulkUpdating(true);
+
+    try {
+      const response = await api.post<BulkStudyYearUpdateResponse>("/api/admin/students/promote-study-year", {
+        fromStudyYear: Number.parseInt(bulkFromStudyYear, 10),
+        toStudyYear: Number.parseInt(bulkToStudyYear, 10),
+      });
+      showSuccess(response.data.message || "เลื่อนชั้นปีสำเร็จ");
+      setBulkModalOpen(false);
+      await fetchUsers();
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    } finally {
+      setBulkUpdating(false);
     }
   };
 
@@ -469,8 +630,8 @@ export default function ManageStudentsPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
-        className={`fixed inset-0 z-[80] flex items-center justify-center px-4 transition-all duration-300 ease-out ${
-          showSuccessPopup ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
+        className={`fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 py-6 transition-all duration-300 ease-out sm:items-center ${
+          showLegacySuccessPopup && showSuccessPopup ? "scale-100 opacity-100" : "hidden pointer-events-none scale-95 opacity-0"
         }`}
       >
         <div className="w-fit max-w-[92vw] rounded-[2rem] border border-gray-100 bg-white/95 px-8 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] backdrop-blur-sm sm:px-10">
@@ -490,6 +651,17 @@ export default function ManageStudentsPage() {
           </div>
         </div>
       </div>
+
+      <RoleToast
+        open={showSuccessPopup}
+        title={successMessage}
+        description={
+          successTemporaryPassword
+            ? `รหัสผ่านชั่วคราว: ${successTemporaryPassword}`
+            : "ระบบบันทึกการเปลี่ยนแปลงข้อมูลนักศึกษาเรียบร้อยแล้ว"
+        }
+        tone="success"
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDeleteUser)}
@@ -518,14 +690,23 @@ export default function ManageStudentsPage() {
             <h2 className="text-2xl font-bold text-slate-800">จัดการนักศึกษา</h2>
             <p className="mt-1 text-sm text-slate-500">ดูแลบัญชีนักศึกษาโดยเฉพาะ แยกออกจากบุคลากรเพื่อให้ค้นหา แก้ไข และตรวจสอบได้ง่ายขึ้น</p>
           </div>
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow sm:w-auto"
-          >
-            <Plus className="h-5 w-5" />
-            เพิ่มนักศึกษาใหม่
-          </button>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            <button
+              type="button"
+              onClick={openBulkPromotionModal}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 font-medium text-slate-700 shadow-sm transition-all duration-200 hover:bg-slate-50 sm:w-auto"
+            >
+              เลื่อนชั้นปีแบบกลุ่ม
+            </button>
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow sm:w-auto"
+            >
+              <Plus className="h-5 w-5" />
+              เพิ่มนักศึกษาใหม่
+            </button>
+          </div>
         </div>
 
         {serverError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>}
@@ -538,7 +719,7 @@ export default function ManageStudentsPage() {
                 type="text"
                 value={searchKeyword}
                 onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="ค้นหาชื่อ, อีเมล, หรือรหัสนักศึกษา..."
+                placeholder="ค้นหาชื่อ, อีเมล, รหัสนักศึกษา, ชั้นปี, เซค..."
                 className="block w-full rounded-xl border border-slate-200 bg-white p-2.5 pl-10 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -555,7 +736,6 @@ export default function ManageStudentsPage() {
             <div className="divide-y divide-slate-100 md:hidden">
               {paginatedUsers.length === 0 && <div className="px-5 py-10 text-center text-sm text-slate-500">ไม่พบนักศึกษา</div>}
               {paginatedUsers.map((managedUser, index) => {
-                const isDeleting = deletingId === managedUser.id;
                 return (
                   <div key={managedUser.id} className="min-h-[152px] space-y-3 px-4 py-4">
                     <div className="min-w-0">
@@ -568,9 +748,23 @@ export default function ManageStudentsPage() {
                         <p className="text-xs text-slate-500">รหัสนักศึกษา</p>
                         <p className="mt-0.5 font-mono text-sm text-slate-700">{managedUser.studentId || "-"}</p>
                       </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-slate-500">ชั้นปี</p>
+                          <p className="mt-0.5 text-slate-700">{managedUser.studyYear || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">เซค / กลุ่ม</p>
+                          <p className="mt-0.5 truncate text-slate-700">{managedUser.section || "-"}</p>
+                        </div>
+                      </div>
                       <div>
                         <p className="text-xs text-slate-500">อีเมล</p>
                         <p className="mt-0.5 truncate text-slate-700">{managedUser.email || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">อาจารย์ที่ปรึกษา</p>
+                        <p className="mt-0.5 truncate text-slate-700">{managedUser.advisorName || "ยังไม่กำหนด"}</p>
                       </div>
                     </div>
 
@@ -585,11 +779,11 @@ export default function ManageStudentsPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={isDeleting}
+                          disabled={deletingId === managedUser.id}
                           onClick={() => handleDeleteUser(managedUser)}
-                          className="text-sm font-medium text-red-500 disabled:opacity-60"
+                          className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
                         >
-                          {isDeleting ? "กำลังลบ..." : "ลบ"}
+                          {deletingId === managedUser.id ? "กำลังลบ..." : "ลบ"}
                         </button>
                       </div>
                     </div>
@@ -602,17 +796,21 @@ export default function ManageStudentsPage() {
               <table className="w-full min-w-[920px] table-fixed text-left text-sm">
                 <colgroup>
                   <col className="w-20" />
-                  <col className="w-[24%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[26%]" />
-                  <col className="w-[16%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[10%]" />
                   <col className="w-[14%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[12%]" />
                 </colgroup>
                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-6 py-4 text-center font-medium">ลำดับ</th>
                     <th className="px-6 py-4 font-medium">ชื่อ-นามสกุล</th>
                     <th className="px-6 py-4 font-medium">รหัสนักศึกษา</th>
+                    <th className="px-6 py-4 text-center font-medium">ชั้นปี</th>
+                    <th className="px-6 py-4 font-medium">เซค / กลุ่ม</th>
                     <th className="px-6 py-4 font-medium">อีเมล</th>
                     <th className="px-6 py-4 text-center font-medium">สถานะ</th>
                     <th className="px-6 py-4 text-right font-medium">จัดการ</th>
@@ -621,7 +819,7 @@ export default function ManageStudentsPage() {
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {paginatedUsers.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
                         ไม่พบนักศึกษา
                       </td>
                     </tr>
@@ -635,8 +833,15 @@ export default function ManageStudentsPage() {
                         <td className="px-6 py-4 text-center text-slate-500">{startItemIndex + index + 1}</td>
                         <td className="px-6 py-4 font-medium text-slate-900">
                           <p className="truncate">{managedUser.name}</p>
+                          <p className="mt-1 truncate text-xs font-normal text-slate-500">
+                            Advisor: {managedUser.advisorName || "Unassigned"}
+                          </p>
                         </td>
                         <td className="px-6 py-4 font-mono text-sm text-slate-700 whitespace-nowrap">{managedUser.studentId || "-"}</td>
+                        <td className="px-6 py-4 text-center text-slate-700">{managedUser.studyYear || "-"}</td>
+                        <td className="px-6 py-4 text-slate-500">
+                          <p className="truncate">{managedUser.section || "-"}</p>
+                        </td>
                         <td className="px-6 py-4 text-slate-500">
                           <p className="truncate">{managedUser.email || "-"}</p>
                         </td>
@@ -654,7 +859,7 @@ export default function ManageStudentsPage() {
                             type="button"
                             disabled={isDeleting}
                             onClick={() => handleDeleteUser(managedUser)}
-                            className="text-sm font-medium text-red-500 disabled:opacity-60"
+                            className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
                           >
                             {isDeleting ? "กำลังลบ..." : "ลบ"}
                           </button>
@@ -704,9 +909,9 @@ export default function ManageStudentsPage() {
         }`}
         onClick={closeModal}
       />
-      <div className={`fixed inset-0 z-[70] flex items-center justify-center p-4 ${modalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center ${modalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`w-full max-w-lg overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 ${
+          className={`flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[90vh] ${
             modalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
@@ -717,7 +922,7 @@ export default function ManageStudentsPage() {
             </button>
           </div>
 
-          <form className="space-y-4 p-6" onSubmit={saveUser}>
+          <form className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6" onSubmit={saveUser}>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">ประเภทผู้ใช้</label>
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">นักศึกษา</div>
@@ -786,6 +991,73 @@ export default function ManageStudentsPage() {
               {formErrors.email && <p className="mt-1 text-xs text-red-500">{formErrors.email}</p>}
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  ชั้นปี <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formStudyYear}
+                  onChange={(event) => {
+                    setFormStudyYear(event.target.value);
+                    setFormErrors((current) => ({ ...current, studyYear: "" }));
+                  }}
+                  className={`w-full rounded-lg border bg-white px-4 py-2.5 text-sm outline-none transition-all ${
+                    formErrors.studyYear
+                      ? "border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500"
+                      : "border-gray-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                  }`}
+                >
+                  {STUDY_YEAR_OPTIONS.map((studyYear) => (
+                    <option key={studyYear} value={studyYear}>
+                      ชั้นปี {studyYear}
+                    </option>
+                  ))}
+                </select>
+                {formErrors.studyYear && <p className="mt-1 text-xs text-red-500">{formErrors.studyYear}</p>}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  เซค / กลุ่ม <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formSection}
+                  onChange={(event) => {
+                    setFormSection(event.target.value);
+                    setFormErrors((current) => ({ ...current, section: "" }));
+                  }}
+                  required
+                  className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none transition-all ${
+                    formErrors.section
+                      ? "border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500"
+                      : "border-gray-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                  }`}
+                  placeholder="เช่น A หรือ 01"
+                />
+                {formErrors.section && <p className="mt-1 text-xs text-red-500">{formErrors.section}</p>}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">อาจารย์ที่ปรึกษา</label>
+              <select
+                value={formAdvisorId}
+                onChange={(event) => setFormAdvisorId(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+              >
+                <option value="">ยังไม่กำหนด</option>
+                {advisorOptions.map((advisor) => (
+                  <option key={advisor.id} value={advisor.id}>
+                    {advisor.name}
+                    {advisor.employeeId ? ` (${advisor.employeeId})` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">เปลี่ยนหรือถอดอาจารย์ที่ปรึกษาได้จากฟอร์มนี้</p>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">สถานะ</label>
               <select
@@ -797,6 +1069,21 @@ export default function ManageStudentsPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+
+            {modalMode === "edit" && editingManagedUser ? (
+              <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-semibold text-red-800">Danger Zone</p>
+
+                <button
+                  type="button"
+                  disabled={deletingId === editingManagedUser.id}
+                  onClick={() => handleDeleteUser(editingManagedUser)}
+                  className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีนักศึกษา"}
+                </button>
+              </div>
+            ) : null}
 
             <div className="mt-2 flex justify-end gap-3 pt-4">
               <button
@@ -812,6 +1099,87 @@ export default function ManageStudentsPage() {
                 className="inline-flex min-w-[124px] items-center justify-center rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-60"
               >
                 {submitting ? <span className="loader h-4 w-4"></span> : "บันทึกข้อมูล"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div
+        className={`fixed inset-0 z-[72] bg-slate-900/40 transition-opacity duration-200 ${
+          bulkModalOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={closeBulkPromotionModal}
+      />
+      <div className={`fixed inset-0 z-[73] flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center ${bulkModalOpen ? "" : "pointer-events-none"}`}>
+        <div
+          className={`w-full max-w-lg rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 ${
+            bulkModalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 px-6 py-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">เลื่อนชั้นปีแบบกลุ่ม</h3>
+              <p className="mt-1 text-xs text-slate-500">เลือกชั้นปีก่อนหน้าและชั้นปีเป้าหมายเพื่ออัปเดตทีเดียวหลายคน</p>
+            </div>
+            <button type="button" onClick={closeBulkPromotionModal} className="text-gray-400 transition-colors hover:text-gray-600">
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+
+          <form className="space-y-4 p-6" onSubmit={submitBulkPromotion}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">จากชั้นปี</label>
+                <select
+                  value={bulkFromStudyYear}
+                  onChange={(event) => setBulkFromStudyYear(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                >
+                  {studentCountsByStudyYear.map((item) => (
+                    <option key={item.studyYear} value={item.studyYear}>
+                      ชั้นปี {item.studyYear} ({item.count} คน)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">เป็นชั้นปี</label>
+                <select
+                  value={bulkToStudyYear}
+                  onChange={(event) => setBulkToStudyYear(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none transition-all focus:border-slate-900 focus:ring-2 focus:ring-slate-900"
+                >
+                  {STUDY_YEAR_OPTIONS.map((studyYear) => (
+                    <option key={studyYear} value={studyYear}>
+                      ชั้นปี {studyYear}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              จะอัปเดตนักศึกษาชั้นปี <span className="font-semibold">{bulkFromStudyYear}</span> จำนวน{" "}
+              <span className="font-semibold">{bulkPromotionMatchCount}</span> คน ให้เป็นชั้นปี{" "}
+              <span className="font-semibold">{bulkToStudyYear}</span>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={closeBulkPromotionModal}
+                className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={bulkUpdating || !bulkPromotionHasChanges}
+                className="inline-flex min-w-[148px] items-center justify-center rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-60"
+              >
+                {bulkUpdating ? <span className="loader h-4 w-4"></span> : "ยืนยันการเลื่อนชั้นปี"}
               </button>
             </div>
           </form>
