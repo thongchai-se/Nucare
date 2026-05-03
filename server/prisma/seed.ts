@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const MINIMUM_SEED_PASSWORD_LENGTH = 12;
+const MINIMUM_SEED_PASSWORD_LENGTH = 8;
 
 const getDefaultSeedPassword = (): string => {
   const password = process.env.DEFAULT_SEED_PASSWORD?.trim();
@@ -35,7 +35,7 @@ const seedUsers: SeedUser[] = [
 
 const createOrUpdateUser = async (
   user: SeedUser,
-  passwordHash: string,
+  getPasswordHash: () => Promise<string>,
 ): Promise<{ email: string; created: boolean }> => {
   const existing = await prisma.user.findUnique({
     where: { email: user.email.toLowerCase() },
@@ -57,6 +57,8 @@ const createOrUpdateUser = async (
     return { email: user.email, created: false };
   }
 
+  const passwordHash = await getPasswordHash();
+
   await prisma.user.create({
     data: {
       name: user.name,
@@ -73,10 +75,19 @@ const createOrUpdateUser = async (
 };
 
 async function main() {
-  const defaultPassword = getDefaultSeedPassword();
-  const passwordHash = await bcrypt.hash(defaultPassword, 10);
+  let resolvedSeedPassword: string | null = null;
+  let passwordHashPromise: Promise<string> | null = null;
 
-  const results = await Promise.all(seedUsers.map((user) => createOrUpdateUser(user, passwordHash)));
+  const getPasswordHash = async (): Promise<string> => {
+    if (!passwordHashPromise) {
+      resolvedSeedPassword = getDefaultSeedPassword();
+      passwordHashPromise = bcrypt.hash(resolvedSeedPassword, 10);
+    }
+
+    return passwordHashPromise;
+  };
+
+  const results = await Promise.all(seedUsers.map((user) => createOrUpdateUser(user, getPasswordHash)));
 
   const createdCount = results.filter((item) => item.created).length;
   const updatedCount = results.length - createdCount;
@@ -87,7 +98,9 @@ async function main() {
   for (const account of seedUsers) {
     console.log(`- ${account.role}: ${account.email}`);
   }
-  console.log(`[seed] Password for all accounts: ${defaultPassword}`);
+  if (createdCount > 0 && resolvedSeedPassword) {
+    console.log(`[seed] Password for newly created accounts: ${resolvedSeedPassword}`);
+  }
 }
 
 main()

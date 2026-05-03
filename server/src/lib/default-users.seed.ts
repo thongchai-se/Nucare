@@ -25,7 +25,7 @@ type SeedSummary = {
   skippedCount: number;
 };
 
-const MINIMUM_SEED_PASSWORD_LENGTH = 12;
+const MINIMUM_SEED_PASSWORD_LENGTH = 8;
 
 const parseBoolean = (value: string | undefined): boolean => {
   const normalized = value?.trim().toLowerCase();
