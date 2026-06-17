@@ -218,7 +218,7 @@ export default function AuthPopup({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto px-4 py-6 sm:items-center">
+    <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain p-3 [-ms-overflow-style:none] [scrollbar-width:none] sm:p-4 [&::-webkit-scrollbar]:hidden">
       <button
         type="button"
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px]"
@@ -226,7 +226,7 @@ export default function AuthPopup({
         aria-label="close auth popup backdrop"
       />
 
-      <div className="relative z-10 flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:max-h-[90vh] md:flex-row">
+      <div className="relative z-10 flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-x-hidden overflow-y-auto rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] md:min-h-[34.25rem] md:flex-row md:overflow-hidden">
         <button
           type="button"
           onClick={onClose}
@@ -263,7 +263,7 @@ export default function AuthPopup({
           </div>
         </div>
 
-        <div className="relative flex min-h-0 w-full flex-col justify-center overflow-y-auto p-6 sm:p-8 md:w-1/2 md:p-12">
+        <div className="relative flex w-full flex-col justify-center p-6 sm:p-8 md:w-1/2 md:justify-start md:p-12">
           <div className="mb-8 flex items-center justify-center gap-2 text-blue-600 md:hidden">
             <HeartPulse size={28} />
             <span className="text-xl font-bold tracking-wider">NURSE CARE</span>

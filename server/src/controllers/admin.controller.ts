@@ -16,6 +16,7 @@ import {
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
+const ADMIN_LIST_MAX_RESULTS = 2500;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "Student ID must be in the format 663380696-6";
 const STUDY_YEAR_RANGE_MESSAGE = "Study year must be between 1 and 8";
@@ -733,6 +734,7 @@ export const listStudents = async (req: Request, res: Response): Promise<void> =
       orderBy: {
         createdAt: "desc",
       },
+      take: ADMIN_LIST_MAX_RESULTS,
     });
 
     res.status(200).json({
@@ -831,6 +833,7 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
         },
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
+      take: ADMIN_LIST_MAX_RESULTS,
     });
 
     res.status(200).json({
@@ -1977,6 +1980,7 @@ export const checkExistingStaffUsers = async (req: Request, res: Response): Prom
         isActive: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
+      take: ADMIN_LIST_MAX_RESULTS,
     });
 
     res.status(200).json({
@@ -2291,6 +2295,7 @@ export const listStaffUsers = async (req: Request, res: Response): Promise<void>
         additionalRoles: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
+      take: ADMIN_LIST_MAX_RESULTS,
     });
 
     res.status(200).json({

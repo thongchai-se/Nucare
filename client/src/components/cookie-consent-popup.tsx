@@ -134,14 +134,14 @@ export default function CookieConsentPopup() {
     <>
       {isBannerVisible && (
         <div
-          className="fixed bottom-0 left-0 z-[150] w-full translate-y-0 bg-slate-900 text-white shadow-[0_-10px_40px_rgba(0,0,0,0.2)] transition-transform duration-500"
+          className="fixed bottom-0 left-0 z-[150] max-h-[60dvh] w-full translate-y-0 overflow-y-auto bg-slate-900 text-white shadow-[0_-10px_40px_rgba(0,0,0,0.2)] transition-transform duration-500 sm:max-h-none sm:overflow-visible"
           role="region"
           aria-labelledby="cookie-banner-title"
           aria-describedby="cookie-banner-description"
         >
-          <div className="mx-auto flex max-w-[102rem] flex-col items-center justify-between gap-4 px-3 py-4 sm:flex-row sm:px-4 sm:py-6 lg:px-5">
-            <div className="flex items-start gap-4">
-              <Cookie className="mt-1 h-6 w-6 shrink-0 text-cyan-400" />
+          <div className="mx-auto flex max-w-[102rem] flex-col items-stretch justify-between gap-3 px-3 py-3 sm:flex-row sm:items-center sm:px-4 sm:py-4 lg:px-5">
+            <div className="flex items-start gap-3">
+              <Cookie className="mt-1 h-5 w-5 shrink-0 text-cyan-400 sm:h-6 sm:w-6" />
               <div>
                 <h4 id="cookie-banner-title" className="mb-1 text-sm font-bold">เว็บไซต์นี้ใช้คุกกี้ (Cookies)</h4>
                 <p id="cookie-banner-description" className="max-w-3xl text-xs leading-relaxed text-slate-300">
@@ -154,25 +154,25 @@ export default function CookieConsentPopup() {
               </div>
             </div>
 
-            <div className="flex w-full shrink-0 flex-col gap-3 sm:w-auto sm:flex-row">
+            <div className="grid w-full shrink-0 grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-row sm:gap-3">
               <button
                 type="button"
                 onClick={handleAcceptAll}
-                className="flex-1 whitespace-nowrap rounded bg-blue-600 px-6 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-500 sm:flex-none"
+                className="col-span-2 flex-1 whitespace-nowrap rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-500 sm:col-auto sm:flex-none sm:px-6 sm:py-2.5"
               >
                 ยอมรับทั้งหมด
               </button>
               <button
                 type="button"
                 onClick={handleAcceptNecessaryOnly}
-                className="flex flex-1 items-center justify-center whitespace-nowrap rounded border border-slate-600 bg-transparent px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 sm:flex-none"
+                className="flex flex-1 items-center justify-center whitespace-nowrap rounded border border-slate-600 bg-transparent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 sm:flex-none sm:px-6 sm:py-2.5"
               >
                 ยอมรับเฉพาะจำเป็น
               </button>
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
-                className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded border border-slate-600 bg-transparent px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 sm:flex-none"
+                className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded border border-slate-600 bg-transparent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 sm:flex-none sm:px-6 sm:py-2.5"
                 aria-haspopup="dialog"
                 aria-expanded={isSettingsOpen}
                 aria-controls="cookie-settings-dialog"
@@ -194,7 +194,7 @@ export default function CookieConsentPopup() {
             onClick={() => setIsSettingsOpen(false)}
           />
 
-          <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto px-4 py-6 sm:items-center">
+          <div className="fixed inset-0 z-10 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4">
             <div
               id="cookie-settings-dialog"
               ref={settingsDialogRef}
@@ -203,7 +203,7 @@ export default function CookieConsentPopup() {
               aria-labelledby="cookie-settings-title"
               aria-describedby="cookie-settings-description"
               tabIndex={-1}
-              className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[90vh]"
+              className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
             >
               <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-5">
                 <h3 id="cookie-settings-title" className="flex items-center gap-2 text-lg font-bold text-slate-800">

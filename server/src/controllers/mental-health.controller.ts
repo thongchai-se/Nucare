@@ -5,6 +5,7 @@ import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
 import { getAcceptedReferralOwners } from "../lib/referral-ownership";
 import { hasAssignedRole } from "../lib/roles";
+import { getLatestActiveSurveyResultsForStudents } from "../lib/survey-results";
 import { formatStudentIdForResponse, inferStudyYear, normalizeRiskLevel } from "../lib/user-format";
 
 const referralParamSchema = z.object({
@@ -28,6 +29,8 @@ const createSpecializedCareRecordSchema = z.object({
   confidentialNotes: z.string().trim().max(4000).optional(),
 });
 
+const MENTAL_HEALTH_DASHBOARD_FEED_MAX_RESULTS = 50;
+
 export const getMentalHealthDashboard = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
@@ -42,7 +45,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           target: "COUNSELING_CENTER",
         },
         orderBy: { createdAt: "desc" },
-        take: 50,
+        take: MENTAL_HEALTH_DASHBOARD_FEED_MAX_RESULTS,
         include: {
           student: {
             select: {
@@ -94,6 +97,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           },
         },
         orderBy: { openedAt: "desc" },
+        take: MENTAL_HEALTH_DASHBOARD_FEED_MAX_RESULTS,
         include: {
           student: {
             select: {
@@ -115,16 +119,21 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           ],
         },
         orderBy: { createdAt: "desc" },
-        take: 50,
+        take: MENTAL_HEALTH_DASHBOARD_FEED_MAX_RESULTS,
       }),
     ]);
 
     const acceptedOwnerByReferralId = await getAcceptedReferralOwners(referrals.map((referral) => referral.id));
+    const latestSurveyByStudentId = await getLatestActiveSurveyResultsForStudents(
+      referrals.map((referral) => referral.student.id)
+    );
 
     res.status(200).json({
       referrals: referrals.map((referral) => {
         const latestCareRecord = referral.specializedCareRecords[0] ?? null;
         const acceptedOwner = acceptedOwnerByReferralId.get(referral.id) ?? null;
+        const latestSurvey = latestSurveyByStudentId.get(referral.student.id);
+        const latestAssessment = referral.student.studentAssessments[0] ?? null;
 
         return {
           id: referral.id,
@@ -143,8 +152,14 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
             studentId: formatStudentIdForResponse(referral.student.studentId),
             name: referral.student.name,
             year: inferStudyYear(referral.student.studentId, referral.student.studyYear),
-            riskLevel: normalizeRiskLevel(referral.student.studentAssessments[0]?.riskLevel || "NORMAL"),
-            latestAssessment: referral.student.studentAssessments[0] || null,
+            riskLevel: normalizeRiskLevel(latestSurvey?.riskLevel ?? latestAssessment?.riskLevel ?? "NORMAL"),
+            latestAssessment: latestSurvey
+              ? {
+                  totalScore: latestSurvey.totalScore,
+                  instrument: latestSurvey.instrument,
+                  assessedAt: latestSurvey.assessedAt,
+                }
+              : latestAssessment,
           },
         };
       }),

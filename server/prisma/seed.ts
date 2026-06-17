@@ -75,13 +75,11 @@ const createOrUpdateUser = async (
 };
 
 async function main() {
-  let resolvedSeedPassword: string | null = null;
   let passwordHashPromise: Promise<string> | null = null;
 
   const getPasswordHash = async (): Promise<string> => {
     if (!passwordHashPromise) {
-      resolvedSeedPassword = getDefaultSeedPassword();
-      passwordHashPromise = bcrypt.hash(resolvedSeedPassword, 10);
+      passwordHashPromise = bcrypt.hash(getDefaultSeedPassword(), 10);
     }
 
     return passwordHashPromise;
@@ -98,8 +96,8 @@ async function main() {
   for (const account of seedUsers) {
     console.log(`- ${account.role}: ${account.email}`);
   }
-  if (createdCount > 0 && resolvedSeedPassword) {
-    console.log(`[seed] Password for newly created accounts: ${resolvedSeedPassword}`);
+  if (createdCount > 0) {
+    console.log("[seed] Password for newly created accounts was read from DEFAULT_SEED_PASSWORD and was not printed.");
   }
 }
 

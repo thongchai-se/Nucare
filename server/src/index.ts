@@ -13,6 +13,7 @@ import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import studentRoutes from "./routes/student.routes";
 import studentDevelopmentRoutes from "./routes/student-development.routes";
+import { apiRateLimit, apiWriteRateLimit } from "./middleware/rate-limit.middleware";
 
 const app = express();
 const port = Number(readEnv("PORT")) || 5000;
@@ -35,7 +36,7 @@ const trustProxyHops = Math.max(
   0,
   parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), defaultTrustProxyHops)
 );
-const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "2mb";
+const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "1mb";
 const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim())
@@ -187,6 +188,8 @@ app.get("/", (_req: Request, res: Response) => {
 app.get("/api/health", (_req: Request, res: Response) => {
   res.status(200).json({ ok: true, message: "NuCare API is running" });
 });
+
+app.use("/api", apiRateLimit, apiWriteRateLimit);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);

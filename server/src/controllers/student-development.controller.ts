@@ -11,6 +11,9 @@ const createReminderSchema = z.object({
   studentUserIds: z.array(z.string().trim().min(1)).max(500).optional(),
 });
 
+const STUDENT_DEVELOPMENT_STUDENT_MAX_RESULTS = 2500;
+const STUDENT_DEVELOPMENT_REMINDER_LOG_MAX_RESULTS = 5000;
+
 const mapPendingStatus = (reminderAt: Date | null): string =>
   reminderAt ? "แจ้งเตือนแล้ว รอทำแบบประเมิน" : "ยังไม่พบผลประเมิน";
 
@@ -65,6 +68,7 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
           },
         },
         orderBy: [{ studyYear: "asc" }, { studentId: "asc" }, { createdAt: "asc" }],
+        take: STUDENT_DEVELOPMENT_STUDENT_MAX_RESULTS,
       }),
       prisma.caseReferral.findMany({
         where: {
@@ -135,6 +139,7 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
           orderBy: {
             createdAt: "desc",
           },
+          take: Math.min(pendingStudentIds.length * 5, STUDENT_DEVELOPMENT_REMINDER_LOG_MAX_RESULTS),
         })
       : [];
 

@@ -176,8 +176,6 @@ export default function ManageStudentsPage() {
   const [successMessage, setSuccessMessage] = useState("บันทึกข้อมูลสำเร็จ");
   const [successTemporaryPassword, setSuccessTemporaryPassword] = useState("");
   const [pendingDeleteUser, setPendingDeleteUser] = useState<ManagedUser | null>(null);
-  const successAnimationKey = 0;
-  const showLegacySuccessPopup = false;
 
   useEffect(() => {
     if (!loading && !user) {
@@ -629,29 +627,6 @@ export default function ManageStudentsPage() {
       userName={user.name}
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
-      <div
-        className={`fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 py-6 transition-all duration-300 ease-out sm:items-center ${
-          showLegacySuccessPopup && showSuccessPopup ? "scale-100 opacity-100" : "hidden pointer-events-none scale-95 opacity-0"
-        }`}
-      >
-        <div className="w-fit max-w-[92vw] rounded-[2rem] border border-gray-100 bg-white/95 px-8 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] backdrop-blur-sm sm:px-10">
-          <div className="flex flex-col items-center gap-4 sm:gap-5">
-            <svg key={successAnimationKey} className="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" aria-hidden="true">
-              <circle className="checkmark-circle" cx="26" cy="26" r="25" fill="none" />
-              <path className="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
-            </svg>
-            <div>
-              <p className="text-base font-medium tracking-wide text-gray-800 sm:text-lg">{successMessage}</p>
-              {successTemporaryPassword && (
-                <p className="mt-2 text-sm text-slate-500">
-                  รหัสผ่านชั่วคราว: <span className="font-mono font-bold text-slate-700">{successTemporaryPassword}</span>
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <RoleToast
         open={showSuccessPopup}
         title={successMessage}
@@ -666,6 +641,7 @@ export default function ManageStudentsPage() {
       <ConfirmDialog
         open={Boolean(pendingDeleteUser)}
         loading={Boolean(pendingDeleteUser && deletingId === pendingDeleteUser.id)}
+        placement="admin-content"
         title="ยืนยันการลบนักศึกษา"
         description={
           pendingDeleteUser
@@ -716,11 +692,11 @@ export default function ManageStudentsPage() {
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                type="text"
+                type="search"
                 value={searchKeyword}
                 onChange={(event) => setSearchKeyword(event.target.value)}
                 placeholder="ค้นหาชื่อ, อีเมล, รหัสนักศึกษา, ชั้นปี, เซค..."
-                className="block w-full rounded-xl border border-slate-200 bg-white p-2.5 pl-10 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500"
+                className="block min-h-11 w-full rounded-xl border border-slate-200 bg-white p-2.5 pl-10 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -904,14 +880,14 @@ export default function ManageStudentsPage() {
       </div>
 
       <div
-        className={`fixed inset-0 z-[60] bg-slate-900/40 transition-opacity duration-200 ${
+        className={`fixed inset-0 z-[220] bg-slate-900/40 transition-opacity duration-200 ${
           modalOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={closeModal}
       />
-      <div className={`fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center ${modalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[230] grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4 ${modalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[90vh] ${
+          className={`flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
             modalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
@@ -922,7 +898,7 @@ export default function ManageStudentsPage() {
             </button>
           </div>
 
-          <form className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6" onSubmit={saveUser}>
+          <form className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 sm:p-6 lg:grid-cols-2" onSubmit={saveUser}>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">ประเภทผู้ใช้</label>
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">นักศึกษา</div>
@@ -991,7 +967,7 @@ export default function ManageStudentsPage() {
               {formErrors.email && <p className="mt-1 text-xs text-red-500">{formErrors.email}</p>}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   ชั้นปี <span className="text-red-500">*</span>
@@ -1071,7 +1047,7 @@ export default function ManageStudentsPage() {
             </div>
 
             {modalMode === "edit" && editingManagedUser ? (
-              <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 lg:col-span-2">
                 <p className="text-sm font-semibold text-red-800">Danger Zone</p>
 
                 <button
@@ -1085,7 +1061,7 @@ export default function ManageStudentsPage() {
               </div>
             ) : null}
 
-            <div className="mt-2 flex justify-end gap-3 pt-4">
+            <div className="flex justify-end gap-3 pt-2 lg:col-span-2">
               <button
                 type="button"
                 onClick={closeModal}
@@ -1106,14 +1082,14 @@ export default function ManageStudentsPage() {
       </div>
 
       <div
-        className={`fixed inset-0 z-[72] bg-slate-900/40 transition-opacity duration-200 ${
+        className={`fixed inset-0 z-[240] bg-slate-900/40 transition-opacity duration-200 ${
           bulkModalOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={closeBulkPromotionModal}
       />
-      <div className={`fixed inset-0 z-[73] flex items-start justify-center overflow-y-auto p-4 py-6 sm:items-center ${bulkModalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[250] grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4 ${bulkModalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`w-full max-w-lg rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 ${
+          className={`flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
             bulkModalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
@@ -1127,7 +1103,7 @@ export default function ManageStudentsPage() {
             </button>
           </div>
 
-          <form className="space-y-4 p-6" onSubmit={submitBulkPromotion}>
+          <form className="min-h-0 space-y-4 overflow-y-auto p-5 sm:p-6" onSubmit={submitBulkPromotion}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">จากชั้นปี</label>

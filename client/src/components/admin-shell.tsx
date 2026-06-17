@@ -7,6 +7,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   ChevronRight,
+  ClipboardList,
   Database,
   FileText,
   LayoutDashboard,
@@ -23,7 +24,7 @@ import { MenuSectionHeading } from "@/components/menu-section-heading";
 import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
 import { getNameInitials } from "@/lib/name-prefix";
 
-type AdminNavKey = "dashboard" | "students" | "staff" | "import" | "reports" | "audit" | "settings" | "changePassword";
+type AdminNavKey = "dashboard" | "students" | "staff" | "import" | "surveys" | "reports" | "audit" | "settings" | "changePassword";
 
 type HeaderSearchProps = {
   onChange: (value: string) => void;
@@ -72,6 +73,12 @@ const primaryNavItems: NavItem[] = [
     label: "นำเข้าข้อมูล",
     href: "/dashboard/admin/import-students",
     icon: <Database size={20} />,
+  },
+  {
+    key: "surveys",
+    label: "แบบสอบถาม",
+    href: "/dashboard/admin/surveys",
+    icon: <ClipboardList size={20} />,
   },
 ];
 
@@ -257,9 +264,9 @@ export function AdminShell({
             </div>
             <div className="hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{userName}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{userRoleLabel}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={userName}>{userName}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={userRoleLabel}>{userRoleLabel}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-sm font-bold text-white">
                 {initials}

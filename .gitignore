@@ -15,3 +15,5 @@ secrets/*
 !secrets/examples/
 secrets/examples/*
 !secrets/examples/*.example.txt
+.skill
+server/backups/

@@ -10,6 +10,9 @@ const listStudentsQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
 });
 
+const INSTRUCTOR_STUDENT_LIST_MAX_RESULTS = 1000;
+const INSTRUCTOR_BEHAVIOR_RECORD_MAX_RESULTS = 300;
+
 const createBehaviorRecordSchema = z.object({
   studentId: z.string().trim().min(1),
   observedAt: z.string().trim().min(1),
@@ -70,6 +73,7 @@ export const listInstructorStudents = async (req: Request, res: Response): Promi
       orderBy: {
         name: "asc",
       },
+      take: INSTRUCTOR_STUDENT_LIST_MAX_RESULTS,
     });
 
     res.status(200).json({
@@ -116,6 +120,7 @@ export const listBehaviorRecords = async (req: Request, res: Response): Promise<
       orderBy: {
         createdAt: "desc",
       },
+      take: INSTRUCTOR_BEHAVIOR_RECORD_MAX_RESULTS,
     });
 
     const sourceIds = behaviorRecords.map((record) => record.id);

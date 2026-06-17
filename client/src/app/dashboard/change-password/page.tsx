@@ -30,7 +30,9 @@ import {
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ChangePasswordForm } from "@/components/change-password-form";
-import { facultyEnglishFullName, facultyFullName } from "@/lib/brand";
+import { StudentCreditFooter } from "@/components/student-credit-footer";
+import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
+import { facultyFullName } from "@/lib/brand";
 import { getNameInitials } from "@/lib/name-prefix";
 import type { Role } from "@/types/auth";
 
@@ -181,7 +183,9 @@ function StudentProfileStyledChangePasswordView({
                 <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
                   Nucare<span className="text-cyan-500">.</span>
                 </span>
-                <span className="block text-[11px] font-medium leading-none text-slate-500">{facultyFullName}</span>
+                <span className="block max-w-[11rem] truncate text-[11px] font-medium leading-none text-slate-500 sm:max-w-[18rem]">
+                  {facultyFullName}
+                </span>
               </div>
             </Link>
 
@@ -220,8 +224,8 @@ function StudentProfileStyledChangePasswordView({
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="menu"
                 >
-                  <div className="hidden min-w-0 flex-1 text-right lg:block">
-                    <p className="text-sm font-bold leading-tight text-blue-900">{user.name}</p>
+                  <div className="hidden min-w-0 flex-1 overflow-hidden text-right lg:block">
+                    <p className="truncate whitespace-nowrap text-sm font-bold leading-tight text-blue-900" title={user.name}>{user.name}</p>
                     <p className="truncate whitespace-nowrap text-[11px] text-slate-500">
                       {user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}
                     </p>
@@ -307,9 +311,9 @@ function StudentProfileStyledChangePasswordView({
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
                 {userInitials}
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="truncate text-base font-bold text-slate-900">{user.name}</p>
-                <p className="truncate text-xs font-medium text-slate-500">{user.studentId ? `ID: ${identifier}` : identifier}</p>
+                <p className="truncate text-xs font-medium text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -318,7 +322,7 @@ function StudentProfileStyledChangePasswordView({
                 className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
                 onClick={closeStudentMobileMenu}
               >
-                <Contact className="h-4.5 w-4.5 text-slate-700" />
+                <Contact className="h-4 w-4 text-slate-700" />
                 โปรไฟล์
               </Link>
               <Link
@@ -326,7 +330,7 @@ function StudentProfileStyledChangePasswordView({
                 className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100"
                 onClick={closeStudentMobileMenu}
               >
-                <Lock className="h-4.5 w-4.5" />
+                <Lock className="h-4 w-4" />
                 เปลี่ยนรหัสผ่าน
               </Link>
               <button
@@ -345,7 +349,7 @@ function StudentProfileStyledChangePasswordView({
         </div>
       </nav>
 
-      <section className="px-4 pb-12 pt-28 sm:px-6 lg:px-8">
+      <section className="px-4 pb-28 pt-28 sm:px-6 md:pb-12 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="mb-6 flex items-center gap-4">
             <Link
@@ -419,70 +423,8 @@ function StudentProfileStyledChangePasswordView({
         </div>
       </section>
 
-      <footer className="border-t-4 border-cyan-500 bg-blue-900 pb-8 pt-16 text-white">
-        <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
-          <div className="mb-12 grid grid-cols-1 gap-10 md:grid-cols-3">
-            <div className="col-span-1">
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white">
-                  <HeartPulse className="h-6 w-6" />
-                </div>
-                <div className="flex flex-col justify-center">
-                  <span className="mb-1 block text-xl font-bold leading-none">Nucare Sys.</span>
-                  <span className="block text-[11px] leading-none text-blue-200">{facultyEnglishFullName}</span>
-                </div>
-              </div>
-              <p className="text-sm leading-relaxed text-blue-100">
-                พื้นที่ปลอดภัยสำหรับนักศึกษา {facultyFullName}
-                <br className="hidden sm:block" />
-                เพราะสุขภาพใจของคุณ สำคัญสำหรับเรา
-              </p>
-            </div>
-
-            <div>
-              <h4 className="mb-5 inline-block border-b border-blue-700 pb-2 text-lg font-bold">สำหรับนักศึกษา</h4>
-              <ul className="space-y-3 text-sm">
-                <li>
-                  <Link href="/dashboard/student" className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
-                    หน้าหลักนักศึกษา
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/dashboard/student/profile" className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
-                    ประวัติส่วนตัว
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/" className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
-                    แหล่งความรู้การจัดการความเครียด
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="mb-5 inline-block border-b border-blue-700 pb-2 text-lg font-bold">ติดต่อสอบถาม</h4>
-              <ul className="space-y-3 text-sm text-blue-100">
-                <li>งานพัฒนานักศึกษา {facultyFullName}</li>
-                <li>Nucare@nursing.edu</li>
-                <li>02-XXX-XXXX ต่อ 123</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center justify-between gap-4 border-t border-blue-800 pt-6 text-xs text-blue-300 md:flex-row">
-            <p>© 2026 {facultyEnglishFullName}. All rights reserved.</p>
-            <div className="flex gap-4">
-              <Link href="/privacy" className="transition-colors hover:text-white">
-                นโยบายความเป็นส่วนตัว (Privacy)
-              </Link>
-              <a href="#" className="transition-colors hover:text-white">
-                ติดต่อผู้ดูแลระบบ
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <StudentCreditFooter />
+      <StudentMobileBottomNav />
     </main>
   );
 }
@@ -502,6 +444,7 @@ function RoleAlignedChangePasswordView({
 }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const userInitials = getInitials(user.name, config.initialsFallback);
+  const identifierLabel = user.studentId ? "รหัสนักศึกษา" : user.employeeId ? "รหัสบุคลากร" : "อีเมล";
 
   const SectionedSidebarItems = ({ mobile = false }: { mobile?: boolean }) => (
     <>
@@ -615,7 +558,7 @@ function RoleAlignedChangePasswordView({
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-sm font-bold text-slate-800">{user.name}</p>
                 <p className="mt-1 text-xs text-slate-500">{config.userRoleLabel}</p>
-                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-500">ID: {identifier}</p>
+                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-500">{identifierLabel}: {identifier}</p>
               </div>
               <SectionedSidebarItems mobile />
             </div>
@@ -657,9 +600,9 @@ function RoleAlignedChangePasswordView({
             </button>
             <div className="hidden h-6 w-px bg-slate-200 sm:block"></div>
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{user.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{config.userRoleLabel}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={config.userRoleLabel}>{config.userRoleLabel}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-100 text-sm font-bold text-blue-700">
                 {userInitials}
@@ -837,9 +780,9 @@ function AdvisorChangePasswordView({
             </button>
             <div className="hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{user.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{roleLabelMap.ADVISOR}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={roleLabelMap.ADVISOR}>{roleLabelMap.ADVISOR}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-100 text-sm font-bold text-blue-700">
                 {advisorInitials}
@@ -1043,9 +986,9 @@ function ExpertChangePasswordView({
             <div className="hidden h-6 w-px bg-slate-200 sm:block"></div>
 
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{user.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{roleLabelMap.MENTAL_HEALTH}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={roleLabelMap.MENTAL_HEALTH}>{roleLabelMap.MENTAL_HEALTH}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-indigo-100 text-sm font-bold text-indigo-700">
                 {expertInitials}

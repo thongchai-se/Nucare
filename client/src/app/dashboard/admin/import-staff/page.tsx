@@ -816,7 +816,7 @@ export default function ImportStaffPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
-        className={`fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto px-4 py-6 transition-all duration-300 ease-out sm:items-center ${
+        className={`fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/35 p-3 backdrop-blur-sm transition-all duration-300 ease-out sm:p-4 ${
           showImportSuccessModal ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
         }`}
       >

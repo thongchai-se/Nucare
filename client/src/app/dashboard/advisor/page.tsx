@@ -33,14 +33,20 @@ import { stripKnownNamePrefix } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type StudentRiskLevel = "high" | "medium" | "normal";
-type ActiveView = "dashboard" | "advisees" | "referrals" | "academic" | "change-password";
+type ActiveView = "dashboard" | "advisees" | "consultations" | "referrals" | "academic" | "change-password";
 type ReferralTarget = "STUDENT_DEVELOPMENT" | "COUNSELING_CENTER";
 type ReferralStatus = "PENDING" | "ACCEPTED" | "CLOSED";
+type ConsultationRequestStatus = "PENDING" | "ACCEPTED" | "SCHEDULED" | "CLOSED";
 type ReferralUrgency = "normal" | "moderate" | "urgent";
-type AssessmentInstrument = "Q2" | "ST5" | "Q9" | "Q8" | null;
+type AssessmentInstrument = string | null;
 
 const isAdvisorView = (value: string | null): value is ActiveView =>
-  value === "dashboard" || value === "advisees" || value === "referrals" || value === "academic" || value === "change-password";
+  value === "dashboard" ||
+  value === "advisees" ||
+  value === "consultations" ||
+  value === "referrals" ||
+  value === "academic" ||
+  value === "change-password";
 
 type AdvisorStudent = {
   id: string;
@@ -58,7 +64,7 @@ type AdvisorStudent = {
 
 type AdvisorHistoryItem = {
   id: string;
-  kind: "CARE" | "REFERRAL" | "BEHAVIOR";
+  kind: "CARE" | "REFERRAL" | "BEHAVIOR" | "CONSULTATION";
   date: string;
   type: string;
   topic: string;
@@ -86,6 +92,38 @@ type AdvisorReferralItem = {
   latestCareSessionAt: string | null;
 };
 
+type AdvisorConsultationRequestItem = {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentCode: string | null;
+  year: string;
+  topic: string;
+  preferredChannel: string;
+  preferredChannelLabel: string;
+  note: string | null;
+  status: ConsultationRequestStatus;
+  advisorNote: string | null;
+  scheduledAt: string | null;
+  acceptedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  alertId: string | null;
+};
+
+type AdvisorAlertItem = {
+  id: string;
+  type: string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  title: string;
+  message: string;
+  status: "OPEN" | "ACKNOWLEDGED" | "CLOSED";
+  sourceType: string | null;
+  sourceId: string | null;
+  createdAt: string;
+};
+
 type ToastState = {
   description: string;
   show: boolean;
@@ -105,6 +143,14 @@ type StudentHistoryResponse = {
 
 type AdvisorReferralsResponse = {
   referrals: AdvisorReferralItem[];
+};
+
+type AdvisorConsultationRequestsResponse = {
+  requests: AdvisorConsultationRequestItem[];
+};
+
+type AdvisorAlertsResponse = {
+  alerts: AdvisorAlertItem[];
 };
 
 const riskMeta: Record<
@@ -132,11 +178,12 @@ const riskMeta: Record<
   },
 };
 
-const assessmentLabelMap: Record<Exclude<AssessmentInstrument, null>, string> = {
+const assessmentLabelMap: Record<string, string> = {
   Q2: "2Q",
   ST5: "ST-5",
   Q9: "9Q",
   Q8: "8Q",
+  "GHQ-28": "GHQ-28",
 };
 
 const referralStatusMap: Record<
@@ -156,6 +203,31 @@ const referralStatusMap: Record<
   },
   CLOSED: {
     label: "ปิดเคสแล้ว",
+    className: "bg-emerald-100 text-emerald-700",
+  },
+};
+
+const consultationStatusMap: Record<
+  ConsultationRequestStatus,
+  {
+    label: string;
+    className: string;
+  }
+> = {
+  PENDING: {
+    label: "รอรับคำขอ",
+    className: "bg-amber-100 text-amber-700",
+  },
+  ACCEPTED: {
+    label: "รับคำขอแล้ว",
+    className: "bg-blue-100 text-blue-700",
+  },
+  SCHEDULED: {
+    label: "นัดหมายแล้ว",
+    className: "bg-cyan-100 text-cyan-700",
+  },
+  CLOSED: {
+    label: "ปิดคำขอแล้ว",
     className: "bg-emerald-100 text-emerald-700",
   },
 };
@@ -282,7 +354,8 @@ const formatAssessmentSummary = (student: AdvisorStudent): string => {
   }
 
   const scoreText = student.latestScore !== null ? `คะแนน ${student.latestScore}` : "รอคะแนน";
-  return `${assessmentLabelMap[student.latestInstrument]} • ${scoreText}`;
+  const instrumentLabel = assessmentLabelMap[student.latestInstrument] ?? student.latestInstrument;
+  return `${instrumentLabel} • ${scoreText}`;
 };
 
 const stripStatusPrefix = (value: string | null): string => {
@@ -321,12 +394,16 @@ function AdvisorDashboardContent() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<AdvisorHistoryItem[]>([]);
   const [referrals, setReferrals] = useState<AdvisorReferralItem[]>([]);
+  const [consultationRequests, setConsultationRequests] = useState<AdvisorConsultationRequestItem[]>([]);
+  const [advisorAlerts, setAdvisorAlerts] = useState<AdvisorAlertItem[]>([]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [serverError, setServerError] = useState("");
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
+  const [loadingConsultationRequests, setLoadingConsultationRequests] = useState(false);
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [toast, setToast] = useState<ToastState>({ show: false, title: "", description: "", type: "success" });
 
   const selectedStudent = useMemo(
@@ -368,6 +445,16 @@ function AdvisorDashboardContent() {
     [referrals]
   );
 
+  const pendingConsultationRequests = useMemo(
+    () => consultationRequests.filter((request) => request.status === "PENDING"),
+    [consultationRequests]
+  );
+
+  const openAlertsCount = useMemo(
+    () => advisorAlerts.filter((alert) => alert.status === "OPEN").length,
+    [advisorAlerts]
+  );
+
   const behaviorReportsCount = useMemo(
     () => students.reduce((total, student) => total + student.behaviorRecordCount, 0),
     [students]
@@ -381,6 +468,8 @@ function AdvisorDashboardContent() {
       ? "หน้าหลัก"
       : activeView === "advisees"
         ? "นักศึกษาในที่ปรึกษา"
+        : activeView === "consultations"
+          ? "คำขอปรึกษา"
         : activeView === "referrals"
           ? "ติดตามการส่งต่อ"
           : "แจ้งปัญหาจากผู้สอน";
@@ -448,6 +537,32 @@ function AdvisorDashboardContent() {
     }
   }, []);
 
+  const fetchConsultationRequests = useCallback(async () => {
+    setLoadingConsultationRequests(true);
+
+    try {
+      const response = await api.get<AdvisorConsultationRequestsResponse>("/api/advisor/consultation-requests");
+      setConsultationRequests(response.data.requests);
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    } finally {
+      setLoadingConsultationRequests(false);
+    }
+  }, []);
+
+  const fetchAdvisorAlerts = useCallback(async () => {
+    setLoadingAlerts(true);
+
+    try {
+      const response = await api.get<AdvisorAlertsResponse>("/api/alerts/me");
+      setAdvisorAlerts(response.data.alerts);
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    } finally {
+      setLoadingAlerts(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.replace("/login");
@@ -469,8 +584,8 @@ function AdvisorDashboardContent() {
       return;
     }
 
-    void Promise.all([fetchStudents(), fetchReferrals()]);
-  }, [fetchReferrals, fetchStudents, loading, user]);
+    void Promise.all([fetchStudents(), fetchReferrals(), fetchConsultationRequests(), fetchAdvisorAlerts()]);
+  }, [fetchAdvisorAlerts, fetchConsultationRequests, fetchReferrals, fetchStudents, loading, user]);
 
   useEffect(() => {
     if (!selectedStudentId) {
@@ -582,6 +697,44 @@ function AdvisorDashboardContent() {
     }
   };
 
+  const handleConsultationStatusUpdate = async (
+    requestId: string,
+    status: ConsultationRequestStatus
+  ) => {
+    const scheduledAt =
+      status === "SCHEDULED"
+        ? window.prompt("กรุณาระบุวันเวลานัดหมาย เช่น 2026-06-07T14:30")
+        : undefined;
+
+    if (status === "SCHEDULED" && !scheduledAt) {
+      return;
+    }
+
+    const advisorNote =
+      status === "CLOSED"
+        ? window.prompt("หมายเหตุปิดคำขอ (ถ้ามี)") || undefined
+        : undefined;
+
+    try {
+      const response = await api.patch<{ request: AdvisorConsultationRequestItem }>(
+        `/api/advisor/consultation-requests/${requestId}`,
+        {
+          status,
+          scheduledAt,
+          advisorNote,
+        }
+      );
+
+      setConsultationRequests((current) =>
+        current.map((request) => (request.id === requestId ? response.data.request : request))
+      );
+      await fetchAdvisorAlerts();
+      showToast("อัปเดตสถานะคำขอปรึกษาเรียบร้อยแล้ว", "info");
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    }
+  };
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -645,6 +798,12 @@ function AdvisorDashboardContent() {
             onClick={() => navigateTo("advisees")}
           />
           <SidebarItem
+            active={activeView === "consultations"}
+            icon={<ClipboardList size={20} />}
+            label="คำขอปรึกษา"
+            onClick={() => navigateTo("consultations")}
+          />
+          <SidebarItem
             active={activeView === "referrals"}
             icon={<Send size={20} />}
             label="ติดตามการส่งต่อ"
@@ -698,16 +857,20 @@ function AdvisorDashboardContent() {
       </div>
 
       <div className="flex items-center gap-4 sm:gap-6">
-        <button type="button" className="relative text-slate-500 transition-colors hover:text-slate-700">
+        <button
+          type="button"
+          onClick={() => navigateTo("consultations")}
+          className="relative text-slate-500 transition-colors hover:text-slate-700"
+        >
           <Bell size={20} />
-          {pendingReferralsCount > 0 && (
+          {openAlertsCount > 0 && (
             <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
           )}
         </button>
         <div className="hidden h-6 w-px bg-slate-200 sm:block" />
         <div className="flex items-center gap-3">
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-bold leading-none text-slate-800">{user.name}</p>
+          <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+            <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
             <p className="mt-0.5 text-[10px] text-slate-500">อาจารย์ที่ปรึกษา</p>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-100 text-sm font-bold text-blue-700">
@@ -840,6 +1003,7 @@ function AdvisorDashboardContent() {
               {historyItems.slice(0, 5).map((item) => {
                 const isReferral = item.kind === "REFERRAL";
                 const isBehavior = item.kind === "BEHAVIOR";
+                const isConsultation = item.kind === "CONSULTATION";
 
                 return (
                   <div key={item.id} className="rounded-xl border border-slate-100 p-4 transition-colors hover:bg-slate-50">
@@ -851,10 +1015,18 @@ function AdvisorDashboardContent() {
                               ? "bg-blue-100 text-blue-700"
                               : isBehavior
                                 ? "bg-amber-100 text-amber-700"
-                                : "bg-emerald-100 text-emerald-700"
+                                : isConsultation
+                                  ? "bg-cyan-100 text-cyan-700"
+                                  : "bg-emerald-100 text-emerald-700"
                           }`}
                         >
-                          {item.kind === "CARE" ? "บันทึกดูแล" : item.kind === "REFERRAL" ? "ส่งต่อเคส" : "แจ้งจากผู้สอน"}
+                          {item.kind === "CARE"
+                            ? "บันทึกดูแล"
+                            : item.kind === "REFERRAL"
+                              ? "ส่งต่อเคส"
+                              : item.kind === "CONSULTATION"
+                                ? "คำขอปรึกษา"
+                                : "แจ้งจากผู้สอน"}
                         </span>
                         {item.isUrgent && (
                           <span className="rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-bold text-red-700">เร่งด่วน</span>
@@ -912,7 +1084,7 @@ function AdvisorDashboardContent() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <StatCard
           color="blue"
           icon={<Users size={20} />}
@@ -935,6 +1107,13 @@ function AdvisorDashboardContent() {
           subtitle="รอผู้เชี่ยวชาญรับเคส"
         />
         <StatCard
+          color="blue"
+          icon={<ClipboardList size={20} />}
+          title="คำขอปรึกษา"
+          value={String(pendingConsultationRequests.length)}
+          subtitle="รออาจารย์รับคำขอ"
+        />
+        <StatCard
           color="indigo"
           icon={<Phone size={20} />}
           title="สัญญาณจากผู้สอน"
@@ -942,6 +1121,28 @@ function AdvisorDashboardContent() {
           subtitle="ใช้ประกอบการติดตาม"
         />
       </div>
+
+      {pendingConsultationRequests.length > 0 && (
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                <ClipboardList className="h-4 w-4" /> มีคำขอปรึกษารอรับ {pendingConsultationRequests.length} รายการ
+              </h3>
+              <p className="mt-1 text-xs text-blue-700">
+                รายการล่าสุดจากนักศึกษาจะอยู่ในเมนูคำขอปรึกษา พร้อมสถานะและรายละเอียดที่นักศึกษาระบุไว้
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigateTo("consultations")}
+              className="w-fit rounded-lg bg-blue-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-800"
+            >
+              เปิด inbox
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1220,6 +1421,140 @@ function AdvisorDashboardContent() {
     </div>
   );
 
+  const ConsultationRequestsView = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">คำขอปรึกษา</h2>
+          <p className="mt-1 text-sm text-slate-500">รับคำขอ นัดหมาย และปิดรายการจากนักศึกษาที่ส่งเข้ามา</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void Promise.all([fetchConsultationRequests(), fetchAdvisorAlerts()])}
+          className="w-fit rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        >
+          รีเฟรช
+        </button>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="font-bold text-slate-800">Consultation Requests</h3>
+              <p className="mt-0.5 text-xs text-slate-500">คำขอที่นักศึกษาส่งถึงบัญชีอาจารย์ของคุณ</p>
+            </div>
+            {loadingConsultationRequests && <span className="text-xs text-slate-400">กำลังโหลด...</span>}
+          </div>
+
+          {consultationRequests.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {consultationRequests.map((request) => {
+                const statusMeta = consultationStatusMap[request.status];
+
+                return (
+                  <div key={request.id} className="p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-800">{request.studentName}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatStudentIdDisplay(request.studentCode)} • ชั้นปี {request.year || "-"} • ส่งเมื่อ {formatThaiDateTime(request.createdAt)}
+                        </p>
+                      </div>
+                      <span className={`w-fit rounded-md px-2.5 py-1 text-xs font-bold ${statusMeta.className}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                      <p className="text-sm font-bold text-slate-800">{request.topic}</p>
+                      <p className="mt-1 text-xs text-slate-500">ช่องทางที่สะดวก: {request.preferredChannelLabel}</p>
+                      {request.note && <p className="mt-3 whitespace-pre-line text-sm text-slate-600">{request.note}</p>}
+                      {request.scheduledAt && (
+                        <p className="mt-3 text-xs font-bold text-cyan-700">เวลานัดหมาย: {formatThaiDateTime(request.scheduledAt)}</p>
+                      )}
+                      {request.advisorNote && (
+                        <p className="mt-2 text-xs text-slate-500">หมายเหตุ: {request.advisorNote}</p>
+                      )}
+                    </div>
+
+                    {request.status !== "CLOSED" && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {request.status === "PENDING" && (
+                          <button
+                            type="button"
+                            onClick={() => handleConsultationStatusUpdate(request.id, "ACCEPTED")}
+                            className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-blue-800"
+                          >
+                            รับคำขอ
+                          </button>
+                        )}
+                        {(request.status === "PENDING" || request.status === "ACCEPTED") && (
+                          <button
+                            type="button"
+                            onClick={() => handleConsultationStatusUpdate(request.id, "SCHEDULED")}
+                            className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700 transition-colors hover:bg-cyan-100"
+                          >
+                            นัดหมาย
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleConsultationStatusUpdate(request.id, "CLOSED")}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                        >
+                          ปิดคำขอ
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-10 text-center text-sm text-slate-500">ยังไม่มีคำขอปรึกษาในขณะนี้</div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="font-bold text-slate-800">Notification Inbox</h3>
+              <p className="mt-0.5 text-xs text-slate-500">ดึงข้อมูลจาก /api/alerts/me</p>
+            </div>
+            {loadingAlerts && <span className="text-xs text-slate-400">กำลังโหลด...</span>}
+          </div>
+
+          {advisorAlerts.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {advisorAlerts.slice(0, 12).map((alert) => (
+                <div key={alert.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800">{alert.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatThaiDateTime(alert.createdAt)}</p>
+                    </div>
+                    <span
+                      className={`rounded-md px-2 py-1 text-[11px] font-bold ${
+                        alert.status === "OPEN" ? "bg-red-50 text-red-700" : alert.status === "ACKNOWLEDGED" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {alert.status}
+                    </span>
+                  </div>
+                  <p className="mt-3 whitespace-pre-line text-xs leading-5 text-slate-600">{alert.message}</p>
+                  {alert.sourceType && <p className="mt-2 text-[11px] text-slate-400">{alert.sourceType}</p>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-sm text-slate-500">ไม่มี notification ในขณะนี้</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const AcademicPlaceholderView = () => (
     <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
@@ -1233,8 +1568,8 @@ function AdvisorDashboardContent() {
   );
 
   const ModalOverlay = ({ children }: { children: ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/40 px-4 py-6 backdrop-blur-sm sm:items-center">
-      <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[90vh]">
+    <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain bg-slate-900/45 p-3 backdrop-blur-sm sm:p-4">
+      <div className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
         {children}
       </div>
     </div>
@@ -1268,6 +1603,12 @@ function AdvisorDashboardContent() {
                   icon={<Users size={20} />}
                   label="นักศึกษาในที่ปรึกษา"
                   onClick={() => navigateTo("advisees")}
+                />
+                <SidebarItem
+                  active={activeView === "consultations"}
+                  icon={<ClipboardList size={20} />}
+                  label="คำขอปรึกษา"
+                  onClick={() => navigateTo("consultations")}
                 />
                 <SidebarItem
                   active={activeView === "referrals"}
@@ -1332,6 +1673,7 @@ function AdvisorDashboardContent() {
               <>
                 {activeView === "dashboard" && <DashboardView />}
                 {activeView === "advisees" && <AdviseesView />}
+                {activeView === "consultations" && <ConsultationRequestsView />}
                 {activeView === "referrals" && <ReferralHistoryView />}
                 {activeView === "academic" && <AcademicPlaceholderView />}
                 {activeView === "change-password" && (

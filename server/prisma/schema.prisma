@@ -41,6 +41,20 @@ enum ReferralStatus {
   CLOSED
 }
 
+enum ConsultationRequestStatus {
+  PENDING
+  ACCEPTED
+  SCHEDULED
+  CLOSED
+}
+
+enum ConsultationPreferredChannel {
+  IN_PERSON
+  ONLINE
+  PHONE
+  MESSAGE
+}
+
 enum AlertType {
   ADVISOR_FOLLOW_UP
   BEHAVIOR_REPORTED
@@ -74,6 +88,22 @@ enum EmergencyCaseStatus {
   RESOLVED
 }
 
+enum SurveyStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SurveyQuestionType {
+  TEXT
+  TEXTAREA
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SCALE
+  NUMBER
+  DATE
+}
+
 model User {
   id                 String              @id @default(cuid())
   name               String
@@ -96,6 +126,8 @@ model User {
   studentCareRecords CareRecord[]        @relation("CareRecordStudent")
   advisorReferrals   CaseReferral[]      @relation("CaseReferralAdvisor")
   studentReferrals   CaseReferral[]      @relation("CaseReferralStudent")
+  studentConsultationRequests ConsultationRequest[] @relation("ConsultationRequestStudent")
+  teacherConsultationRequests ConsultationRequest[] @relation("ConsultationRequestTeacher")
   advisorAssignments StudentAdvisorAssignment[] @relation("AdvisorAssignments")
   studentAssignments StudentAdvisorAssignment[] @relation("StudentAssignments")
   instructorBehaviorRecords BehaviorRecord[] @relation("BehaviorRecordInstructor")
@@ -107,6 +139,8 @@ model User {
   mentalHealthCareRecords SpecializedCareRecord[] @relation("SpecializedCareRecordProvider")
   studentSpecializedCareRecords SpecializedCareRecord[] @relation("SpecializedCareRecordStudent")
   auditLogs AuditLog[] @relation("AuditLogActor")
+  createdSurveys Survey[] @relation("SurveyCreator")
+  surveyResponses SurveyResponse[] @relation("SurveyResponseStudent")
 }
 
 model RefreshToken {
@@ -258,9 +292,35 @@ model Alert {
 
   recipient User @relation("AlertRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
   actor     User? @relation("AlertActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  consultationRequest ConsultationRequest?
 
   @@index([recipientUserId, status, createdAt])
   @@index([studentId, createdAt])
+}
+
+model ConsultationRequest {
+  id               String                     @id @default(cuid())
+  studentId        String
+  teacherId        String
+  alertId          String?                    @unique
+  topic            String
+  preferredChannel ConsultationPreferredChannel @default(IN_PERSON)
+  note             String?
+  status           ConsultationRequestStatus  @default(PENDING)
+  advisorNote      String?
+  scheduledAt      DateTime?
+  acceptedAt       DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  student User @relation("ConsultationRequestStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  teacher User @relation("ConsultationRequestTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  alert   Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+
+  @@index([studentId, createdAt])
+  @@index([teacherId, status, createdAt])
+  @@index([status, createdAt])
 }
 
 model EmergencyCase {
@@ -315,4 +375,81 @@ model AuditLog {
 
   @@index([actorUserId, createdAt])
   @@index([entityType, createdAt])
+}
+
+model Survey {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  status      SurveyStatus @default(DRAFT)
+  isActive    Boolean      @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  createdBy User? @relation("SurveyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  questions SurveyQuestion[]
+  responses SurveyResponse[]
+
+  @@index([status, isActive])
+  @@index([startsAt, endsAt])
+}
+
+model SurveyQuestion {
+  id          String             @id @default(cuid())
+  surveyId    String
+  type        SurveyQuestionType
+  prompt      String
+  description String?
+  isRequired  Boolean            @default(true)
+  order       Int
+  options     Json?
+  minValue    Int?
+  maxValue    Int?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answers SurveyAnswer[]
+
+  @@index([surveyId, order])
+}
+
+model SurveyResponse {
+  id          String   @id @default(cuid())
+  surveyId    String
+  studentId   String
+  totalScore  Int?
+  maxScore    Int      @default(0)
+  scorePercent Int?
+  riskLevel   RiskLevel @default(NORMAL)
+  instrument  String?
+  scoredAt    DateTime?
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  survey  Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  student User   @relation("SurveyResponseStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  answers SurveyAnswer[]
+
+  @@unique([surveyId, studentId])
+  @@index([surveyId, submittedAt])
+  @@index([studentId, submittedAt])
+}
+
+model SurveyAnswer {
+  id         String   @id @default(cuid())
+  responseId String
+  questionId String
+  value      Json
+  createdAt  DateTime @default(now())
+
+  response SurveyResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
 }

@@ -662,9 +662,9 @@ function ExecutiveDashboardContent() {
               <button type="button" className="relative rounded-full bg-slate-100 p-2 text-slate-500 transition-colors hover:text-slate-700 sm:hidden">
                 <Bell size={20} />
               </button>
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{executiveProfile.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{executiveProfile.role}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={executiveProfile.name}>{executiveProfile.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={executiveProfile.role}>{executiveProfile.role}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-sm font-bold text-white shadow-sm">
                 {executiveProfile.initials}

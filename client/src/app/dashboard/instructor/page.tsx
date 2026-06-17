@@ -854,8 +854,8 @@ function InstructorDashboardContent() {
   );
 
   const ModalOverlay = ({ children }: { children: React.ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 px-4 py-6 backdrop-blur-md sm:items-center">
-      <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl sm:max-h-[90vh]">
+    <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain bg-slate-900/60 p-3 backdrop-blur-md sm:p-4">
+      <div className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-[32px] bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
         {children}
       </div>
     </div>
@@ -1020,9 +1020,9 @@ function InstructorDashboardContent() {
               {pendingRecords.length > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-red-500"></span>}
             </button>
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{instructorProfile.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{instructorProfile.role}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={instructorProfile.name}>{instructorProfile.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={instructorProfile.role}>{instructorProfile.role}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-indigo-100 text-sm font-bold text-indigo-700 shadow-sm">
                 {instructorProfile.initials}

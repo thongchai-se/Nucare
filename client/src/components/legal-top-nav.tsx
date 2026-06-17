@@ -113,8 +113,8 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="menu"
                 >
-                  <div className="hidden text-right lg:block">
-                    <p className="text-sm font-bold leading-tight text-blue-900">{user?.name}</p>
+                  <div className="hidden max-w-[12rem] min-w-0 overflow-hidden text-right lg:block">
+                    <p className="truncate whitespace-nowrap text-sm font-bold leading-tight text-blue-900" title={user?.name || ""}>{user?.name}</p>
                     <p className="text-xs text-slate-500">{user?.studentId ? "นักศึกษาพยาบาลศาสตร์" : "บุคลากร"}</p>
                   </div>
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">

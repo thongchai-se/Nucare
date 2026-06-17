@@ -18,6 +18,14 @@ import {
   updateUser,
   updateStudent,
 } from "../controllers/admin.controller";
+import {
+  createAdminSurvey,
+  deleteAdminSurvey,
+  getAdminSurvey,
+  listAdminSurveyResponses,
+  listAdminSurveys,
+  updateAdminSurvey,
+} from "../controllers/survey.controller";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware";
 
 const router = Router();
@@ -83,6 +91,48 @@ router.get(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   listAuditLogs
+);
+
+router.get(
+  "/surveys",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listAdminSurveys
+);
+
+router.post(
+  "/surveys",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  createAdminSurvey
+);
+
+router.get(
+  "/surveys/:id",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  getAdminSurvey
+);
+
+router.put(
+  "/surveys/:id",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  updateAdminSurvey
+);
+
+router.delete(
+  "/surveys/:id",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  deleteAdminSurvey
+);
+
+router.get(
+  "/surveys/:id/responses",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listAdminSurveyResponses
 );
 
 router.get(

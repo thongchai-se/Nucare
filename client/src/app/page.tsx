@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { facultyFullName } from "@/lib/brand";
 import {
   ArrowRight,
   BookOpen,
-  Check,
   ChevronDown,
   ClipboardCheck,
   ClipboardEdit,
@@ -21,7 +20,6 @@ import {
   Music,
   Phone,
   PhoneCall,
-  Send,
   ShieldCheck,
   Sparkles,
   User,
@@ -51,18 +49,18 @@ const getAuthPopupViewFromUrl = (): AuthPopupView | null => {
 const formatUserIdentifier = (studentId?: string | null, employeeId?: string | null, email?: string | null): string => {
   if (studentId) {
     if (/^\d{9}-\d$/.test(studentId)) {
-      return `ID: ${studentId}`;
+      return `รหัสนักศึกษา: ${studentId}`;
     }
 
     if (/^\d{10}$/.test(studentId)) {
-      return `ID: ${studentId.slice(0, 9)}-${studentId.slice(9)}`;
+      return `รหัสนักศึกษา: ${studentId.slice(0, 9)}-${studentId.slice(9)}`;
     }
 
-    return `ID: ${studentId}`;
+    return `รหัสนักศึกษา: ${studentId}`;
   }
 
   if (employeeId) {
-    return `ID: ${employeeId}`;
+    return `รหัสบุคลากร: ${employeeId}`;
   }
 
   return email ?? "-";
@@ -74,24 +72,10 @@ export default function HomePage() {
   const showGuestActions = !isAuthenticated;
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
-  const [showToast, setShowToast] = useState(false);
   const [isAuthPopupOpen, setIsAuthPopupOpen] = useState(false);
   const [authPopupView, setAuthPopupView] = useState<AuthPopupView>("login");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [feelingText, setFeelingText] = useState("");
-  const [selectedEmoji, setSelectedEmoji] = useState("✨");
-  const boardRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-  const lastReactionAtRef = useRef(0);
-
-  const getMaxFloatingElements = () => {
-    if (typeof window === "undefined") {
-      return 40;
-    }
-
-    return window.innerWidth < 640 ? 10 : 32;
-  };
 
   const syncAuthPopupQuery = (view: AuthPopupView | null) => {
     if (typeof window === "undefined") {
@@ -125,117 +109,6 @@ export default function HomePage() {
   const handleAuthPopupViewChange = (view: AuthPopupView) => {
     setAuthPopupView(view);
     syncAuthPopupQuery(view);
-  };
-
-  const createFloatingElement = useCallback((text: string | null, emoji: string, type: "card" | "emoji") => {
-    if (!boardRef.current || typeof window === "undefined") {
-      return;
-    }
-
-    const board = boardRef.current;
-    const isMobileViewport = window.innerWidth < 640;
-    const maxElements = getMaxFloatingElements();
-
-    if (board.childElementCount >= maxElements) {
-      if (type === "emoji") {
-        return;
-      }
-
-      const first = board.firstElementChild;
-      if (first) {
-        first.remove();
-      }
-    }
-
-    const element = document.createElement("div");
-
-    if (type === "card") {
-      element.className =
-        "absolute rounded-2xl border border-white/70 bg-white/92 p-3 shadow-md pointer-events-none will-change-transform";
-      element.style.width = `${Math.min(isMobileViewport ? 172 : 236, Math.max(152, board.clientWidth - 24))}px`;
-
-      const row = document.createElement("div");
-      row.className = "flex items-start gap-3";
-
-      const emojiNode = document.createElement("div");
-      emojiNode.className = "shrink-0 pt-0.5 text-2xl";
-      emojiNode.textContent = emoji;
-
-      const textNode = document.createElement("p");
-      textNode.className =
-        "min-w-0 flex-1 break-words text-[13px] font-medium leading-5 text-slate-700 [overflow-wrap:anywhere] whitespace-normal";
-      textNode.textContent = text ?? "";
-
-      row.appendChild(emojiNode);
-      row.appendChild(textNode);
-      element.appendChild(row);
-      element.style.zIndex = Math.random() > 0.5 ? "2" : "1";
-    } else {
-      element.className = "absolute text-4xl opacity-70 pointer-events-none drop-shadow-md will-change-transform sm:text-5xl";
-      element.textContent = emoji;
-      element.style.zIndex = "1";
-    }
-
-    const duration = Math.random() * 6000 + 8000;
-    const scale = type === "card" ? Math.random() * 0.15 + 0.88 : Math.random() * 0.2 + 0.9;
-    const opacityLevel = type === "card" ? 0.65 : 0.45;
-    const rotateStart = type === "emoji" ? (Math.random() - 0.5) * 40 : (Math.random() - 0.5) * 6;
-    const rotateEnd = type === "emoji" ? (Math.random() - 0.5) * 80 : (Math.random() - 0.5) * 8;
-
-    board.appendChild(element);
-
-    const safeInset = isMobileViewport ? 12 : 20;
-    const maxLeft = Math.max(safeInset, board.clientWidth - element.offsetWidth - safeInset);
-    const left = safeInset + Math.random() * Math.max(0, maxLeft - safeInset);
-    element.style.left = `${left}px`;
-    element.style.top = "0";
-
-    const animation = element.animate(
-      [
-        { transform: `translate3d(0, 110vh, 0) scale(${scale * 0.82}) rotate(${rotateStart}deg)`, opacity: 0 },
-        { transform: `translate3d(0, 90vh, 0) scale(${scale}) rotate(${rotateStart}deg)`, opacity: opacityLevel, offset: 0.1 },
-        { transform: `translate3d(0, 10vh, 0) scale(${scale}) rotate(${rotateEnd}deg)`, opacity: opacityLevel, offset: 0.85 },
-        { transform: `translate3d(0, -22vh, 0) scale(${scale * 1.08}) rotate(${rotateEnd}deg)`, opacity: 0 },
-      ],
-      {
-        duration,
-        easing: "linear",
-        fill: "forwards",
-      }
-    );
-
-    animation.onfinish = () => {
-      if (element.parentNode) {
-        element.remove();
-      }
-    };
-  }, []);
-
-  const releaseFeeling = () => {
-    const now = Date.now();
-    if (now - lastReactionAtRef.current < 180) {
-      return;
-    }
-
-    const normalizedText = feelingText.trim();
-    if (!normalizedText) {
-      return;
-    }
-
-    lastReactionAtRef.current = now;
-
-    createFloatingElement(normalizedText, selectedEmoji, "card");
-    setFeelingText("");
-  };
-
-  const spawnEmojiOnly = (emoji: string) => {
-    const now = Date.now();
-    if (now - lastReactionAtRef.current < 120) {
-      return;
-    }
-
-    lastReactionAtRef.current = now;
-    createFloatingElement(null, emoji, "emoji");
   };
 
   useEffect(() => {
@@ -291,20 +164,6 @@ export default function HomePage() {
   }, [isAuthenticated, isAuthPopupOpen]);
 
   useEffect(() => {
-    if (!showToast) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setShowToast(false);
-    }, 4000);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [showToast]);
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
@@ -317,36 +176,6 @@ export default function HomePage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      return;
-    }
-
-    const mockPhrases = [
-      { text: "สู้ๆ นะตัวเรา", emoji: "💪" },
-      { text: "ขึ้นวอร์ดวันนี้หนักมาก แต่ผ่านมาได้", emoji: "😮‍💨" },
-      { text: "ขอให้พรุ่งนี้ใจดีกับเรามากขึ้น", emoji: "🌤️" },
-      { text: "เป็นกำลังใจให้ทุกคนในคณะ", emoji: "💙" },
-      { text: "ฉันเก่งขึ้นทีละนิดทุกวัน", emoji: "✨" },
-    ];
-
-    const timer = window.setInterval(() => {
-      const chance = Math.random();
-
-      if (chance > 0.72) {
-        const randomPhrase = mockPhrases[Math.floor(Math.random() * mockPhrases.length)];
-        createFloatingElement(randomPhrase.text, randomPhrase.emoji, "card");
-      } else if (chance > 0.35) {
-        const emojis = ["✨", "💙", "🤍", "🌱", "💪"];
-        createFloatingElement(null, emojis[Math.floor(Math.random() * emojis.length)], "emoji");
-      }
-    }, 6000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [createFloatingElement]);
 
   const userInitials = useMemo(() => {
     if (!user?.name) {
@@ -363,28 +192,12 @@ export default function HomePage() {
 
   const handleLogout = async () => {
     await logout();
-    setToastMessage("ออกจากระบบเรียบร้อยแล้ว");
-    setShowToast(true);
     setMobileMenuOpen(false);
     setProfileMenuOpen(false);
   };
 
   return (
     <div className="overflow-x-clip">
-      <div
-        className={`fixed bottom-6 right-6 z-[70] flex transform items-center gap-3 rounded-lg border-l-4 border-emerald-500 bg-white px-5 py-4 shadow-xl transition-all duration-300 ${
-          showToast ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-20 opacity-0"
-        }`}
-      >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-          <Check className="h-5 w-5" />
-        </div>
-        <div>
-          <h4 className="text-sm font-bold text-slate-800">สถานะระบบ</h4>
-          <p className="mt-0.5 text-xs text-slate-500">{toastMessage}</p>
-        </div>
-      </div>
-
       <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_15%_20%,rgba(186,230,253,0.55),transparent_36%),radial-gradient(circle_at_82%_8%,rgba(125,211,252,0.45),transparent_32%),linear-gradient(135deg,#f8fafc_0%,#f0f9ff_40%,#eef2ff_100%)]" />
       <div className="fixed inset-0 -z-10 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.35)_40%,transparent_80%)]" />
 
@@ -435,7 +248,7 @@ export default function HomePage() {
 
               {showAuthenticatedActions && (
                 <div className="flex items-center border-l border-slate-200 pl-4">
-                  <div className="relative w-[14rem]" ref={profileMenuRef}>
+                  <div className="relative w-[15.5rem]" ref={profileMenuRef}>
                     <button
                       type="button"
                       onClick={() => setProfileMenuOpen((prev) => !prev)}
@@ -445,9 +258,9 @@ export default function HomePage() {
                       aria-expanded={profileMenuOpen}
                       aria-haspopup="menu"
                     >
-                      <div className="hidden min-w-0 flex-1 text-right lg:block">
-                        <p className="text-sm font-bold leading-tight text-blue-900">{user?.name}</p>
-                        <p className="text-xs text-slate-500">{userMenuSubtitle}</p>
+                      <div className="hidden min-w-0 flex-1 overflow-hidden text-right lg:block">
+                        <p className="truncate whitespace-nowrap text-sm font-bold leading-tight text-blue-900" title={user?.name || ""}>{user?.name}</p>
+                        <p className="truncate whitespace-nowrap text-[11px] text-slate-500" title={userMenuSubtitle}>{userMenuSubtitle}</p>
                       </div>
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
                         {userInitials}
@@ -600,78 +413,47 @@ export default function HomePage() {
       </nav>
 
       <main className="relative flex min-h-screen flex-col justify-center">
-        <div
-          ref={boardRef}
-          className="pointer-events-none fixed inset-x-0 top-16 z-[30] h-[26rem] overflow-hidden sm:top-20 sm:h-[34rem] md:h-[38rem]"
-        />
-
         <section className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 pb-12 pt-24 sm:px-6 sm:pb-16 sm:pt-32 lg:px-8">
           <div className="relative z-40 mb-8 text-center sm:mb-10">
             <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-semibold text-blue-800 shadow-sm backdrop-blur-md sm:mb-6 sm:px-4 sm:py-1.5 sm:text-sm">
               <Sparkles className="h-3 w-3 text-amber-500 sm:h-4 sm:w-4" />
-              พื้นที่ใจที่ปลอดภัยสำหรับนักศึกษาพยาบาล
+              ระบบดูแลสุขภาพใจสำหรับมหาวิทยาลัย
             </div>
             <h1 className="mb-4 text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:mb-6 sm:text-5xl md:text-6xl">
-              วันนี้คุณ
+              ดูแลนักศึกษา
               <br className="sm:hidden" />
-              <span className="text-blue-700">รู้สึกอย่างไร?</span>
+              <span className="text-blue-700">อย่างปลอดภัยและเป็นระบบ</span>
             </h1>
             <p className="mx-auto max-w-2xl px-2 text-base leading-relaxed text-slate-600 sm:text-xl">
-              พิมพ์ระบายความรู้สึกของคุณ แล้วปล่อยให้มันลอยไป
+              เข้าสู่ระบบเพื่อทำแบบประเมิน ขอรับคำปรึกษา และติดตามการดูแลผ่านสิทธิ์ที่เหมาะสมกับบทบาทของคุณ
               <br className="hidden sm:block" />
-              เราพร้อมรับฟัง และคุณไม่ได้อยู่คนเดียว
+              ข้อมูลสำคัญถูกจำกัดการเข้าถึงและบันทึก audit trail สำหรับการใช้งานจริง
             </p>
           </div>
 
-          <div className="relative z-40 mx-auto w-full max-w-3xl rounded-[1.5rem] border border-white/80 bg-white/70 p-4 shadow-xl backdrop-blur-xl sm:rounded-[2rem] sm:p-6 sm:shadow-2xl md:p-8">
-            <div className="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-inner transition-all focus-within:border-blue-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-50 sm:rounded-2xl">
-              <textarea
-                value={feelingText}
-                onChange={(event) => setFeelingText(event.target.value)}
-                rows={2}
-                placeholder="มีอะไรในใจ พิมพ์ระบายตรงนี้ได้เลย..."
-                className="w-full resize-none border-none bg-transparent p-1 text-base leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 sm:p-2 sm:text-lg"
-                style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
-              />
-
-              <div className="mt-3 flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <div className="flex justify-center gap-1 rounded-xl border border-slate-100 bg-white/60 p-1.5 sm:justify-start sm:gap-2">
-                  {["😊", "😐", "😫", "🥺"].map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setSelectedEmoji(emoji)}
-                      className={`flex h-10 w-10 flex-1 items-center justify-center rounded-lg text-xl transition-transform hover:scale-110 sm:flex-none ${
-                        selectedEmoji === emoji ? "bg-white ring-2 ring-slate-300 shadow-sm" : "hover:bg-white"
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex w-full items-center gap-2 sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => spawnEmojiOnly("💙")}
-                    className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 bg-white text-xl text-blue-500 shadow-sm transition-transform hover:bg-blue-50 active:scale-95 sm:rounded-full"
-                    title="ส่งกำลังใจ"
-                  >
-                    💙
-                  </button>
-                  <button
-                    type="button"
-                    onClick={releaseFeeling}
-                    className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-colors hover:bg-blue-800 active:scale-95 sm:flex-none sm:px-8 sm:text-[15px]"
-                  >
-                    <Send className="h-4 w-4" /> ปล่อยความรู้สึก
-                  </button>
-                </div>
-              </div>
-            </div>
-            <p className="mt-4 flex items-center justify-center gap-1.5 px-2 text-center text-[11px] font-medium text-slate-500 sm:text-xs">
-              <Lock className="h-3 w-3 shrink-0" /> ข้อความจะไม่ถูกระบุตัวตน เป็นพื้นที่ปลอดภัย 100%
-            </p>
+          <div className="relative z-40 mx-auto flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:justify-center">
+            {showGuestActions ? (
+              <button
+                type="button"
+                onClick={() => openAuthPopup("login")}
+                className="flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-800"
+              >
+                <LogIn className="h-4 w-4" /> เข้าสู่ระบบ
+              </button>
+            ) : (
+              <Link
+                href="/dashboard"
+                className="flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-800"
+              >
+                <LayoutDashboard className="h-4 w-4" /> ไปที่แดชบอร์ด
+              </Link>
+            )}
+            <a
+              href="#support"
+              className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white/80 px-6 py-3.5 text-sm font-bold text-blue-700 shadow-sm transition-colors hover:bg-white"
+            >
+              <ShieldCheck className="h-4 w-4" /> แนวทางดูแลข้อมูล
+            </a>
           </div>
         </section>
 

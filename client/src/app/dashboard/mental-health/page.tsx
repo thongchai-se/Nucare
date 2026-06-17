@@ -55,7 +55,7 @@ type DashboardReferral = {
     year: string;
     riskLevel: "high" | "medium" | "normal";
     latestAssessment: {
-      totalScore: number;
+      totalScore: number | null;
       instrument: string;
       assessedAt: string;
     } | null;
@@ -216,6 +216,16 @@ const getRiskClasses = (riskLevel: ActiveCase["riskLevel"] | DashboardReferral["
   };
 };
 
+const formatLatestAssessment = (assessment: ActiveCase["latestAssessment"]): string => {
+  if (!assessment) {
+    return "ยังไม่มีข้อมูล";
+  }
+
+  return assessment.totalScore === null
+    ? assessment.instrument
+    : `${assessment.instrument} คะแนน ${assessment.totalScore}`;
+};
+
 const SidebarItem = ({
   active,
   badge,
@@ -287,8 +297,8 @@ const ModalShell = ({
   children: React.ReactNode;
   onClose: () => void;
 }) => (
-  <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/40 px-4 py-6 backdrop-blur-sm sm:items-center">
-    <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[90vh]">{children}</div>
+  <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/40 p-3 backdrop-blur-sm sm:p-4">
+    <div className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">{children}</div>
     <button type="button" onClick={onClose} className="sr-only">
       ปิดหน้าต่าง
     </button>
@@ -886,8 +896,8 @@ function MentalHealthDashboardContent() {
               <div className="hidden h-6 w-px bg-slate-200 sm:block"></div>
 
               <div className="flex items-center gap-3">
-                <div className="hidden text-right sm:block">
-                  <p className="text-sm font-bold leading-none text-slate-800">{user.name}</p>
+                <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                  <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
                   <p className="mt-0.5 text-[10px] text-slate-500">ผู้เชี่ยวชาญสุขภาพจิต</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-indigo-100 text-sm font-bold text-indigo-700">
@@ -1119,9 +1129,7 @@ function MentalHealthDashboardContent() {
                                 <div>
                                   <p className="text-[10px] font-bold uppercase text-slate-400">ประเมินล่าสุด</p>
                                   <p className="mt-1 text-xs font-medium text-slate-700">
-                                    {item.latestAssessment
-                                      ? `${item.latestAssessment.instrument} ${item.latestAssessment.totalScore}`
-                                      : "ยังไม่มีข้อมูล"}
+                                    {formatLatestAssessment(item.latestAssessment)}
                                   </p>
                                 </div>
                                 <div>

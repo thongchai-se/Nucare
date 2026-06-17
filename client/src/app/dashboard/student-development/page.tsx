@@ -1250,9 +1250,9 @@ function StudentDevelopmentDashboardContent() {
             <div className="hidden h-6 w-px bg-slate-200 sm:block"></div>
 
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-bold leading-none text-slate-800">{profile.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{profile.roleLabel}</p>
+              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
+                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={profile.name}>{profile.name}</p>
+                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={profile.roleLabel}>{profile.roleLabel}</p>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-100 text-sm font-bold text-rose-700">
                 {profile.initials}
@@ -1305,8 +1305,8 @@ function StudentDevelopmentDashboardContent() {
       />
 
       {showReminderModal ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-900/60 px-4 py-6 backdrop-blur-sm sm:items-center">
-          <div className="flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl sm:max-h-[90vh]">
+        <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain bg-slate-900/60 p-3 backdrop-blur-sm sm:p-4">
+          <div className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">

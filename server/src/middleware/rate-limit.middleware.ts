@@ -18,6 +18,7 @@ const AUTH_WINDOW_MS = parsePositiveInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 1
 
 type LimiterOptions = {
   keyGenerator?: (req: Request) => string;
+  skip?: (req: Request) => boolean;
   skipSuccessfulRequests?: boolean;
 };
 
@@ -33,6 +34,7 @@ const createLimiter = (
     keyGenerator: options?.keyGenerator,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: options?.skip,
     skipSuccessfulRequests: Boolean(options?.skipSuccessfulRequests),
     message: { message },
   });
@@ -44,6 +46,27 @@ const createAuthLimiter = (
 ) => createLimiter(AUTH_WINDOW_MS, max, message, options);
 
 const authenticatedUserKey = (req: Request): string => req.user?.userId || "authenticated-user";
+
+const isHealthCheckRequest = (req: Request): boolean => req.path === "/health" || req.path === "/api/health";
+
+const isSafeReadRequest = (req: Request): boolean =>
+  req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
+
+export const apiRateLimit = createLimiter(
+  parsePositiveInt(process.env.API_RATE_LIMIT_WINDOW_MS, 60 * 1000),
+  parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 5000),
+  "มีคำขอเข้าใช้งานระบบมากเกินไป กรุณาลองใหม่อีกครั้ง",
+  { skip: isHealthCheckRequest }
+);
+
+export const apiWriteRateLimit = createLimiter(
+  parsePositiveInt(process.env.API_WRITE_RATE_LIMIT_WINDOW_MS, 60 * 1000),
+  parsePositiveInt(process.env.API_WRITE_RATE_LIMIT_MAX, 2000),
+  "มีคำขอเปลี่ยนแปลงข้อมูลมากเกินไป กรุณาลองใหม่อีกครั้ง",
+  {
+    skip: (req) => isHealthCheckRequest(req) || isSafeReadRequest(req),
+  }
+);
 
 export const loginRateLimit = createAuthLimiter(
   10,
@@ -80,9 +103,23 @@ export const assessmentSubmitRateLimit = createLimiter(
   { keyGenerator: authenticatedUserKey }
 );
 
+export const surveySubmitRateLimit = createLimiter(
+  parsePositiveInt(process.env.SURVEY_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000),
+  parsePositiveInt(process.env.SURVEY_RATE_LIMIT_MAX, 60),
+  "ส่งแบบสอบถามบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
+  { keyGenerator: authenticatedUserKey }
+);
+
 export const sosRateLimit = createLimiter(
   parsePositiveInt(process.env.SOS_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
   parsePositiveInt(process.env.SOS_RATE_LIMIT_MAX, 3),
   "คุณส่งสัญญาณฉุกเฉินบ่อยเกินไป กรุณาติดต่อเจ้าหน้าที่โดยตรงหากเป็นเหตุเร่งด่วน",
+  { keyGenerator: authenticatedUserKey }
+);
+
+export const consultationRequestRateLimit = createLimiter(
+  parsePositiveInt(process.env.CONSULTATION_REQUEST_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000),
+  parsePositiveInt(process.env.CONSULTATION_REQUEST_RATE_LIMIT_MAX, 10),
+  "คุณส่งคำขอรับคำปรึกษาบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
   { keyGenerator: authenticatedUserKey }
 );

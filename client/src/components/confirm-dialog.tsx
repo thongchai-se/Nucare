@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 
 type ConfirmDialogProps = {
@@ -10,6 +12,7 @@ type ConfirmDialogProps = {
   onCancel: () => void;
   onConfirm: () => void;
   open: boolean;
+  placement?: "viewport" | "admin-content";
   title: string;
 };
 
@@ -23,12 +26,36 @@ export function ConfirmDialog({
   open,
   title,
 }: ConfirmDialogProps) {
-  return (
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!mounted) {
+    return null;
+  }
+
+  return createPortal(
     <>
       <div
-        className={`fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-sm transition-opacity duration-200 ${
+        className={`fixed inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-200 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
+        style={{ inset: 0, position: "fixed", zIndex: 10000 }}
         onClick={() => {
           if (!loading) {
             onCancel();
@@ -36,12 +63,17 @@ export function ConfirmDialog({
         }}
       />
 
-      <div className={`fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-4 py-6 sm:items-center ${open ? "" : "pointer-events-none"}`}>
+      <div
+        className={`fixed inset-0 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4 ${
+          open ? "" : "pointer-events-none"
+        }`}
+        style={{ inset: 0, position: "fixed", zIndex: 10001 }}
+      >
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
-          className={`flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 sm:max-h-[90vh] ${
+          className={`flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
             open ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-95 opacity-0"
           }`}
         >
@@ -92,6 +124,7 @@ export function ConfirmDialog({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

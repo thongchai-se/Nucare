@@ -10,9 +10,15 @@
     "start": "node dist/index.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:push": "prisma db push",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "ghq28:seed": "tsx scripts/ensure-ghq28-survey.ts",
+    "orientation:seed-draft": "npm run ghq28:seed",
+    "survey:backup": "tsx scripts/survey-backup.ts",
+    "survey:smoke": "tsx scripts/survey-smoke-test.ts",
+    "orientation:check": "tsx scripts/orientation-readiness.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
