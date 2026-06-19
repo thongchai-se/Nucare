@@ -767,6 +767,8 @@ export const deleteAdminSurvey = async (req: Request, res: Response): Promise<vo
     return;
   }
 
+  const force = req.query.force === "true";
+
   try {
     const survey = await prisma.survey.findUnique({
       where: { id: req.params.id },
@@ -786,25 +788,42 @@ export const deleteAdminSurvey = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    if (survey._count.responses > 0) {
+    if (survey._count.responses > 0 && !force) {
       res.status(409).json({
         message: "Cannot delete a survey after students have submitted responses. Archive it instead.",
       });
       return;
     }
 
-    await prisma.survey.delete({
-      where: {
-        id: survey.id,
-      },
-    });
+    if (survey._count.responses > 0 && force) {
+      await prisma.$transaction(async (tx) => {
+        await tx.surveyAnswer.deleteMany({
+          where: { response: { surveyId: survey.id } },
+        });
+        await tx.surveyResponse.deleteMany({
+          where: { surveyId: survey.id },
+        });
+        await tx.surveyQuestion.deleteMany({
+          where: { surveyId: survey.id },
+        });
+        await tx.survey.delete({
+          where: { id: survey.id },
+        });
+      });
+    } else {
+      await prisma.survey.delete({
+        where: { id: survey.id },
+      });
+    }
 
     await writeAuditLog({
       actorUserId,
       action: "admin.survey.delete",
       entityType: "Survey",
       entityId: survey.id,
-      description: `Deleted survey "${survey.title}"`,
+      description: force
+        ? `Force-deleted survey "${survey.title}" including ${survey._count.responses} response(s)`
+        : `Deleted survey "${survey.title}"`,
       ipAddress: getRequestIpAddress(req),
     });
 

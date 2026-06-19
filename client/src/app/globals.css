@@ -86,3 +86,8 @@
     100% { transform: rotate(360deg); }
 }
 
+@keyframes toast-timer {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
+

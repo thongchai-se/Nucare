@@ -1,10 +1,12 @@
-"use client";
+﻿"use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   AlignLeft,
+  Archive,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -19,6 +21,7 @@ import {
   Pencil,
   Plus,
   Power,
+  RotateCcw,
   Save,
   ShieldAlert,
   ShieldCheck,
@@ -29,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { AdminShell } from "@/components/admin-shell";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DeleteSurveyDialog } from "@/components/delete-survey-dialog";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
@@ -476,6 +479,11 @@ export default function AdminSurveysPage() {
     description: "",
     tone: "success",
   });
+  const [toastKey, setToastKey] = useState(0);
+  const [downloadedSurveyIds, setDownloadedSurveyIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"active" | "archived">("active");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeQuestionClientId, setActiveQuestionClientId] = useState<string | null>(
     () => form.questions[0]?.clientId || null
   );
@@ -511,11 +519,35 @@ export default function AdminSurveysPage() {
     [responses]
   );
 
+  const activeSurveys = useMemo(
+    () => surveys.filter((survey) => survey.status !== "ARCHIVED"),
+    [surveys]
+  );
+
+  const archivedSurveys = useMemo(
+    () => surveys.filter((survey) => survey.status === "ARCHIVED"),
+    [surveys]
+  );
+
+  const displaySurveys = viewMode === "archived" ? archivedSurveys : activeSurveys;
+
   const showToast = useCallback((title: string, description = "", tone: RoleToastTone = "success") => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastKey((k) => k + 1);
     setToast({ open: true, title, description, tone });
-    window.setTimeout(() => {
+    toastTimerRef.current = window.setTimeout(() => {
       setToast((current) => ({ ...current, open: false }));
     }, 3600);
+  }, []);
+
+  const closeToast = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast((current) => ({ ...current, open: false }));
   }, []);
 
   useEffect(() => {
@@ -827,20 +859,17 @@ export default function AdminSurveysPage() {
 
   const handleRequestDeleteSurvey = async (survey: Survey) => {
     setOpenMenuSurveyId(null);
+    setLoadingData(true);
+    setServerError("");
 
-    if (form.id !== survey.id) {
-      setLoadingData(true);
-      setServerError("");
-
-      try {
-        await loadSurveyDetail(survey.id);
-      } catch (error) {
-        setServerError(getErrorMessage(error, "ไม่สามารถโหลดรายละเอียดแบบสอบถามได้"));
-        setLoadingData(false);
-        return;
-      } finally {
-        setLoadingData(false);
-      }
+    try {
+      await loadSurveyDetail(survey.id);
+    } catch (error) {
+      setServerError(getErrorMessage(error, "ไม่สามารถโหลดรายละเอียดแบบสอบถามได้"));
+      setLoadingData(false);
+      return;
+    } finally {
+      setLoadingData(false);
     }
 
     setDeleteDialogOpen(true);
@@ -890,12 +919,71 @@ export default function AdminSurveysPage() {
     setServerError("");
 
     try {
-      await api.delete(`/api/admin/surveys/${form.id}`);
+      const hasResponses = responses.length > 0;
+      await api.delete(`/api/admin/surveys/${form.id}${hasResponses ? "?force=true" : ""}`);
       setDeleteDialogOpen(false);
-      showToast("ลบแบบสอบถามสำเร็จ");
+      setEditorOpen(false);
+      setDownloadedSurveyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(form.id!);
+        return next;
+      });
+      showToast(
+        "ลบแบบสอบถามสำเร็จ",
+        hasResponses ? `ลบพร้อมข้อมูลคำตอบ ${responses.length.toLocaleString()} รายการแล้ว` : ""
+      );
+      const nextForm = createDefaultSurveyForm();
+      setForm(nextForm);
+      setActiveQuestionClientId(nextForm.questions[0]?.clientId || null);
+      setResponses([]);
       await fetchSurveys();
     } catch (error) {
       setServerError(getErrorMessage(error, "ไม่สามารถลบแบบสอบถามได้"));
+      setDeleteDialogOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleRestoreSurvey = async (survey: Survey) => {
+    setOpenMenuSurveyId(null);
+    setRestoringId(survey.id);
+    setServerError("");
+
+    try {
+      const { data } = await api.get<SurveyResponse>(`/api/admin/surveys/${survey.id}`);
+      const savedForm = surveyToForm(data.survey);
+      const payload = buildSurveyPayload({ ...savedForm, status: "DRAFT", isActive: false });
+      await api.put<SurveyResponse>(`/api/admin/surveys/${survey.id}`, payload);
+      await fetchSurveys();
+      setViewMode("active");
+      showToast("ดึงกลับแบบสอบถามแล้ว", "สถานะเปลี่ยนเป็น ฉบับร่าง — แก้ไขและเผยแพร่ใหม่ได้เลย");
+    } catch (error) {
+      setServerError(getErrorMessage(error, "ไม่สามารถดึงกลับแบบสอบถามได้"));
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const handleArchiveSurvey = async () => {
+    if (!form.id) {
+      return;
+    }
+
+    setDeleting(true);
+    setServerError("");
+
+    try {
+      const { data } = await api.get<SurveyResponse>(`/api/admin/surveys/${form.id}`);
+      const savedForm = surveyToForm(data.survey);
+      const payload = buildSurveyPayload({ ...savedForm, status: "ARCHIVED", isActive: false });
+      await api.put<SurveyResponse>(`/api/admin/surveys/${form.id}`, payload);
+      setDeleteDialogOpen(false);
+      setForm((current) => ({ ...current, status: "ARCHIVED", isActive: false }));
+      await fetchSurveys();
+      showToast("เก็บถาวรแล้ว", "สถานะเปลี่ยนเป็น เก็บถาวร — ข้อมูลคำตอบยังคงอยู่ในระบบ");
+    } catch (error) {
+      setServerError(getErrorMessage(error, "ไม่สามารถเก็บถาวรแบบสอบถามได้"));
       setDeleteDialogOpen(false);
     } finally {
       setDeleting(false);
@@ -934,6 +1022,10 @@ export default function AdminSurveysPage() {
     anchor.download = `${selectedSurvey.title.replace(/[^\wก-๙-]+/g, "_")}_responses.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
+
+    if (form.id) {
+      setDownloadedSurveyIds((prev) => new Set([...prev, form.id!]));
+    }
   };
 
   if (loading) {
@@ -975,21 +1067,24 @@ export default function AdminSurveysPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <RoleToast
+        key={toastKey}
         open={toast.open}
         title={toast.title}
         description={toast.description}
         tone={toast.tone}
+        onClose={closeToast}
       />
 
-      <ConfirmDialog
+      <DeleteSurveyDialog
         open={deleteDialogOpen}
-        placement="admin-content"
-        title="ลบแบบสอบถาม"
-        description="ลบได้เฉพาะแบบสอบถามที่ยังไม่มีนักศึกษาส่งคำตอบ หากมีคำตอบแล้วให้เปลี่ยนเป็นเก็บถาวรแทน"
-        confirmLabel="ลบ"
-        loading={deleting}
+        surveyTitle={form.title}
+        responseCount={responses.length}
+        hasDownloaded={form.id ? downloadedSurveyIds.has(form.id) : false}
+        deleting={deleting}
+        onDownload={exportResponsesCsv}
+        onArchive={handleArchiveSurvey}
+        onDelete={handleDelete}
         onCancel={() => setDeleteDialogOpen(false)}
-        onConfirm={handleDelete}
       />
 
       <div className="space-y-6">
@@ -1015,8 +1110,17 @@ export default function AdminSurveysPage() {
         </div>
 
         {serverError && !editorOpen ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
-            {serverError}
+          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+            <p className="flex-1 text-sm font-medium text-red-700">{serverError}</p>
+            <button
+              type="button"
+              onClick={() => setServerError("")}
+              className="rounded-lg p-1 text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+              aria-label="ปิด"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         ) : null}
 
@@ -1025,6 +1129,21 @@ export default function AdminSurveysPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-500">แบบสอบถามทั้งหมด</p>
               <p className="mt-2 text-2xl font-black text-slate-950">{surveys.length.toLocaleString()}</p>
+              <p className="mt-1 text-xs text-slate-400">
+                <span className="font-semibold text-slate-600">{activeSurveys.length}</span> ใช้งาน
+                {archivedSurveys.length > 0 ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("archived")}
+                      className="font-semibold text-slate-500 underline decoration-dotted hover:text-slate-700"
+                    >
+                      {archivedSurveys.length} เก็บถาวร
+                    </button>
+                  </>
+                ) : null}
+              </p>
             </div>
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
               <p className="text-xs font-bold text-emerald-700">เปิดใช้งานอยู่</p>
@@ -1050,26 +1169,73 @@ export default function AdminSurveysPage() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-base font-black text-slate-900">รายการแบบสอบถาม</h2>
-                <p className="mt-1 text-sm text-slate-500">กดชื่อแบบสอบถามเพื่อเข้าไปแก้ไข เปิด/ปิดได้จาก switch ในรายการ</p>
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">รายการแบบสอบถาม</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {viewMode === "active"
+                      ? "กดชื่อแบบสอบถามเพื่อเข้าไปแก้ไข เปิด/ปิดได้จาก switch ในรายการ"
+                      : "แบบสอบถามที่เก็บถาวรแล้ว กด ดึงกลับ เพื่อนำกลับมาใช้งาน"}
+                  </p>
+                </div>
+                {viewMode === "active" ? (
+                  <button
+                    type="button"
+                    onClick={handleCreateNew}
+                    className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 sm:w-auto"
+                  >
+                    <Plus className="h-4 w-4" />
+                    เพิ่มแบบสอบถาม
+                  </button>
+                ) : null}
               </div>
-              <button
-                type="button"
-                onClick={handleCreateNew}
-                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 sm:w-auto"
-              >
-                <Plus className="h-4 w-4" />
-                เพิ่มแบบสอบถาม
-              </button>
+
+              <div className="flex gap-1.5 rounded-xl border border-slate-200 bg-slate-100/60 p-1 sm:self-start">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("active")}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-bold transition-colors ${
+                    viewMode === "active"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  ใช้งาน
+                  <span className={`rounded-full px-1.5 py-0.5 text-xs font-black ${
+                    viewMode === "active" ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-500"
+                  }`}>
+                    {activeSurveys.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("archived")}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-bold transition-colors ${
+                    viewMode === "archived"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  เก็บถาวร
+                  <span className={`rounded-full px-1.5 py-0.5 text-xs font-black ${
+                    viewMode === "archived" ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-500"
+                  }`}>
+                    {archivedSurveys.length}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3 p-3 lg:hidden">
-              {surveys.map((survey) => {
+              {displaySurveys.map((survey) => {
                 const isSelected = survey.id === form.id;
                 const menuOpen = openMenuSurveyId === survey.id;
                 const isToggling = togglingSurveyId === survey.id;
+                const isRestoring = restoringId === survey.id;
+                const isArchived = viewMode === "archived";
 
                 return (
                   <article
@@ -1117,26 +1283,42 @@ export default function AdminSurveysPage() {
                               <Pencil className="h-4 w-4" />
                               แก้ไข/รายละเอียด
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void handleToggleSurveyActive(survey, !survey.isActive);
-                              }}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                            >
-                              <Power className="h-4 w-4" />
-                              {survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void handleRequestDeleteSurvey(survey);
-                              }}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              ลบ
-                            </button>
+                            {isArchived ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleRestoreSurvey(survey);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                                ดึงกลับ
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleToggleSurveyActive(survey, !survey.isActive);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                                >
+                                  <Power className="h-4 w-4" />
+                                  {survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleRequestDeleteSurvey(survey);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  ลบ
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : null}
                       </div>
@@ -1166,33 +1348,54 @@ export default function AdminSurveysPage() {
                       <div className="min-w-0 text-xs font-medium text-slate-500">
                         แก้ไขล่าสุด {formatThaiDateTime(survey.updatedAt)}
                       </div>
-                      <button
-                        type="button"
-                        disabled={isToggling}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleToggleSurveyActive(survey, !survey.isActive);
-                        }}
-                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
-                          survey.isActive ? "bg-emerald-500" : "bg-slate-300"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                        aria-label={survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
-                        aria-pressed={survey.isActive}
-                      >
-                        <span
-                          className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                            survey.isActive ? "translate-x-[22px]" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
+                      {isArchived ? (
+                        <button
+                          type="button"
+                          disabled={isRestoring}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRestoreSurvey(survey);
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isRestoring ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          )}
+                          ดึงกลับ
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isToggling}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleToggleSurveyActive(survey, !survey.isActive);
+                          }}
+                          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                            survey.isActive ? "bg-emerald-500" : "bg-slate-300"
+                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                          aria-label={survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
+                          aria-pressed={survey.isActive}
+                        >
+                          <span
+                            className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                              survey.isActive ? "translate-x-[22px]" : "translate-x-0.5"
+                            }`}
+                          />
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
               })}
 
-              {surveys.length === 0 && !loadingData ? (
+              {displaySurveys.length === 0 && !loadingData ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
-                  ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง
+                  {viewMode === "archived"
+                    ? "ยังไม่มีแบบสอบถามที่เก็บถาวร"
+                                    : 'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'}
                 </div>
               ) : null}
             </div>
@@ -1218,10 +1421,12 @@ export default function AdminSurveysPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {surveys.map((survey) => {
+                  {displaySurveys.map((survey) => {
                     const isSelected = survey.id === form.id;
                     const menuOpen = openMenuSurveyId === survey.id;
                     const isToggling = togglingSurveyId === survey.id;
+                    const isRestoring = restoringId === survey.id;
+                    const isArchived = viewMode === "archived";
 
                     return (
                       <tr
@@ -1239,90 +1444,117 @@ export default function AdminSurveysPage() {
                         </td>
                         <td className="px-4 py-4 align-middle">
                           <div className="flex justify-center">
-                            <button
-                              type="button"
-                              disabled={isToggling}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleToggleSurveyActive(survey, !survey.isActive);
-                              }}
-                              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                                survey.isActive ? "bg-emerald-500" : "bg-slate-300"
-                              } disabled:cursor-not-allowed disabled:opacity-60`}
-                              aria-label={survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
-                              aria-pressed={survey.isActive}
-                            >
-                              <span
-                                className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                                  survey.isActive ? "translate-x-[22px]" : "translate-x-0.5"
-                                }`}
-                              />
-                            </button>
+                            {isArchived ? (
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-500">
+                                เก็บถาวร
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isToggling}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleToggleSurveyActive(survey, !survey.isActive);
+                                }}
+                                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                                  survey.isActive ? "bg-emerald-500" : "bg-slate-300"
+                                } disabled:cursor-not-allowed disabled:opacity-60`}
+                                aria-label={survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
+                                aria-pressed={survey.isActive}
+                              >
+                                <span
+                                  className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                                    survey.isActive ? "translate-x-[22px]" : "translate-x-0.5"
+                                  }`}
+                                />
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center text-slate-600 align-middle">{survey.questionCount.toLocaleString()}</td>
                         <td className="px-4 py-4 text-center text-slate-600 align-middle">{survey.responseCount.toLocaleString()}</td>
                         <td className="whitespace-nowrap px-4 py-4 text-slate-500 align-middle">{formatThaiDateTime(survey.updatedAt)}</td>
                         <td className="px-4 py-4 text-right align-middle">
-                          <div className="relative inline-flex">
+                          {isArchived ? (
                             <button
                               type="button"
+                              disabled={isRestoring}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setOpenMenuSurveyId((current) => (current === survey.id ? null : survey.id));
+                                void handleRestoreSurvey(survey);
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-                              aria-label="เมนูแบบสอบถาม"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <MoreVertical className="h-4 w-4" />
+                              {isRestoring ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                              ดึงกลับ
                             </button>
-                            {menuOpen ? (
-                              <div
-                                className="absolute right-0 top-10 z-40 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-lg"
-                                onClick={(event) => event.stopPropagation()}
+                          ) : (
+                            <div className="relative inline-flex">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenMenuSurveyId((current) => (current === survey.id ? null : survey.id));
+                                }}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
+                                aria-label="เมนูแบบสอบถาม"
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuSurveyId(null);
-                                    void handleSelectSurvey(survey.id);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                              {menuOpen ? (
+                                <div
+                                  className="absolute right-0 top-10 z-40 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-lg"
+                                  onClick={(event) => event.stopPropagation()}
                                 >
-                                  <Pencil className="h-4 w-4" />
-                                  แก้ไข/รายละเอียด
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void handleToggleSurveyActive(survey, !survey.isActive);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                                >
-                                  <Power className="h-4 w-4" />
-                                  {survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void handleRequestDeleteSurvey(survey);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  ลบ
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuSurveyId(null);
+                                      void handleSelectSurvey(survey.id);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    แก้ไข/รายละเอียด
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handleToggleSurveyActive(survey, !survey.isActive);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                                  >
+                                    <Power className="h-4 w-4" />
+                                    {survey.isActive ? "ปิดแบบสอบถาม" : "เปิดแบบสอบถาม"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handleRequestDeleteSurvey(survey);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    ลบ
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
                   })}
-                  {surveys.length === 0 && !loadingData ? (
+                  {displaySurveys.length === 0 && !loadingData ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                        ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง
+                        {viewMode === "archived"
+                          ? "ยังไม่มีแบบสอบถามที่เก็บถาวร"
+          : 'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'}
                       </td>
                     </tr>
                   ) : null}
@@ -1362,8 +1594,17 @@ export default function AdminSurveysPage() {
                   </button>
                 </div>
                 {serverError ? (
-                  <div className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 sm:px-5">
-                    {serverError}
+                  <div className="flex shrink-0 items-start gap-3 border-b border-red-200 bg-red-50 px-4 py-3 sm:px-5">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                    <p className="flex-1 text-sm font-semibold text-red-700">{serverError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setServerError("")}
+                      className="rounded-md p-0.5 text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+                      aria-label="ปิด"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 ) : null}
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5">
@@ -1396,7 +1637,11 @@ export default function AdminSurveysPage() {
                       {form.id ? (
                         <button
                           type="button"
-                          onClick={() => setDeleteDialogOpen(true)}
+                          onClick={() => {
+                            if (selectedSurvey) {
+                              void handleRequestDeleteSurvey(selectedSurvey);
+                            }
+                          }}
                           className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
                         >
                           <Trash2 className="h-4 w-4" />
