@@ -9,6 +9,7 @@ import adminRoutes from "./routes/admin.routes";
 import alertsRoutes from "./routes/alerts.routes";
 import authRoutes from "./routes/auth.routes";
 import advisorRoutes from "./routes/advisor.routes";
+import executiveRoutes from "./routes/executive.routes";
 import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import studentRoutes from "./routes/student.routes";
@@ -198,6 +199,7 @@ app.use("/api/student", studentRoutes);
 app.use("/api/student-development", studentDevelopmentRoutes);
 app.use("/api/instructor", instructorRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
+app.use("/api/executive", executiveRoutes);
 app.use("/api/alerts", alertsRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

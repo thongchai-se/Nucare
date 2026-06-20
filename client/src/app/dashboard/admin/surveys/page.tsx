@@ -37,6 +37,7 @@ import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
 import type {
+  Ghq28DistressLevel,
   Survey,
   SurveyQuestion,
   SurveyQuestionOption,
@@ -114,6 +115,51 @@ const surveyRiskMeta: Record<SurveyRiskLevel, { className: string; label: string
   },
 };
 
+const ghq28DistressMeta: Record<Ghq28DistressLevel, { className: string; label: string }> = {
+  NORMAL: {
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    label: "ปกติ (Normal)",
+  },
+  MILD: {
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+    label: "ปัญหาสุขภาพจิตระดับน้อย (Mild Distress)",
+  },
+  MODERATE: {
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+    label: "ปัญหาสุขภาพจิตระดับปานกลาง (Moderate Distress)",
+  },
+  SEVERE: {
+    className: "border-red-200 bg-red-50 text-red-700",
+    label: "ปัญหาสุขภาพจิตระดับรุนแรง (Severe Distress)",
+  },
+};
+
+const isGhq28SurveyTitle = (title: string): boolean =>
+  /GHQ\s*-?\s*28/i.test(title) || title.includes("แบบทดสอบสุขภาพทั่วไป");
+
+const getGhq28DistressLevelFromScore = (score: number | null): Ghq28DistressLevel | null => {
+  if (score === null) {
+    return null;
+  }
+
+  if (score <= 14) {
+    return "NORMAL";
+  }
+
+  if (score <= 28) {
+    return "MILD";
+  }
+
+  if (score <= 42) {
+    return "MODERATE";
+  }
+
+  return "SEVERE";
+};
+
+const getResponseDistressLevel = (response: SurveyResponseRow): Ghq28DistressLevel | null =>
+  response.distressLevel ?? getGhq28DistressLevelFromScore(response.totalScore);
+
 const formatSurveyScore = (response: SurveyResponseRow): string => {
   if (response.totalScore === null || response.maxScore <= 0) {
     return "-";
@@ -173,14 +219,14 @@ const createGhq28ChoiceQuestion = (
   order,
   options: labels.map((label, index) => ({
     label,
-    score: index < 2 ? 0 : 1,
+    score: index,
     value: `ghq28_q${String(order).padStart(2, "0")}_${index + 1}`,
   })),
 });
 
 const createDefaultSurveyForm = (): SurveyForm => ({
   title: "แบบทดสอบสุขภาพทั่วไป Thai GHQ-28",
-  description: "แบบสอบถามสภาวะสุขภาพในระยะสองถึงสามสัปดาห์ที่ผ่านมา ใช้การให้คะแนน GHQ แบบ 0-0-1-1 และตัดคำถามข้อมูลทั่วไปออกเพราะระบบมีข้อมูลนักศึกษาอยู่แล้ว",
+  description: "แบบสอบถามสภาวะสุขภาพในระยะสองถึงสามสัปดาห์ที่ผ่านมา ใช้การให้คะแนน Likert 0-1-2-3 (คะแนนรวม 0-84) คะแนนตั้งแต่ 24 ขึ้นไปถือว่าเริ่มมีภาวะความเครียดหรือความผิดปกติ และตัดคำถามข้อมูลทั่วไปออกเพราะระบบมีข้อมูลนักศึกษาอยู่แล้ว",
   status: "DRAFT",
   isActive: false,
   startsAt: "",
@@ -514,10 +560,30 @@ export default function AdminSurveysPage() {
     return total / scoredResponses.length;
   }, [scoredResponses]);
 
+  const ghq28DistressCounts = useMemo(() => {
+    const counts: Record<Ghq28DistressLevel, number> = {
+      NORMAL: 0,
+      MILD: 0,
+      MODERATE: 0,
+      SEVERE: 0,
+    };
+
+    for (const response of responses) {
+      const level = getResponseDistressLevel(response);
+      if (level) {
+        counts[level] += 1;
+      }
+    }
+
+    return counts;
+  }, [responses]);
+
   const highRiskResponseCount = useMemo(
     () => responses.filter((response) => response.riskLevel === "HIGH").length,
     [responses]
   );
+
+  const isCurrentSurveyGhq28 = isGhq28SurveyTitle(form.title);
 
   const activeSurveys = useMemo(
     () => surveys.filter((survey) => survey.status !== "ARCHIVED"),
@@ -995,21 +1061,39 @@ export default function AdminSurveysPage() {
       return;
     }
 
-    const rows = responses.map((response) => [
-      response.submittedAt,
-      response.student.studentId || "",
-      response.student.name,
-      response.student.studyYear || "",
-      response.student.section || "",
-      response.instrument || "",
-      response.totalScore === null ? "" : response.totalScore,
-      response.maxScore > 0 ? response.maxScore : "",
-      response.scorePercent === null ? "" : response.scorePercent,
-      surveyRiskMeta[response.riskLevel].label,
-    ]);
+    const rows = responses.map((response) => {
+      const distressLevel = getResponseDistressLevel(response);
+      const distressLabel =
+        response.distressLabel ??
+        (distressLevel ? ghq28DistressMeta[distressLevel].label : "");
+
+      return [
+        response.submittedAt,
+        response.student.studentId || "",
+        response.student.name,
+        response.student.studyYear || "",
+        response.student.section || "",
+        response.instrument || "",
+        response.totalScore === null ? "" : response.totalScore,
+        response.maxScore > 0 ? response.maxScore : "",
+        response.scorePercent === null ? "" : response.scorePercent,
+        isCurrentSurveyGhq28 ? distressLabel : surveyRiskMeta[response.riskLevel].label,
+      ];
+    });
 
     const csv = [
-      ["submittedAt", "studentId", "name", "studyYear", "section", "instrument", "totalScore", "maxScore", "scorePercent", "riskLevel"],
+      [
+        "submittedAt",
+        "studentId",
+        "name",
+        "studyYear",
+        "section",
+        "instrument",
+        "totalScore",
+        "maxScore",
+        "scorePercent",
+        isCurrentSurveyGhq28 ? "distressLevel" : "riskLevel",
+      ],
       ...rows,
     ]
       .map((row) => row.map(escapeCsvCell).join(","))
@@ -2157,8 +2241,12 @@ export default function AdminSurveysPage() {
                     </p>
                   </div>
                   <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-                    <p className="text-xs font-bold text-red-700">คัดกรองสูง</p>
-                    <p className="mt-2 text-2xl font-black text-red-800">{highRiskResponseCount.toLocaleString()}</p>
+                    <p className="text-xs font-bold text-red-700">
+                      {isCurrentSurveyGhq28 ? "ระดับรุนแรง (Severe)" : "คัดกรองสูง"}
+                    </p>
+                    <p className="mt-2 text-2xl font-black text-red-800">
+                      {(isCurrentSurveyGhq28 ? ghq28DistressCounts.SEVERE : highRiskResponseCount).toLocaleString()}
+                    </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-500">ส่งล่าสุด</p>
@@ -2168,8 +2256,24 @@ export default function AdminSurveysPage() {
                   </div>
                 </div>
 
+                {isCurrentSurveyGhq28 ? (
+                  <div className="grid grid-cols-2 gap-3 border-b border-slate-100 p-5 sm:grid-cols-4">
+                    {(Object.keys(ghq28DistressMeta) as Ghq28DistressLevel[]).map((level) => {
+                      const meta = ghq28DistressMeta[level];
+                      return (
+                        <div key={level} className={`rounded-xl border p-3 ${meta.className}`}>
+                          <p className="text-xs font-bold leading-5">{meta.label}</p>
+                          <p className="mt-2 text-xl font-black">{ghq28DistressCounts[level].toLocaleString()}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
                 <div className="max-h-[32rem] space-y-3 overflow-y-auto p-3 md:hidden">
                   {responses.map((response) => {
+                    const distressLevel = getResponseDistressLevel(response);
+                    const distressMeta = distressLevel ? ghq28DistressMeta[distressLevel] : null;
                     const riskMeta = surveyRiskMeta[response.riskLevel];
 
                     return (
@@ -2179,9 +2283,17 @@ export default function AdminSurveysPage() {
                             <h3 className="truncate text-sm font-black text-slate-950">{response.student.name}</h3>
                             <p className="mt-1 text-xs text-slate-500">{response.student.studentId || "-"}</p>
                           </div>
-                          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${riskMeta.className}`}>
-                            {riskMeta.label}
-                          </span>
+                          <div className="flex shrink-0 flex-col items-end gap-1.5">
+                            {isCurrentSurveyGhq28 && distressMeta ? (
+                              <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${distressMeta.className}`}>
+                                {response.distressLabel ?? distressMeta.label}
+                              </span>
+                            ) : (
+                              <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${riskMeta.className}`}>
+                                {riskMeta.label}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                           <div className="rounded-xl bg-slate-50 p-3">
@@ -2222,11 +2334,13 @@ export default function AdminSurveysPage() {
                         <th className="px-4 py-3">แบบประเมิน</th>
                         <th className="px-4 py-3">คะแนน</th>
                         <th className="px-4 py-3">เปอร์เซ็นต์</th>
-                        <th className="px-4 py-3">สถานะ</th>
+                        <th className="px-4 py-3">{isCurrentSurveyGhq28 ? "ความรุนแรง" : "สถานะ"}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {responses.map((response) => {
+                        const distressLevel = getResponseDistressLevel(response);
+                        const distressMeta = distressLevel ? ghq28DistressMeta[distressLevel] : null;
                         const riskMeta = surveyRiskMeta[response.riskLevel];
 
                         return (
@@ -2243,9 +2357,15 @@ export default function AdminSurveysPage() {
                             <td className="px-4 py-4 font-bold text-slate-900">{formatSurveyScore(response)}</td>
                             <td className="px-4 py-4 text-slate-600">{formatSurveyPercent(response)}</td>
                             <td className="px-4 py-4">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${riskMeta.className}`}>
-                                {riskMeta.label}
-                              </span>
+                              {isCurrentSurveyGhq28 && distressMeta ? (
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${distressMeta.className}`}>
+                                  {response.distressLabel ?? distressMeta.label}
+                                </span>
+                              ) : (
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${riskMeta.className}`}>
+                                  {riskMeta.label}
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );

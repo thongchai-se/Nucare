@@ -3,8 +3,12 @@ import { prisma } from "./prisma";
 import {
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
+  getGhq28DistressLevel,
+  getGhq28RiskLevel,
   getSurveyInstrumentLabel,
   getSurveyRiskLevel,
+  Ghq28DistressLevel,
+  isGhq28SurveyTitle,
 } from "./survey-scoring";
 
 export type LatestActiveSurveyResult = {
@@ -13,6 +17,8 @@ export type LatestActiveSurveyResult = {
   maxScore: number;
   riskLevel: RiskLevel;
   totalScore: number | null;
+  distressLevel: Ghq28DistressLevel | null;
+  distressLabel: string | null;
 };
 
 export const getLatestActiveSurveyResultsForStudents = async (
@@ -56,7 +62,7 @@ export const getLatestActiveSurveyResultsForStudents = async (
     return new Map();
   }
 
-  const maxScore = calculateSurveyMaxScore(survey.questions);
+  const maxScore = calculateSurveyMaxScore(survey.questions, survey.title);
   const instrument = getSurveyInstrumentLabel(survey.title);
   const results = new Map<string, LatestActiveSurveyResult>();
 
@@ -66,16 +72,25 @@ export const getLatestActiveSurveyResultsForStudents = async (
     }
 
     const responseMaxScore = response.maxScore > 0 ? response.maxScore : maxScore;
-    const totalScore = response.totalScore ?? calculateSurveyResponseScore(survey.questions, response.answers);
+    const totalScore =
+      response.totalScore ??
+      calculateSurveyResponseScore(survey.questions, response.answers, survey.title);
+    const distress = isGhq28SurveyTitle(survey.title) ? getGhq28DistressLevel(totalScore) : null;
+    const computedRiskLevel = isGhq28SurveyTitle(survey.title)
+      ? getGhq28RiskLevel(totalScore)
+      : getSurveyRiskLevel(survey.title, totalScore, responseMaxScore);
+
     results.set(response.studentId, {
       assessedAt: response.submittedAt,
       instrument: response.instrument ?? instrument,
       maxScore: responseMaxScore,
       riskLevel:
         response.totalScore === null || response.maxScore <= 0
-          ? getSurveyRiskLevel(survey.title, totalScore, responseMaxScore)
+          ? computedRiskLevel
           : response.riskLevel,
       totalScore,
+      distressLevel: distress?.level ?? null,
+      distressLabel: distress?.labelTh ?? null,
     });
   }
 

@@ -839,6 +839,7 @@ function StudentDevelopmentDashboardContent() {
                 <option value="ปี 1">ชั้นปีที่ 1</option>
                 <option value="ปี 2">ชั้นปีที่ 2</option>
                 <option value="ปี 3">ชั้นปีที่ 3</option>
+                <option value="ปี 4">ชั้นปีที่ 4</option>
               </select>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700">

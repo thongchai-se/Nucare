@@ -13,11 +13,21 @@ export type SurveyAnswerForScore = {
   value: unknown;
 };
 
+export type Ghq28DistressLevel = "NORMAL" | "MILD" | "MODERATE" | "SEVERE";
+
+export type Ghq28DistressResult = {
+  level: Ghq28DistressLevel;
+  labelTh: string;
+  labelEn: string;
+};
+
 type ScoredSurveyQuestionOption = {
   label: string;
   score: number | null;
   value: string;
 };
+
+export const GHQ28_MAX_SCORE = 84;
 
 const normalizeNullableNumber = (value: unknown): number | null => {
   if (value === undefined || value === null || value === "") {
@@ -60,7 +70,74 @@ const getOptionNumericScore = (option: ScoredSurveyQuestionOption | undefined): 
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 };
 
-export const getSurveyQuestionMaxScore = (question: SurveyQuestionForScore): number => {
+export const isGhq28SurveyTitle = (title: string | null | undefined): boolean =>
+  /GHQ\s*-?\s*28/i.test(title || "") || (title || "").includes("แบบทดสอบสุขภาพทั่วไป");
+
+export const getGhq28OptionScore = (
+  options: ScoredSurveyQuestionOption[],
+  selectedValue: string
+): number => {
+  const index = options.findIndex((option) => option.value === selectedValue);
+  return index >= 0 ? index : 0;
+};
+
+export const getGhq28DistressLevel = (score: number | null): Ghq28DistressResult | null => {
+  if (score === null) {
+    return null;
+  }
+
+  if (score <= 14) {
+    return {
+      level: "NORMAL",
+      labelTh: "ปกติ (Normal)",
+      labelEn: "Normal",
+    };
+  }
+
+  if (score <= 28) {
+    return {
+      level: "MILD",
+      labelTh: "ปัญหาสุขภาพจิตระดับน้อย (Mild Distress)",
+      labelEn: "Mild Distress",
+    };
+  }
+
+  if (score <= 42) {
+    return {
+      level: "MODERATE",
+      labelTh: "ปัญหาสุขภาพจิตระดับปานกลาง (Moderate Distress)",
+      labelEn: "Moderate Distress",
+    };
+  }
+
+  return {
+    level: "SEVERE",
+    labelTh: "ปัญหาสุขภาพจิตระดับรุนแรง (Severe Distress)",
+    labelEn: "Severe Distress",
+  };
+};
+
+export const getGhq28RiskLevel = (score: number | null): RiskLevel => {
+  const distress = getGhq28DistressLevel(score);
+  if (!distress) {
+    return RiskLevel.NORMAL;
+  }
+
+  switch (distress.level) {
+    case "SEVERE":
+      return RiskLevel.HIGH;
+    case "MILD":
+    case "MODERATE":
+      return RiskLevel.MEDIUM;
+    default:
+      return RiskLevel.NORMAL;
+  }
+};
+
+export const getSurveyQuestionMaxScore = (
+  question: SurveyQuestionForScore,
+  surveyTitle?: string | null
+): number => {
   if (question.type === SurveyQuestionType.SCALE || question.type === SurveyQuestionType.NUMBER) {
     return typeof question.maxValue === "number" && question.maxValue > 0 ? question.maxValue : 0;
   }
@@ -68,6 +145,10 @@ export const getSurveyQuestionMaxScore = (question: SurveyQuestionForScore): num
   const options = getChoiceOptions(question);
 
   if (question.type === SurveyQuestionType.SINGLE_CHOICE) {
+    if (isGhq28SurveyTitle(surveyTitle) && options.length >= 2) {
+      return options.length - 1;
+    }
+
     return Math.max(0, ...options.map((option) => getOptionNumericScore(option)));
   }
 
@@ -81,8 +162,11 @@ export const getSurveyQuestionMaxScore = (question: SurveyQuestionForScore): num
   return 0;
 };
 
-export const calculateSurveyMaxScore = (questions: SurveyQuestionForScore[]): number =>
-  questions.reduce((total, question) => total + getSurveyQuestionMaxScore(question), 0);
+export const calculateSurveyMaxScore = (
+  questions: SurveyQuestionForScore[],
+  surveyTitle?: string | null
+): number =>
+  questions.reduce((total, question) => total + getSurveyQuestionMaxScore(question, surveyTitle), 0);
 
 export const calculateSurveyScorePercent = (score: number | null, maxScore: number): number | null => {
   if (score === null || maxScore <= 0) {
@@ -94,14 +178,16 @@ export const calculateSurveyScorePercent = (score: number | null, maxScore: numb
 
 export const calculateSurveyResponseScore = (
   questions: SurveyQuestionForScore[],
-  answers: SurveyAnswerForScore[]
+  answers: SurveyAnswerForScore[],
+  surveyTitle?: string | null
 ): number | null => {
+  const useGhq28Scoring = isGhq28SurveyTitle(surveyTitle);
   const questionById = new Map(questions.map((question) => [question.id, question]));
   let hasScoredAnswer = false;
 
   const total = answers.reduce((score, answer) => {
     const question = questionById.get(answer.questionId);
-    if (!question || getSurveyQuestionMaxScore(question) <= 0) {
+    if (!question || getSurveyQuestionMaxScore(question, surveyTitle) <= 0) {
       return score;
     }
 
@@ -118,14 +204,23 @@ export const calculateSurveyResponseScore = (
     const options = getChoiceOptions(question);
 
     if (question.type === SurveyQuestionType.SINGLE_CHOICE && typeof answer.value === "string") {
-      const selectedOption = options.find((option) => option.value === answer.value);
       hasScoredAnswer = true;
+
+      if (useGhq28Scoring) {
+        return score + getGhq28OptionScore(options, answer.value);
+      }
+
+      const selectedOption = options.find((option) => option.value === answer.value);
       return score + getOptionNumericScore(selectedOption);
     }
 
     if (question.type === SurveyQuestionType.MULTIPLE_CHOICE && Array.isArray(answer.value)) {
       hasScoredAnswer = true;
       const choiceScore = answer.value.reduce<number>((totalScore, value) => {
+        if (useGhq28Scoring) {
+          return totalScore + getGhq28OptionScore(options, String(value));
+        }
+
         const selectedOption = options.find((option) => option.value === String(value));
         return totalScore + getOptionNumericScore(selectedOption);
       }, 0);
@@ -138,9 +233,6 @@ export const calculateSurveyResponseScore = (
   return hasScoredAnswer ? total : null;
 };
 
-export const isGhq28SurveyTitle = (title: string | null | undefined): boolean =>
-  /GHQ\s*-?\s*28/i.test(title || "") || (title || "").includes("แบบทดสอบสุขภาพทั่วไป");
-
 export const getSurveyRiskLevel = (
   surveyTitle: string,
   score: number | null,
@@ -151,7 +243,7 @@ export const getSurveyRiskLevel = (
   }
 
   if (isGhq28SurveyTitle(surveyTitle)) {
-    return score >= 6 ? RiskLevel.HIGH : RiskLevel.NORMAL;
+    return getGhq28RiskLevel(score);
   }
 
   const ratio = score / maxScore;
@@ -168,3 +260,33 @@ export const getSurveyRiskLevel = (
 
 export const getSurveyInstrumentLabel = (surveyTitle: string): string =>
   isGhq28SurveyTitle(surveyTitle) ? "GHQ-28" : surveyTitle;
+
+export const enrichSurveyResponseScores = (
+  surveyTitle: string,
+  questions: SurveyQuestionForScore[],
+  answers: SurveyAnswerForScore[]
+): {
+  totalScore: number | null;
+  maxScore: number;
+  scorePercent: number | null;
+  riskLevel: RiskLevel;
+  distressLevel: Ghq28DistressLevel | null;
+  distressLabel: string | null;
+} => {
+  const maxScore = calculateSurveyMaxScore(questions, surveyTitle);
+  const totalScore = calculateSurveyResponseScore(questions, answers, surveyTitle);
+  const scorePercent = calculateSurveyScorePercent(totalScore, maxScore);
+  const distress = isGhq28SurveyTitle(surveyTitle) ? getGhq28DistressLevel(totalScore) : null;
+  const riskLevel = isGhq28SurveyTitle(surveyTitle)
+    ? getGhq28RiskLevel(totalScore)
+    : getSurveyRiskLevel(surveyTitle, totalScore, maxScore);
+
+  return {
+    totalScore,
+    maxScore,
+    scorePercent,
+    riskLevel,
+    distressLevel: distress?.level ?? null,
+    distressLabel: distress?.labelTh ?? null,
+  };
+};

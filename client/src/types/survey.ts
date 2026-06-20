@@ -48,6 +48,7 @@ export type Survey = {
 
 export type SurveyAnswerValue = string | number | string[];
 export type SurveyRiskLevel = "NORMAL" | "MEDIUM" | "HIGH";
+export type Ghq28DistressLevel = "NORMAL" | "MILD" | "MODERATE" | "SEVERE";
 
 export type ActiveStudentSurveyResult = {
   id: string;
@@ -63,6 +64,8 @@ export type SurveyResponseRow = {
   riskLevel: SurveyRiskLevel;
   instrument: string | null;
   scoredAt: string | null;
+  distressLevel?: Ghq28DistressLevel | null;
+  distressLabel?: string | null;
   student: {
     id: string;
     name: string;

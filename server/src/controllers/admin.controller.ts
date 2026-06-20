@@ -13,13 +13,13 @@ import {
   ManagedStaffRole,
   splitPrimaryAndAdditionalStaffRoles,
 } from "../lib/roles";
+import { MAX_STUDY_YEAR, MIN_STUDY_YEAR, normalizeStudyYear } from "../lib/study-year";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
 const ADMIN_LIST_MAX_RESULTS = 2500;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "Student ID must be in the format 663380696-6";
-const STUDY_YEAR_RANGE_MESSAGE = "Study year must be between 1 and 8";
 const SECTION_REQUIRED_MESSAGE = "Section is required";
 const SECTION_LENGTH_MESSAGE = "Section must be 50 characters or fewer";
 
@@ -79,7 +79,7 @@ const importStudentRowSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  studyYear: z.coerce.number().int().min(1).max(8),
+  studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
   section: z.string().trim().min(1).max(50),
 });
 
@@ -112,7 +112,7 @@ const createStudentSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  studyYear: z.coerce.number().int().min(1).max(8),
+  studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
   section: z.string().trim().min(1).max(50),
   status: studentStatusSchema,
 });
@@ -124,7 +124,7 @@ const managedUserSchema = z
     studentId: z.string().trim().optional(),
     employeeId: z.string().trim().optional(),
     advisorId: z.union([z.string().trim(), z.literal(""), z.null(), z.undefined()]).optional(),
-    studyYear: z.coerce.number().int().min(1).max(8).nullable().optional(),
+    studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR).nullable().optional(),
     section: z.union([z.string().trim().max(50), z.literal(""), z.null(), z.undefined()]).optional(),
     name: z.string().trim().min(2).max(120),
     email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
@@ -158,7 +158,7 @@ const updateStudentSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
   email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  studyYear: z.coerce.number().int().min(1).max(8),
+  studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
   section: z.string().trim().min(1).max(50),
   status: studentStatusSchema,
 });
@@ -169,8 +169,8 @@ const assignAdvisorStudentsSchema = z.object({
 });
 
 const bulkUpdateStudentStudyYearSchema = z.object({
-  fromStudyYear: z.coerce.number().int().min(1).max(8),
-  toStudyYear: z.coerce.number().int().min(1).max(8),
+  fromStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
+  toStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
 });
 
 const importStaffRowSchema = z.object({
@@ -315,15 +315,6 @@ const normalizeEmail = (raw?: string | null): string | null => {
 
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed.toLowerCase() : null;
-};
-
-const normalizeStudyYear = (raw: number): number => {
-  const normalized = Number.parseInt(String(raw), 10);
-  if (!Number.isFinite(normalized) || normalized < 1 || normalized > 8) {
-    throw new Error(STUDY_YEAR_RANGE_MESSAGE);
-  }
-
-  return normalized;
 };
 
 const normalizeSection = (raw?: string | null): string => {

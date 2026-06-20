@@ -12,8 +12,11 @@ import {
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
   calculateSurveyScorePercent,
+  enrichSurveyResponseScores,
+  getGhq28DistressLevel,
   getSurveyInstrumentLabel,
   getSurveyRiskLevel,
+  isGhq28SurveyTitle,
 } from "../lib/survey-scoring";
 import { formatStudentIdForResponse } from "../lib/user-format";
 
@@ -874,7 +877,7 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
       return;
     }
 
-    const fallbackMaxScore = calculateSurveyMaxScore(survey.questions);
+    const fallbackMaxScore = calculateSurveyMaxScore(survey.questions, survey.title);
 
     res.status(200).json({
       survey: serializeSurvey({
@@ -887,7 +890,8 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
       responses: survey.responses.map((response) => {
         const maxScore = response.maxScore > 0 ? response.maxScore : fallbackMaxScore;
         const totalScore =
-          response.totalScore ?? calculateSurveyResponseScore(survey.questions, response.answers);
+          response.totalScore ??
+          calculateSurveyResponseScore(survey.questions, response.answers, survey.title);
         const scorePercent =
           response.scorePercent ?? calculateSurveyScorePercent(totalScore, maxScore);
         const instrument = response.instrument ?? getSurveyInstrumentLabel(survey.title);
@@ -895,6 +899,7 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
           response.totalScore === null || response.maxScore <= 0
             ? getSurveyRiskLevel(survey.title, totalScore, maxScore)
             : response.riskLevel;
+        const distress = isGhq28SurveyTitle(survey.title) ? getGhq28DistressLevel(totalScore) : null;
 
         return {
           id: response.id,
@@ -904,6 +909,8 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
           scorePercent,
           riskLevel,
           instrument,
+          distressLevel: distress?.level ?? null,
+          distressLabel: distress?.labelTh ?? null,
           scoredAt: response.scoredAt ?? response.submittedAt,
           student: {
             ...response.student,
@@ -1071,10 +1078,14 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       return;
     }
 
-    const maxScore = calculateSurveyMaxScore(survey.questions);
-    const totalScore = calculateSurveyResponseScore(survey.questions, normalizedAnswers);
-    const scorePercent = calculateSurveyScorePercent(totalScore, maxScore);
-    const riskLevel = getSurveyRiskLevel(survey.title, totalScore, maxScore);
+    const {
+      totalScore,
+      maxScore,
+      scorePercent,
+      riskLevel,
+      distressLevel,
+      distressLabel,
+    } = enrichSurveyResponseScores(survey.title, survey.questions, normalizedAnswers);
     const instrument = getSurveyInstrumentLabel(survey.title);
     const scoredAt = new Date();
 
@@ -1108,6 +1119,12 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       response: {
         id: surveyResponse.id,
         submittedAt: surveyResponse.submittedAt,
+        totalScore,
+        maxScore,
+        scorePercent,
+        riskLevel,
+        distressLevel,
+        distressLabel,
       },
     });
   } catch (error) {

@@ -1,5 +1,6 @@
 import { RiskLevel } from "@prisma/client";
 import { stripKnownNamePrefix } from "./name-prefix";
+import { clampStudyYear } from "./study-year";
 
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 
@@ -28,7 +29,7 @@ export const inferStudyYear = (
     Number.isFinite(explicitStudyYear) &&
     explicitStudyYear >= 1
   ) {
-    return `${Math.min(Math.trunc(explicitStudyYear), 8)}`;
+    return `${clampStudyYear(explicitStudyYear)}`;
   }
 
   return "-";

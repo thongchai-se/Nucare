@@ -9,6 +9,11 @@ import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleToast } from "@/components/role-toast";
+import {
+  MAX_STUDY_YEAR,
+  normalizeStudyYear,
+  STUDY_YEAR_OPTIONS,
+} from "@/lib/study-year";
 
 type UserStatus = "active" | "inactive";
 
@@ -84,7 +89,6 @@ type BulkStudyYearUpdateResponse = {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
-const STUDY_YEAR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 const SECTION_MAX_LENGTH = 50;
 
 const emptyErrors: FormErrors = {
@@ -111,15 +115,6 @@ const formatStudentIdInput = (value: string): string => {
   }
 
   return `${digitsOnly.slice(0, 9)}-${digitsOnly.slice(9)}`;
-};
-
-const normalizeStudyYear = (value: string): number => {
-  const parsed = Number.parseInt(value.trim(), 10);
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 8) {
-    throw new Error("กรุณาเลือกชั้นปี 1-8");
-  }
-
-  return parsed;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -276,7 +271,7 @@ export default function ManageStudentsPage() {
   const bulkPromotionHasChanges = bulkFromStudyYear !== bulkToStudyYear;
 
   useEffect(() => {
-    const nextStudyYear = Math.min(8, Number.parseInt(bulkFromStudyYear, 10) + 1);
+    const nextStudyYear = Math.min(MAX_STUDY_YEAR, Number.parseInt(bulkFromStudyYear, 10) + 1);
     setBulkToStudyYear(String(nextStudyYear));
   }, [bulkFromStudyYear]);
 
@@ -301,7 +296,7 @@ export default function ManageStudentsPage() {
       return false;
     }
 
-    if (!Number.isFinite(normalizedStudyYear) || normalizedStudyYear < 1 || normalizedStudyYear > 8) {
+    if (!Number.isFinite(normalizedStudyYear) || normalizedStudyYear < 1 || normalizedStudyYear > MAX_STUDY_YEAR) {
       return false;
     }
 
@@ -551,7 +546,7 @@ export default function ManageStudentsPage() {
   const openBulkPromotionModal = () => {
     const firstAvailableStudyYear = studentCountsByStudyYear.find((item) => item.count > 0)?.studyYear ?? 1;
     setBulkFromStudyYear(String(firstAvailableStudyYear));
-    setBulkToStudyYear(String(Math.min(8, firstAvailableStudyYear + 1)));
+    setBulkToStudyYear(String(Math.min(MAX_STUDY_YEAR, firstAvailableStudyYear + 1)));
     setBulkModalOpen(true);
   };
 

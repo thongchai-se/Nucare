@@ -14,6 +14,7 @@ import api from "@/lib/axios";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { normalizeImportedStudentName } from "@/lib/name-prefix";
+import { normalizeStudyYear } from "@/lib/study-year";
 
 type CsvStudentRow = {
   studentId: string;
@@ -65,7 +66,6 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const IMPORT_CHUNK_SIZE = 100;
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
 const STUDENT_ID_FORMAT_MESSAGE = "รหัสนักศึกษาต้องอยู่ในรูปแบบ 663380696-6";
-const STUDY_YEAR_RANGE_MESSAGE = "ชั้นปีต้องเป็นตัวเลข 1-8";
 const SECTION_REQUIRED_MESSAGE = "กรุณาระบุเซคหรือกลุ่ม";
 
 const normalizeHeader = (value: string): string =>
@@ -135,15 +135,6 @@ const formatStudentIdDisplay = (studentId: string | null | undefined): string =>
 };
 
 const isValidEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-
-const normalizeStudyYear = (raw: string): number => {
-  const normalized = Number.parseInt(raw.trim(), 10);
-  if (!Number.isFinite(normalized) || normalized < 1 || normalized > 8) {
-    throw new Error(STUDY_YEAR_RANGE_MESSAGE);
-  }
-
-  return normalized;
-};
 
 const normalizeComparableSection = (value: string | null | undefined): string =>
   (value || "").trim().toLowerCase();
