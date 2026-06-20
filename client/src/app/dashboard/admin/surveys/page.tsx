@@ -483,7 +483,7 @@ export default function AdminSurveysPage() {
   const [downloadedSurveyIds, setDownloadedSurveyIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"active" | "archived">("active");
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const [activeQuestionClientId, setActiveQuestionClientId] = useState<string | null>(
     () => form.questions[0]?.clientId || null
   );
