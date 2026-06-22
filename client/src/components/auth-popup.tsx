@@ -249,7 +249,7 @@ export default function AuthPopup({
             <h2 className="mb-4 text-3xl font-bold leading-tight text-white">
               ระบบดูแลและติดตาม
               <br />
-              สุขภาพจิตนักศึกษา
+              สุขภาพนักศึกษา
             </h2>
             <p className="text-sm leading-relaxed text-blue-100">
               {facultyFullName}
@@ -259,7 +259,7 @@ export default function AuthPopup({
           </div>
 
           <div className="relative z-10 rounded-xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
-            <p className="text-sm font-medium text-white">สุขภาพจิตที่ดี เริ่มต้นที่ความใส่ใจและการรับฟัง</p>
+            <p className="text-sm font-medium text-white">สุขภาพนักศึกษาที่ดี เริ่มต้นที่ความใส่ใจและการรับฟัง</p>
           </div>
         </div>
 
