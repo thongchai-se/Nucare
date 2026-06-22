@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -17,7 +16,6 @@ import {
   HeartPulse,
   LayoutDashboard,
   Lock,
-  LogOut,
   Menu,
   MoreVertical,
   Search,
@@ -27,13 +25,22 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from '@/components/app-brand';
-import { MenuSectionHeading } from '@/components/menu-section-heading';
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { RoleToast } from "@/components/role-toast";
-import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
+import { StaffSidebarMobileProfile } from "@/components/staff-sidebar-mobile-profile";
+import { StaffSidebarNavButton, StaffSidebarNavLink } from "@/components/staff-sidebar-nav-item";
+import { StaffSidebarSection } from "@/components/staff-sidebar-section";
 import api from "@/lib/axios";
 import { stripKnownNamePrefix } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
+import {
+  STAFF_SIDEBAR_ASIDE,
+  STAFF_SIDEBAR_HEADER,
+  STAFF_SIDEBAR_MOBILE_HEADER,
+  STAFF_SIDEBAR_MOBILE_NAV_SCROLL,
+  STAFF_SIDEBAR_NAV_SCROLL,
+} from "@/lib/ui-classes";
 
 type InstructorStudent = {
   id: string;
@@ -861,6 +868,26 @@ function InstructorDashboardContent() {
     </div>
   );
 
+  const NavSections = () => (
+    <>
+      <StaffSidebarSection title="เมนูหลัก">
+        <StaffSidebarNavButton active={activeView === "dashboard"} icon={<LayoutDashboard size={20} />} label="หน้าหลัก" onClick={() => navigateTo("dashboard")} />
+        <StaffSidebarNavButton active={activeView === "courses" || activeView === "course-detail"} icon={<BookOpen size={20} />} label="กลุ่มที่รับผิดชอบ" onClick={() => navigateTo("courses")} />
+        <StaffSidebarNavButton active={activeView === "history"} icon={<FileWarning size={20} />} label="ประวัติการส่งเรื่อง" onClick={() => navigateTo("history")} />
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="ระบบและความปลอดภัย">
+        <StaffSidebarNavLink
+          href="/dashboard/instructor?view=change-password"
+          icon={<Lock size={20} />}
+          isActive={activeView === "change-password"}
+          label="เปลี่ยนรหัสผ่าน"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      </StaffSidebarSection>
+    </>
+  );
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC] font-sans text-slate-800">
       <RoleToast
@@ -869,131 +896,35 @@ function InstructorDashboardContent() {
         title="ส่งข้อมูลสำเร็จ"
         tone="success"
       />
-      <aside className="sticky top-0 hidden h-screen w-64 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex h-16 items-center border-b border-slate-100 px-6">
+      <aside className={STAFF_SIDEBAR_ASIDE}>
+        <div className={STAFF_SIDEBAR_HEADER}>
           <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-          <div className="space-y-1">
-            <MenuSectionHeading title="เมนูหลัก" />
-            <button
-              type="button"
-              onClick={() => navigateTo("dashboard")}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 font-medium transition-colors ${
-                activeView === "dashboard"
-                  ? "border-blue-100 bg-blue-50 text-blue-700"
-                  : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span className={activeView === "dashboard" ? "text-blue-600" : "text-slate-400"}>
-                <LayoutDashboard size={20} />
-              </span>
-              <span className="text-sm">หน้าหลัก</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateTo("courses")}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 font-medium transition-colors ${
-                activeView === "courses" || activeView === "course-detail"
-                  ? "border-blue-100 bg-blue-50 text-blue-700"
-                  : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span className={activeView === "courses" || activeView === "course-detail" ? "text-blue-600" : "text-slate-400"}>
-                <BookOpen size={20} />
-              </span>
-              <span className="text-sm">กลุ่มที่รับผิดชอบ</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateTo("history")}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 font-medium transition-colors ${
-                activeView === "history"
-                  ? "border-blue-100 bg-blue-50 text-blue-700"
-                  : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span className={activeView === "history" ? "text-blue-600" : "text-slate-400"}>
-                <FileWarning size={20} />
-              </span>
-              <span className="text-sm">ประวัติการส่งเรื่อง</span>
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            <MenuSectionHeading title="ระบบและความปลอดภัย" />
-            <Link
-              href="/dashboard/instructor?view=change-password"
-              className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-            >
-              <Lock size={20} className="text-slate-400" />
-              <span className="truncate">เปลี่ยนรหัสผ่าน</span>
-            </Link>
-          </div>
+        <div className={STAFF_SIDEBAR_NAV_SCROLL}>
+          <NavSections />
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50/50 p-4">
-          <StaffRoleSwitcher className="mb-3" />
-          <button
-            type="button"
-            onClick={() => {
-              void handleLogout();
-            }}
-            className="flex w-full items-center gap-2 rounded-lg p-2 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut size={18} /> ออกจากระบบ
-          </button>
-        </div>
+        <StaffSidebarFooter onLogout={handleLogout} />
       </aside>
 
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
           <div className="flex h-full w-72 flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4">
+            <div className={STAFF_SIDEBAR_MOBILE_HEADER}>
               <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
               <button type="button" onClick={() => setIsMobileMenuOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
                 <X size={20} className="text-slate-400" />
               </button>
             </div>
-            <div className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
-              <div className="space-y-1">
-                <MenuSectionHeading title="เมนูหลัก" />
-                <button type="button" onClick={() => navigateTo("dashboard")} className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-colors ${activeView === "dashboard" ? "border-blue-100 bg-blue-50 text-blue-700" : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"}`}>
-                  <span className="flex min-w-0 items-center gap-3"><LayoutDashboard size={20} className={activeView === "dashboard" ? "text-blue-600" : "text-slate-400"} /><span className="truncate">หน้าหลัก</span></span>
-                </button>
-                <button type="button" onClick={() => navigateTo("courses")} className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-colors ${activeView === "courses" || activeView === "course-detail" ? "border-blue-100 bg-blue-50 text-blue-700" : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"}`}>
-                  <span className="flex min-w-0 items-center gap-3"><BookOpen size={20} className={activeView === "courses" || activeView === "course-detail" ? "text-blue-600" : "text-slate-400"} /><span className="truncate">กลุ่มที่รับผิดชอบ</span></span>
-                </button>
-                <button type="button" onClick={() => navigateTo("history")} className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-colors ${activeView === "history" ? "border-blue-100 bg-blue-50 text-blue-700" : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"}`}>
-                  <span className="flex min-w-0 items-center gap-3"><FileWarning size={20} className={activeView === "history" ? "text-blue-600" : "text-slate-400"} /><span className="truncate">ประวัติการส่งเรื่อง</span></span>
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                <MenuSectionHeading title="ระบบและความปลอดภัย" />
-                <Link
-                  href="/dashboard/instructor?view=change-password"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-                >
-                  <Lock size={20} className="text-slate-400" />
-                  <span className="truncate">เปลี่ยนรหัสผ่าน</span>
-                </Link>
-              </div>
+            <div className={STAFF_SIDEBAR_MOBILE_NAV_SCROLL}>
+              <StaffSidebarMobileProfile roleLabel={instructorProfile.role} userName={instructorProfile.name} />
+              <NavSections />
             </div>
-            <div className="border-t border-slate-100 p-4">
-              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
-              <button
-                type="button"
-                onClick={() => {
-                  void handleLogout();
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-              >
-                <LogOut size={18} /> ออกจากระบบ
-              </button>
-            </div>
+            <StaffSidebarFooter
+              onLogout={handleLogout}
+              onRoleSelect={() => setIsMobileMenuOpen(false)}
+            />
           </div>
         </div>
       )}

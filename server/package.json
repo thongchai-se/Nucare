@@ -23,7 +23,7 @@
     "test:db:up": "docker compose -f ../docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f ../docker-compose.test.yml down -v",
     "test:db:migrate": "tsx scripts/run-test-migrate.ts",
-    "test:unit": "tsx --test src/lib/survey-scoring.test.ts src/lib/executive-analytics.test.ts",
+    "test:unit": "tsx --test src/lib/survey-scoring.test.ts src/lib/executive-analytics.test.ts src/lib/executive-screening-comparison.test.ts",
     "test:sqa": "tsx scripts/ghq28-sqa-test.ts",
     "test:sqa:all": "npm run test:db:up && npm run test:db:migrate && npm run test:unit && npm run test:sqa"
   },

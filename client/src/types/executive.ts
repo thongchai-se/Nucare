@@ -68,3 +68,45 @@ export type ExecutiveDashboardResponse = {
 };
 
 export type ExecutiveYearFilter = "ALL" | "1" | "2" | "3" | "4";
+
+export type ScreeningRoundInfo = {
+  id: string;
+  title: string;
+  startsAt: string | null;
+  responseCount: number;
+};
+
+export type ScreeningRoundScore = {
+  score: number;
+  distressLabel: string;
+  submittedAt: string;
+};
+
+export type ScreeningComparisonRow = {
+  studentCode: string;
+  studyYear: number | null;
+  section: string | null;
+  round1: ScreeningRoundScore;
+  round2: ScreeningRoundScore;
+  deltaScore: number;
+  distressChange: string | null;
+};
+
+export type ScreeningComparisonSummary = {
+  comparedCount: number;
+  improvedCount: number;
+  worsenedCount: number;
+  unchangedCount: number;
+  avgRound1Score: number | null;
+  avgRound2Score: number | null;
+  avgDelta: number | null;
+};
+
+export type ScreeningComparisonResponse = {
+  generatedAt: string;
+  availableRounds: ScreeningRoundInfo[];
+  round1: ScreeningRoundInfo | null;
+  round2: ScreeningRoundInfo | null;
+  summary: ScreeningComparisonSummary;
+  rows: ScreeningComparisonRow[];
+};

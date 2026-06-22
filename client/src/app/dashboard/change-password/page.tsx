@@ -341,8 +341,7 @@ function StudentProfileStyledChangePasswordView({
                 }}
                 className="col-span-2 flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
               >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
+                <LogOut size={18} /> ออกจากระบบ
               </button>
             </div>
           </div>
@@ -530,8 +529,7 @@ function RoleAlignedChangePasswordView({
             }}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
           >
-            <LogOut className="h-4 w-4" />
-            ออกจากระบบ
+            <LogOut size={18} /> ออกจากระบบ
           </button>
         </div>
       </aside>
@@ -572,8 +570,7 @@ function RoleAlignedChangePasswordView({
                 }}
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
               >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
+                <LogOut size={18} /> ออกจากระบบ
               </button>
             </div>
           </div>
@@ -905,8 +902,7 @@ function ExpertChangePasswordView({
             }}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
           >
-            <LogOut className="h-4 w-4" />
-            ออกจากระบบ
+            <LogOut size={18} /> ออกจากระบบ
           </button>
         </div>
       </aside>
@@ -949,8 +945,7 @@ function ExpertChangePasswordView({
                 }}
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
               >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
+                <LogOut size={18} /> ออกจากระบบ
               </button>
             </div>
           </div>

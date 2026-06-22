@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -36,6 +36,7 @@ import { DeleteSurveyDialog } from "@/components/delete-survey-dialog";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
+import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import type {
   Ghq28DistressLevel,
   Survey,
@@ -465,11 +466,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   }
 
   return error instanceof Error ? error.message : fallback;
-};
-
-const escapeCsvCell = (value: unknown): string => {
-  const text = value === null || value === undefined ? "" : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
 };
 
 const buildSurveyPayload = (form: SurveyForm) => ({
@@ -1061,7 +1057,19 @@ export default function AdminSurveysPage() {
       return;
     }
 
-    const rows = responses.map((response) => {
+    const submittedTimestamps = responses
+      .map((response) => new Date(response.submittedAt).getTime())
+      .filter((value) => Number.isFinite(value));
+    const earliestSubmittedAt =
+      submittedTimestamps.length > 0
+        ? formatThaiDateTime(new Date(Math.min(...submittedTimestamps)).toISOString())
+        : "-";
+    const latestSubmittedAt =
+      submittedTimestamps.length > 0
+        ? formatThaiDateTime(new Date(Math.max(...submittedTimestamps)).toISOString())
+        : "-";
+
+    const dataRows = responses.map((response) => {
       const distressLevel = getResponseDistressLevel(response);
       const distressLabel =
         response.distressLabel ??
@@ -1081,7 +1089,20 @@ export default function AdminSurveysPage() {
       ];
     });
 
-    const csv = [
+    const rows: unknown[][] = [];
+    rows.push(["Metadata"]);
+    rows.push(["รายการ", "ค่า"]);
+    pushKeyValueRows(rows, [
+      ["วันที่ export", new Date().toISOString().slice(0, 10)],
+      ["ชื่อแบบสอบถาม", selectedSurvey.title],
+      ["จำนวน response", responses.length],
+      ["ส่งแบบเร็วที่สุด", earliestSubmittedAt],
+      ["ส่งแบบล่าสุด", latestSubmittedAt],
+    ]);
+
+    pushCsvSection(
+      rows,
+      "Responses",
       [
         "submittedAt",
         "studentId",
@@ -1094,18 +1115,10 @@ export default function AdminSurveysPage() {
         "scorePercent",
         isCurrentSurveyGhq28 ? "distressLevel" : "riskLevel",
       ],
-      ...rows,
-    ]
-      .map((row) => row.map(escapeCsvCell).join(","))
-      .join("\r\n");
+      dataRows
+    );
 
-    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${selectedSurvey.title.replace(/[^\wก-๙-]+/g, "_")}_responses.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`${selectedSurvey.title.replace(/[^\wก-๙-]+/g, "_")}_responses.csv`, rows);
 
     if (form.id) {
       setDownloadedSurveyIds((prev) => new Set([...prev, form.id!]));
@@ -2213,6 +2226,9 @@ export default function AdminSurveysPage() {
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
                       เก็บผลสรุปที่จำเป็น: ใครทำแล้ว คะแนนรวม ระดับคัดกรอง และเวลาส่ง โดยไม่แสดงคำตอบรายข้อ
+                    </p>
+                    <p className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                      ไฟล์ CSV มีข้อมูลส่วนบุคคล (ชื่อ-นามสกุล) — สำหรับผู้ดูแลระบบเท่านั้น ห้ามแชร์นอกองค์กรหรือใช้เสนอที่ประชุมคณะ
                     </p>
                   </div>
                   <button

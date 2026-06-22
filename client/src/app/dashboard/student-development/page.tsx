@@ -15,7 +15,6 @@ import {
   Gift,
   LayoutDashboard,
   Lock,
-  LogOut,
   Megaphone,
   Menu,
   PieChart,
@@ -28,11 +27,20 @@ import {
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { ChangePasswordForm } from "@/components/change-password-form";
-import { MenuSectionHeading } from "@/components/menu-section-heading";
 import { RoleToast } from "@/components/role-toast";
-import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
+import { StaffSidebarMobileProfile } from "@/components/staff-sidebar-mobile-profile";
+import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
+import { StaffSidebarSection } from "@/components/staff-sidebar-section";
 import api from "@/lib/axios";
 import { stripKnownNamePrefix } from "@/lib/name-prefix";
+import {
+  STAFF_SIDEBAR_ASIDE,
+  STAFF_SIDEBAR_HEADER,
+  STAFF_SIDEBAR_MOBILE_HEADER,
+  STAFF_SIDEBAR_MOBILE_NAV_SCROLL,
+  STAFF_SIDEBAR_NAV_SCROLL,
+} from "@/lib/ui-classes";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
 
 type ActiveView = "dashboard" | "tracking" | "wellness" | "welfare" | "change-password";
@@ -574,15 +582,35 @@ function StudentDevelopmentDashboardContent() {
     );
   }
 
-  const navButtonClassName = (view: ActiveView) =>
-    `flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm transition-all ${
-      activeView === view
-        ? "border-rose-200 bg-rose-50 text-rose-700 shadow-sm"
-        : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-    }`;
+  const NavSections = () => (
+    <>
+      <StaffSidebarSection title="งานประจำวัน">
+        <StaffSidebarNavButton active={activeView === "dashboard"} icon={<LayoutDashboard size={20} />} label="หน้าหลัก" onClick={() => navigateTo("dashboard")} />
+        <StaffSidebarNavButton active={activeView === "tracking"} icon={<Users size={20} />} label="ติดตามการคัดกรอง" onClick={() => navigateTo("tracking")} />
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="กิจกรรมและสวัสดิการ">
+        <StaffSidebarNavButton active={activeView === "wellness"} icon={<Gift size={20} />} label="กิจกรรม Wellness" onClick={() => navigateTo("wellness")} />
+        <StaffSidebarNavButton active={activeView === "welfare"} icon={<ArrowRightLeft size={20} />} label="ประสานงานสวัสดิการ" onClick={() => navigateTo("welfare")} />
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="บัญชีและระบบ">
+        <StaffSidebarNavButton active={activeView === "change-password"} icon={<Lock size={20} />} label="เปลี่ยนรหัสผ่าน" onClick={() => navigateTo("change-password")} />
+      </StaffSidebarSection>
+    </>
+  );
 
   const DashboardView = () => (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <div className="flex items-center gap-2 font-bold">
+          <ShieldCheck className="h-4 w-4" />
+          รอบประเมินเดือนนี้กำลังดำเนินการ
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-rose-700">
+          ตรวจสอบนักศึกษาที่ค้างประเมินและส่ง reminder ให้ครบก่อนปิดรอบ เพื่อให้ข้อมูลของคณะสมบูรณ์ที่สุด
+        </p>
+      </div>
       <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.9fr]">
           <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(251,113,133,0.18),transparent_38%),linear-gradient(135deg,#fff7f8_0%,#ffffff_45%,#fff4f6_100%)] px-6 py-7 sm:px-8 sm:py-8">
@@ -1083,143 +1111,44 @@ function StudentDevelopmentDashboardContent() {
 
   return (
     <div className="flex min-h-screen bg-[#F4F7FB] font-sans text-slate-800">
-      <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
-        <div className="flex h-16 items-center border-b border-slate-100 px-6">
-          <AppBrand size="compact" subtitle="Student Affairs Portal" />
+      <aside className={STAFF_SIDEBAR_ASIDE}>
+        <div className={STAFF_SIDEBAR_HEADER}>
+          <AppBrand size="compact" subtitle="คณะพยาบาลศาสตร์" />
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-          <div>
-            <MenuSectionHeading title="งานประจำวัน" />
-            <div className="space-y-1.5">
-              <button type="button" onClick={() => navigateTo("dashboard")} className={navButtonClassName("dashboard")}>
-                <LayoutDashboard className={`h-5 w-5 ${activeView === "dashboard" ? "text-rose-600" : "text-slate-400"}`} />
-                <span className="font-semibold">หน้าหลัก</span>
-              </button>
-              <button type="button" onClick={() => navigateTo("tracking")} className={navButtonClassName("tracking")}>
-                <Users className={`h-5 w-5 ${activeView === "tracking" ? "text-rose-600" : "text-slate-400"}`} />
-                <span className="font-semibold">ติดตามการคัดกรอง</span>
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <MenuSectionHeading title="กิจกรรมและสวัสดิการ" />
-            <div className="space-y-1.5">
-              <button type="button" onClick={() => navigateTo("wellness")} className={navButtonClassName("wellness")}>
-                <Gift className={`h-5 w-5 ${activeView === "wellness" ? "text-rose-600" : "text-slate-400"}`} />
-                <span className="font-semibold">กิจกรรม Wellness</span>
-              </button>
-              <button type="button" onClick={() => navigateTo("welfare")} className={navButtonClassName("welfare")}>
-                <ArrowRightLeft className={`h-5 w-5 ${activeView === "welfare" ? "text-rose-600" : "text-slate-400"}`} />
-                <span className="font-semibold">ประสานงานสวัสดิการ</span>
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <MenuSectionHeading title="บัญชีและระบบ" />
-            <div className="space-y-1.5">
-              <button type="button" onClick={() => navigateTo("change-password")} className={navButtonClassName("change-password")}>
-                <Lock className={`h-5 w-5 ${activeView === "change-password" ? "text-rose-600" : "text-slate-400"}`} />
-                <span className="font-semibold">เปลี่ยนรหัสผ่าน</span>
-              </button>
-            </div>
-          </div>
+        <div className={STAFF_SIDEBAR_NAV_SCROLL}>
+          <NavSections />
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50/80 p-4">
-          <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <div className="flex items-center gap-2 font-bold">
-              <ShieldCheck className="h-4 w-4" />
-              รอบประเมินเดือนนี้กำลังดำเนินการ
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-rose-700">ตรวจสอบนักศึกษาที่ค้างประเมินและส่ง reminder ให้ครบก่อนปิดรอบ เพื่อให้ข้อมูลของคณะสมบูรณ์ที่สุด</p>
-          </div>
-          <StaffRoleSwitcher className="mb-3" />
-          <button
-            type="button"
-            onClick={() => {
-              void handleLogout();
-            }}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut className="h-4 w-4" />
-            ออกจากระบบ
-          </button>
-        </div>
+        <StaffSidebarFooter onLogout={handleLogout} />
       </aside>
 
       {isMobileMenuOpen ? (
         <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
           <div className="flex h-full w-72 flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4">
-              <AppBrand size="compact" subtitle="Student Affairs Portal" />
+            <div className={STAFF_SIDEBAR_MOBILE_HEADER}>
+              <AppBrand size="compact" subtitle="คณะพยาบาลศาสตร์" />
               <button type="button" onClick={() => setIsMobileMenuOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-                <X className="h-5 w-5" />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="flex-1 space-y-5 overflow-y-auto p-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-bold text-slate-800">{profile.name}</p>
-                <p className="mt-1 text-xs text-slate-500">{profile.roleLabel}</p>
-                <p className="mt-2 text-xs font-medium text-slate-500">รหัสบุคลากร: {profile.identifier}</p>
-              </div>
-
-              <div>
-                <MenuSectionHeading title="งานประจำวัน" />
-                <div className="space-y-1.5">
-                  <button type="button" onClick={() => navigateTo("dashboard")} className={navButtonClassName("dashboard")}>
-                    <LayoutDashboard className={`h-5 w-5 ${activeView === "dashboard" ? "text-rose-600" : "text-slate-400"}`} />
-                    <span className="font-semibold">หน้าหลัก</span>
-                  </button>
-                  <button type="button" onClick={() => navigateTo("tracking")} className={navButtonClassName("tracking")}>
-                    <Users className={`h-5 w-5 ${activeView === "tracking" ? "text-rose-600" : "text-slate-400"}`} />
-                    <span className="font-semibold">ติดตามการคัดกรอง</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <MenuSectionHeading title="กิจกรรมและสวัสดิการ" />
-                <div className="space-y-1.5">
-                  <button type="button" onClick={() => navigateTo("wellness")} className={navButtonClassName("wellness")}>
-                    <Gift className={`h-5 w-5 ${activeView === "wellness" ? "text-rose-600" : "text-slate-400"}`} />
-                    <span className="font-semibold">กิจกรรม Wellness</span>
-                  </button>
-                  <button type="button" onClick={() => navigateTo("welfare")} className={navButtonClassName("welfare")}>
-                    <ArrowRightLeft className={`h-5 w-5 ${activeView === "welfare" ? "text-rose-600" : "text-slate-400"}`} />
-                    <span className="font-semibold">ประสานงานสวัสดิการ</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <MenuSectionHeading title="บัญชีและระบบ" />
-                <div className="space-y-1.5">
-                  <button type="button" onClick={() => navigateTo("change-password")} className={navButtonClassName("change-password")}>
-                    <Lock className={`h-5 w-5 ${activeView === "change-password" ? "text-rose-600" : "text-slate-400"}`} />
-                    <span className="font-semibold">เปลี่ยนรหัสผ่าน</span>
-                  </button>
-                </div>
-              </div>
+            <div className={STAFF_SIDEBAR_MOBILE_NAV_SCROLL}>
+              <StaffSidebarMobileProfile
+                roleLabel={profile.roleLabel}
+                subtitle={`รหัสบุคลากร: ${profile.identifier}`}
+                userName={profile.name}
+              />
+              <NavSections />
             </div>
 
-            <div className="border-t border-slate-100 p-4">
-              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  void handleLogout();
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-              >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
-              </button>
-            </div>
+            <StaffSidebarFooter
+              onLogout={() => {
+                setIsMobileMenuOpen(false);
+                void handleLogout();
+              }}
+              onRoleSelect={() => setIsMobileMenuOpen(false)}
+            />
           </div>
         </div>
       ) : null}

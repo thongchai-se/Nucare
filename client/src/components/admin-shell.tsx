@@ -1,8 +1,6 @@
 "use client";
 
 import { ReactNode, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BriefcaseBusiness,
@@ -12,7 +10,6 @@ import {
   FileText,
   LayoutDashboard,
   Lock,
-  LogOut,
   Menu,
   Server,
   Settings,
@@ -20,9 +17,18 @@ import {
   X,
 } from "lucide-react";
 import { AppBrand } from "@/components/app-brand";
-import { MenuSectionHeading } from "@/components/menu-section-heading";
-import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
+import { StaffSidebarMobileProfile } from "@/components/staff-sidebar-mobile-profile";
+import { StaffSidebarNavLink } from "@/components/staff-sidebar-nav-item";
+import { StaffSidebarSection } from "@/components/staff-sidebar-section";
 import { getNameInitials } from "@/lib/name-prefix";
+import {
+  STAFF_SIDEBAR_ASIDE,
+  STAFF_SIDEBAR_HEADER,
+  STAFF_SIDEBAR_MOBILE_HEADER,
+  STAFF_SIDEBAR_MOBILE_NAV_SCROLL,
+  STAFF_SIDEBAR_NAV_SCROLL,
+} from "@/lib/ui-classes";
 
 type AdminNavKey = "dashboard" | "students" | "staff" | "import" | "surveys" | "reports" | "audit" | "settings" | "changePassword";
 
@@ -117,11 +123,10 @@ export function AdminShell({
   userName,
   userRoleLabel,
 }: AdminShellProps) {
-  const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   void _headerSearch;
 
-  const isChangePasswordPage = pathname === "/dashboard/admin" && activeNav === "changePassword";
+  const isChangePasswordPage = activeNav === "changePassword";
   const initials = useMemo(() => getInitials(userName), [userName]);
   const activeLabel = useMemo(() => {
     const allItems = [...primaryNavItems, ...secondaryNavItems, ...settingsNavItems];
@@ -137,109 +142,98 @@ export function AdminShell({
     await onLogout();
   };
 
-  const SidebarItem = ({ href, icon, isActive, label }: Omit<NavItem, "key"> & { isActive: boolean }) => (
-    <Link
-      href={href}
-      onClick={closeMobileMenu}
-      className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left font-medium transition-colors ${
-        isActive
-          ? "border-blue-100 bg-blue-50 text-blue-700"
-          : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-      }`}
-      aria-current={isActive ? "page" : undefined}
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className={isActive ? "text-blue-600" : "text-slate-400"}>{icon}</span>
-        <span className="truncate text-sm">{label}</span>
-      </span>
-    </Link>
+  const NavSections = () => (
+    <>
+      <StaffSidebarSection title="เมนูหลัก">
+        {primaryNavItems.map(({ key, href, icon, label }) => (
+          <StaffSidebarNavLink
+            key={key}
+            href={href}
+            icon={icon}
+            isActive={activeNav === key}
+            label={label}
+            onClick={closeMobileMenu}
+          />
+        ))}
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="รายงานและตรวจสอบ">
+        {secondaryNavItems.map(({ key, href, icon, label }) => (
+          <StaffSidebarNavLink
+            key={key}
+            href={href}
+            icon={icon}
+            isActive={activeNav === key}
+            label={label}
+            onClick={closeMobileMenu}
+          />
+        ))}
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="ระบบและความปลอดภัย">
+        {settingsNavItems.map(({ key, href, icon, label }) => (
+          <StaffSidebarNavLink
+            key={key}
+            href={href}
+            icon={icon}
+            isActive={activeNav === key}
+            label={label}
+            onClick={closeMobileMenu}
+          />
+        ))}
+        <StaffSidebarNavLink
+          href="/dashboard/admin?view=change-password"
+          icon={<Lock size={20} />}
+          isActive={isChangePasswordPage}
+          label="เปลี่ยนรหัสผ่าน"
+          onClick={closeMobileMenu}
+        />
+      </StaffSidebarSection>
+    </>
   );
 
-  const SidebarContent = () => (
+  const DesktopSidebarContent = () => (
     <>
-      <div className="flex h-16 items-center justify-between border-b border-slate-100 px-6">
+      <div className={STAFF_SIDEBAR_HEADER}>
         <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
-        <button type="button" onClick={closeMobileMenu} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden">
+      </div>
+
+      <div className={STAFF_SIDEBAR_NAV_SCROLL}>
+        <NavSections />
+      </div>
+
+      <StaffSidebarFooter onLogout={handleLogout} onRoleSelect={closeMobileMenu} />
+    </>
+  );
+
+  const MobileSidebarContent = () => (
+    <>
+      <div className={STAFF_SIDEBAR_MOBILE_HEADER}>
+        <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
+        <button type="button" onClick={closeMobileMenu} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
           <X size={20} />
         </button>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-6">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:hidden">
-          <p className="text-sm font-bold text-slate-800">{userName}</p>
-          <p className="mt-1 text-xs text-slate-500">{userRoleLabel}</p>
-        </div>
-
-        <div>
-          <MenuSectionHeading title="เมนูหลัก" />
-          <div className="space-y-1">
-            {primaryNavItems.map(({ key, ...item }) => (
-              <SidebarItem key={key} {...item} isActive={activeNav === key} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <MenuSectionHeading title="รายงานและตรวจสอบ" />
-          <div className="space-y-1">
-            {secondaryNavItems.map(({ key, ...item }) => (
-              <SidebarItem key={key} {...item} isActive={activeNav === key} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <MenuSectionHeading title="ระบบและความปลอดภัย" />
-          <div className="space-y-1">
-            {settingsNavItems.map(({ key, ...item }) => (
-              <SidebarItem key={key} {...item} isActive={activeNav === key} />
-            ))}
-            <Link
-              href="/dashboard/admin?view=change-password"
-              onClick={closeMobileMenu}
-              className={`mt-1 flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left font-medium transition-colors ${
-                isChangePasswordPage
-                  ? "border-blue-100 bg-blue-50 text-blue-700"
-                  : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-              aria-current={isChangePasswordPage ? "page" : undefined}
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <span className={isChangePasswordPage ? "text-blue-600" : "text-slate-400"}>
-                  <Lock size={18} />
-                </span>
-                <span className="truncate text-sm">เปลี่ยนรหัสผ่าน</span>
-              </span>
-            </Link>
-          </div>
-        </div>
+      <div className={STAFF_SIDEBAR_MOBILE_NAV_SCROLL}>
+        <StaffSidebarMobileProfile roleLabel={userRoleLabel} userName={userName} />
+        <NavSections />
       </div>
 
-      <div className="border-t border-slate-100 bg-slate-50/80 p-4">
-        <StaffRoleSwitcher className="mb-3" onRoleSelect={closeMobileMenu} />
-        <button
-          type="button"
-          onClick={() => {
-            void handleLogout();
-          }}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-        >
-          <LogOut size={18} /> ออกจากระบบ
-        </button>
-      </div>
+      <StaffSidebarFooter onLogout={handleLogout} onRoleSelect={closeMobileMenu} />
     </>
   );
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F4F7FB] font-sans text-slate-800">
-      <aside className="hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <SidebarContent />
+      <aside className={STAFF_SIDEBAR_ASIDE}>
+        <DesktopSidebarContent />
       </aside>
 
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={closeMobileMenu}>
           <div className="flex h-full w-72 flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <SidebarContent />
+            <MobileSidebarContent />
           </div>
         </div>
       )}

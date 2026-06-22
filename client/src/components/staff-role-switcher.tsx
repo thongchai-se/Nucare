@@ -66,10 +66,12 @@ export function StaffRoleSwitcher({ className = "", onRoleSelect }: StaffRoleSwi
             <span className={`block text-[11px] font-semibold uppercase tracking-[0.18em] ${open ? "text-blue-400" : "text-slate-400"}`}>
               Role
             </span>
-            <span className="block truncate font-semibold">{roleLabelMap[currentRole]}</span>
+            <span className="block truncate font-semibold" title={roleLabelMap[currentRole]}>
+              {roleLabelMap[currentRole]}
+            </span>
           </span>
         </span>
-        <ChevronsUpDown size={16} className={open ? "text-blue-500" : "text-slate-400"} />
+        <ChevronsUpDown size={16} className={`ml-2 shrink-0 ${open ? "text-blue-500" : "text-slate-400"}`} />
       </button>
 
       {open && (
@@ -85,12 +87,16 @@ export function StaffRoleSwitcher({ className = "", onRoleSelect }: StaffRoleSwi
                   setOpen(false);
                   onRoleSelect?.();
                 }}
-                className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors ${
+                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors ${
                   isCurrent ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <span>{roleLabelMap[role]}</span>
-                <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{isCurrent ? "Current" : "Open"}</span>
+                <span className="min-w-0 flex-1 truncate" title={roleLabelMap[role]}>
+                  {roleLabelMap[role]}
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                  {isCurrent ? "Current" : "Open"}
+                </span>
               </Link>
             );
           })}

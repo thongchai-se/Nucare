@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
+import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import { AdminShell } from "@/components/admin-shell";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import type { Role } from "@/types/auth";
@@ -467,6 +468,48 @@ const getAuditSearchText = (log: AuditLogItem): string =>
     .join(" ")
     .toLowerCase();
 
+const exportAuditLogsCsv = (logs: AuditLogItem[]): void => {
+  const rows: unknown[][] = [];
+
+  rows.push(["Metadata"]);
+  rows.push(["รายการ", "ค่า"]);
+  pushKeyValueRows(rows, [
+    ["วันที่ export", new Date().toISOString().slice(0, 10)],
+    ["จำนวนรายการ", logs.length],
+  ]);
+
+  pushCsvSection(
+    rows,
+    "AuditLogs",
+    [
+      "logId",
+      "createdAt",
+      "actorName",
+      "actorRole",
+      "action",
+      "entityType",
+      "entityId",
+      "description",
+      "ipAddress",
+      "status",
+    ],
+    logs.map((log) => [
+      log.id,
+      formatThaiDateTime(log.createdAt),
+      getAuditActorName(log),
+      log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ",
+      getAuditActionLabel(log),
+      log.entityType ?? "",
+      log.entityId ?? "",
+      getResolvedAuditActionDetail(log),
+      log.ipAddress ?? "",
+      getAuditStatusLabel(getAuditStatus(log)),
+    ])
+  );
+
+  downloadCsv(`audit-logs-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+};
+
 function AdminDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -803,7 +846,9 @@ function AdminDashboardContent() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          onClick={() => exportAuditLogsCsv(filteredAuditLogs)}
+          disabled={filteredAuditLogs.length === 0}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download size={16} /> ส่งออก Log (.csv)
         </button>

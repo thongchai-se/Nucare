@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,7 +14,6 @@ import {
   FileText,
   LayoutDashboard,
   Lock,
-  LogOut,
   Menu,
   RefreshCw,
   ShieldCheck,
@@ -29,14 +27,25 @@ import { AppBrand } from "@/components/app-brand";
 import { ExecutiveCommonIssues } from "@/components/executive/executive-common-issues";
 import { ExecutiveDistressHeatmap } from "@/components/executive/executive-distress-heatmap";
 import { ExecutivePageToolbar } from "@/components/executive/executive-page-toolbar";
+import { ExecutiveScreeningComparison } from "@/components/executive/executive-screening-comparison";
 import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
 import { ExecutiveStatCard } from "@/components/executive/executive-stat-card";
-import { MenuSectionHeading } from "@/components/menu-section-heading";
-import { StaffRoleSwitcher } from "@/components/staff-role-switcher";
+import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
+import { StaffSidebarMobileProfile } from "@/components/staff-sidebar-mobile-profile";
+import { StaffSidebarNavButton, StaffSidebarNavLink } from "@/components/staff-sidebar-nav-item";
+import { StaffSidebarSection } from "@/components/staff-sidebar-section";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import api from "@/lib/axios";
+import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import { EXECUTIVE_HERO_CLASS, EXECUTIVE_SECTION_CLASS, EXECUTIVE_STAT_LABEL_CLASS } from "@/lib/executive-ui";
 import { ghq28DistressMeta, ghq28DistressOrder } from "@/lib/ghq28-distress";
+import {
+  STAFF_SIDEBAR_ASIDE,
+  STAFF_SIDEBAR_HEADER,
+  STAFF_SIDEBAR_MOBILE_HEADER,
+  STAFF_SIDEBAR_MOBILE_NAV_SCROLL,
+  STAFF_SIDEBAR_NAV_SCROLL,
+} from "@/lib/ui-classes";
 import { stripKnownNamePrefix } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
 import type {
@@ -139,34 +148,106 @@ const formatHours = (hours: number | null): string => {
 
 const exportExecutiveCsv = (dashboard: ExecutiveDashboardResponse, yearFilter: ExecutiveYearFilter) => {
   const bucket = getActiveBucket(dashboard, yearFilter);
-  const rows = [
-    ["รายการ", "ค่า"],
+  const { operations } = dashboard;
+  const rows: unknown[][] = [];
+
+  rows.push(["Summary"]);
+  rows.push(["รายการ", "ค่า"]);
+  pushKeyValueRows(rows, [
+    ["วันที่ export", new Date().toISOString().slice(0, 10)],
     ["อัปเดตล่าสุด", formatGeneratedAt(dashboard.generatedAt)],
+    ["แบบประเมินหลัก", dashboard.activeSurvey?.title ?? "ไม่มี"],
     ["ช่วงข้อมูล", bucket.label],
-    ["นักศึกษาทั้งหมด", String(bucket.totalStudents)],
-    ["ประเมินแล้ว", String(bucket.screenedCount)],
-    ["อัตราประเมิน (%)", String(bucket.screenedPercent)],
-    ["กลุ่มเสี่ยงสูง (%)", String(bucket.highRiskPercent)],
-    ["คะแนน GHQ-28 เฉลี่ย", bucket.avgGhq28Score === null ? "-" : String(bucket.avgGhq28Score)],
-    ["ปกติ", String(bucket.distressCounts.NORMAL)],
-    ["ระดับน้อย", String(bucket.distressCounts.MILD)],
-    ["ระดับปานกลาง", String(bucket.distressCounts.MODERATE)],
-    ["ระดับรุนแรง", String(bucket.distressCounts.SEVERE)],
-    ["ยังไม่ประเมิน", String(bucket.distressCounts.unscreened)],
-  ];
+    ["นักศึกษาทั้งหมด", bucket.totalStudents],
+    ["ประเมินแล้ว", bucket.screenedCount],
+    ["อัตราประเมิน (%)", bucket.screenedPercent],
+    ["กลุ่มเสี่ยงสูง (%)", bucket.highRiskPercent],
+    ["คะแนน GHQ-28 เฉลี่ย", bucket.avgGhq28Score === null ? "-" : bucket.avgGhq28Score],
+    ["ความทุกข์: ปกติ", bucket.distressCounts.NORMAL],
+    ["ความทุกข์: ระดับน้อย", bucket.distressCounts.MILD],
+    ["ความทุกข์: ระดับปานกลาง", bucket.distressCounts.MODERATE],
+    ["ความทุกข์: ระดับรุนแรง", bucket.distressCounts.SEVERE],
+    ["ความทุกข์: ยังไม่ประเมิน", bucket.distressCounts.unscreened],
+    ["ความเสี่ยง: ปกติ", bucket.riskCounts.NORMAL],
+    ["ความเสี่ยง: ปานกลาง", bucket.riskCounts.MEDIUM],
+    ["ความเสี่ยง: สูง", bucket.riskCounts.HIGH],
+    ["ความเสี่ยง: ยังไม่ประเมิน", bucket.riskCounts.unscreened],
+    ["Referral ค้าง", operations.openReferrals],
+    ["SOS ค้าง", operations.openSos],
+    ["อัตราปิดเคส (%)", operations.caseClosureRate === null ? "-" : operations.caseClosureRate],
+    ["เวลาตอบ consultation เฉลี่ย", formatHours(operations.avgConsultationResponseHours)],
+  ]);
 
   bucket.commonIssues.forEach((issue) => {
     rows.push([`ปัญหา: ${issue.label}`, `${issue.count} (${issue.percent}%)`]);
   });
 
-  const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `executive-summary-${yearFilter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  if (yearFilter === "ALL") {
+    pushCsvSection(
+      rows,
+      "ByStudyYear",
+      [
+        "ชั้นปี",
+        "นักศึกษาทั้งหมด",
+        "ประเมินแล้ว",
+        "อัตราประเมิน (%)",
+        "เสี่ยงสูง (%)",
+        "คะแนน GHQ-28 เฉลี่ย",
+        "ปกติ",
+        "น้อย",
+        "ปานกลาง",
+        "รุนแรง",
+        "ยังไม่ประเมิน",
+      ],
+      dashboard.byStudyYear
+        .filter((row) => row.totalStudents > 0)
+        .map((row) => [
+          row.label,
+          row.totalStudents,
+          row.screenedCount,
+          row.screenedPercent,
+          row.highRiskPercent,
+          row.avgGhq28Score === null ? "-" : row.avgGhq28Score,
+          row.distressCounts.NORMAL,
+          row.distressCounts.MILD,
+          row.distressCounts.MODERATE,
+          row.distressCounts.SEVERE,
+          row.distressCounts.unscreened,
+        ])
+    );
+  }
+
+  if (bucket.sections.length > 0) {
+    pushCsvSection(
+      rows,
+      "BySection",
+      ["Section", "นักศึกษาทั้งหมด", "อัตราประเมิน (%)", "เสี่ยงสูง (%)"],
+      bucket.sections.map((section) => [
+        section.section,
+        section.totalStudents,
+        section.screenedPercent,
+        section.highRiskPercent,
+      ])
+    );
+  }
+
+  if (bucket.trends.length > 0) {
+    pushCsvSection(
+      rows,
+      "Trends",
+      ["เดือน", "ชื่อเดือน", "ประเมินแล้ว", "เสี่ยงสูง", "Referral", "SOS"],
+      bucket.trends.map((trend) => [
+        trend.month,
+        trend.label,
+        trend.screened,
+        trend.highRisk,
+        trend.referrals,
+        trend.sos,
+      ])
+    );
+  }
+
+  downloadCsv(`executive-summary-${yearFilter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 };
 
 const getInitials = (name: string, fallback = "ผบ"): string => {
@@ -294,31 +375,25 @@ function ExecutiveDashboardContent() {
     return null;
   }
 
-  const SidebarItem = ({
-    active,
-    icon,
-    label,
-    onClick,
-  }: {
-    active: boolean;
-    icon: React.ReactNode;
-    label: string;
-    onClick: () => void;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-h-12 w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left font-medium transition-colors ${
-        active
-          ? "border-blue-100 bg-blue-50 text-blue-700"
-          : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-      }`}
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className={active ? "text-blue-600" : "text-slate-400"}>{icon}</span>
-        <span className="truncate text-sm">{label}</span>
-      </span>
-    </button>
+  const NavSections = () => (
+    <>
+      <StaffSidebarSection title="เมนูหลัก">
+        <StaffSidebarNavButton active={activeView === "dashboard"} icon={<LayoutDashboard size={20} />} label="แดชบอร์ดภาพรวม" onClick={() => navigateTo("dashboard")} />
+        <StaffSidebarNavButton active={activeView === "reports"} icon={<FileText size={20} />} label="รายงานเชิงลึก" onClick={() => navigateTo("reports")} />
+        <StaffSidebarNavButton active={activeView === "departments"} icon={<Building2 size={20} />} label="สถิติรายกลุ่ม/Section" onClick={() => navigateTo("departments")} />
+        <StaffSidebarNavButton active={activeView === "trends"} icon={<TrendingUp size={20} />} label="แนวโน้มรายปี" onClick={() => navigateTo("trends")} />
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="ระบบและความปลอดภัย">
+        <StaffSidebarNavLink
+          href="/dashboard/executive?view=change-password"
+          icon={<Lock size={20} />}
+          isActive={activeView === "change-password"}
+          label="เปลี่ยนรหัสผ่าน"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      </StaffSidebarSection>
+    </>
   );
 
   const DataState = ({ children }: { children: React.ReactNode }) => {
@@ -502,6 +577,8 @@ function ExecutiveDashboardContent() {
               รายงาน PDF จะพร้อมในรอบถัดไป — ขณะนี้สามารถส่งออก CSV สรุปได้จากปุ่มด้านบน
             </p>
           </ExecutiveSectionShell>
+
+          <ExecutiveScreeningComparison yearFilter={yearFilter} />
         </div>
       ) : null}
     </DataState>
@@ -670,88 +747,35 @@ function ExecutiveDashboardContent() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F4F7FB] font-sans text-slate-800">
-      <aside className="sticky top-0 hidden h-screen w-72 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex h-16 items-center border-b border-slate-100 px-6">
+      <aside className={STAFF_SIDEBAR_ASIDE}>
+        <div className={STAFF_SIDEBAR_HEADER}>
           <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-          <div className="space-y-1">
-            <MenuSectionHeading title="เมนูหลัก" />
-            <SidebarItem icon={<LayoutDashboard size={20} />} label="แดชบอร์ดภาพรวม" active={activeView === "dashboard"} onClick={() => navigateTo("dashboard")} />
-            <SidebarItem icon={<FileText size={20} />} label="รายงานเชิงลึก" active={activeView === "reports"} onClick={() => navigateTo("reports")} />
-            <SidebarItem icon={<Building2 size={20} />} label="สถิติรายกลุ่ม/Section" active={activeView === "departments"} onClick={() => navigateTo("departments")} />
-            <SidebarItem icon={<TrendingUp size={20} />} label="แนวโน้มรายปี" active={activeView === "trends"} onClick={() => navigateTo("trends")} />
-          </div>
-
-          <div className="space-y-1">
-            <MenuSectionHeading title="ระบบและความปลอดภัย" />
-            <Link
-              href="/dashboard/executive?view=change-password"
-              className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-            >
-              <Lock size={20} className="text-slate-400" />
-              <span className="truncate">เปลี่ยนรหัสผ่าน</span>
-            </Link>
-          </div>
+        <div className={STAFF_SIDEBAR_NAV_SCROLL}>
+          <NavSections />
         </div>
 
-        <div className="border-t border-slate-100 p-4">
-          <StaffRoleSwitcher className="mb-3" />
-          <button
-            type="button"
-            onClick={() => {
-              void handleLogout();
-            }}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut size={18} /> ออกจากระบบ
-          </button>
-        </div>
+        <StaffSidebarFooter onLogout={handleLogout} />
       </aside>
 
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
           <div className="flex h-full w-72 flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4">
+            <div className={STAFF_SIDEBAR_MOBILE_HEADER}>
               <AppBrand subtitle="คณะพยาบาลศาสตร์" size="compact" />
               <button type="button" onClick={() => setIsMobileMenuOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
                 <X size={20} className="text-slate-400" />
               </button>
             </div>
-            <div className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
-              <div className="space-y-1">
-                <MenuSectionHeading title="เมนูหลัก" />
-                <SidebarItem icon={<LayoutDashboard size={20} />} label="แดชบอร์ดภาพรวม" active={activeView === "dashboard"} onClick={() => navigateTo("dashboard")} />
-                <SidebarItem icon={<FileText size={20} />} label="รายงานเชิงลึก" active={activeView === "reports"} onClick={() => navigateTo("reports")} />
-                <SidebarItem icon={<Building2 size={20} />} label="สถิติรายกลุ่ม/Section" active={activeView === "departments"} onClick={() => navigateTo("departments")} />
-                <SidebarItem icon={<TrendingUp size={20} />} label="แนวโน้มรายปี" active={activeView === "trends"} onClick={() => navigateTo("trends")} />
-              </div>
-
-              <div className="space-y-1">
-                <MenuSectionHeading title="ระบบและความปลอดภัย" />
-                <Link
-                  href="/dashboard/executive?view=change-password"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-                >
-                  <Lock size={20} className="text-slate-400" />
-                  <span className="truncate">เปลี่ยนรหัสผ่าน</span>
-                </Link>
-              </div>
+            <div className={STAFF_SIDEBAR_MOBILE_NAV_SCROLL}>
+              <StaffSidebarMobileProfile roleLabel={executiveProfile.role} userName={executiveProfile.name} />
+              <NavSections />
             </div>
-            <div className="border-t border-slate-100 p-4">
-              <StaffRoleSwitcher className="mb-3" onRoleSelect={() => setIsMobileMenuOpen(false)} />
-              <button
-                type="button"
-                onClick={() => {
-                  void handleLogout();
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
-              >
-                <LogOut size={18} /> ออกจากระบบ
-              </button>
-            </div>
+            <StaffSidebarFooter
+              onLogout={handleLogout}
+              onRoleSelect={() => setIsMobileMenuOpen(false)}
+            />
           </div>
         </div>
       )}
