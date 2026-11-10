@@ -10,12 +10,13 @@ type SeedUser = {
   email: string;
 };
 
+/** Admin จริงคนเดียวเมื่อเปิด ENABLE_DEFAULT_USER_SEED */
 const seedUsers: SeedUser[] = [
   {
-    name: "System Admin",
+    name: "ผู้ดูแลระบบ ตัวอย่าง",
     role: Role.ADMIN,
-    employeeId: "ADM001",
-    email: "admin@nucare.local",
+    employeeId: "ADM-EX-001",
+    email: "adminnucare@gmail.com",
   },
 ];
 
@@ -45,17 +46,19 @@ const shouldSeedDefaultUsers = (): boolean => {
   return true;
 };
 
-const getDefaultSeedPassword = (): string => {
-  const password = readEnv("DEFAULT_SEED_PASSWORD");
+/** อ่านรหัส admin จาก env — ห้าม hardcode ในซอร์ส */
+const getAdminSeedPassword = (): string => {
+  const password = readEnv("ADMIN_SEED_PASSWORD") || readEnv("DEFAULT_SEED_PASSWORD");
   if (!password || password.length < MINIMUM_SEED_PASSWORD_LENGTH) {
     throw new Error(
-      `DEFAULT_SEED_PASSWORD must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long when ENABLE_DEFAULT_USER_SEED is enabled`
+      `ADMIN_SEED_PASSWORD (หรือ DEFAULT_SEED_PASSWORD) must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long when ENABLE_DEFAULT_USER_SEED is enabled`
     );
   }
 
   return password;
 };
 
+/** สร้างผู้ใช้ตัวอย่างที่ยังไม่มี — ใช้เฉพาะเมื่อเปิด seed flags */
 export const seedDefaultUsersIfMissing = async (
   prisma: PrismaClient
 ): Promise<SeedSummary> => {
@@ -67,8 +70,8 @@ export const seedDefaultUsersIfMissing = async (
     };
   }
 
-  const defaultPassword = getDefaultSeedPassword();
-  const passwordHash = await bcrypt.hash(defaultPassword, 10);
+  const defaultPassword = getAdminSeedPassword();
+  const passwordHash = await bcrypt.hash(defaultPassword, 12);
   let createdCount = 0;
 
   for (const user of seedUsers) {
@@ -108,6 +111,7 @@ export const seedDefaultUsersIfMissing = async (
         email,
         password: passwordHash,
         isActive: true,
+        mustChangePassword: false,
       },
     });
 

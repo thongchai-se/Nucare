@@ -5,11 +5,12 @@ const prisma = new PrismaClient();
 
 const MINIMUM_SEED_PASSWORD_LENGTH = 8;
 
-const getDefaultSeedPassword = (): string => {
-  const password = process.env.DEFAULT_SEED_PASSWORD?.trim();
+const getAdminSeedPassword = (): string => {
+  const password =
+    process.env.ADMIN_SEED_PASSWORD?.trim() || process.env.DEFAULT_SEED_PASSWORD?.trim();
   if (!password || password.length < MINIMUM_SEED_PASSWORD_LENGTH) {
     throw new Error(
-      `DEFAULT_SEED_PASSWORD must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long`
+      `ADMIN_SEED_PASSWORD (หรือ DEFAULT_SEED_PASSWORD) must be set and at least ${MINIMUM_SEED_PASSWORD_LENGTH} characters long`
     );
   }
 
@@ -24,18 +25,19 @@ type SeedUser = {
   email: string;
 };
 
+/** Admin จริงคนเดียว — บัญชีจำลองอื่นใช้ scripts/seed-local-test-accounts.ts */
 const seedUsers: SeedUser[] = [
   {
-    name: "System Admin",
+    name: "ผู้ดูแลระบบ ตัวอย่าง",
     role: Role.ADMIN,
-    employeeId: "ADM001",
-    email: "admin@nucare.local",
+    employeeId: "ADM-EX-001",
+    email: "adminnucare@gmail.com",
   },
 ];
 
 const createOrUpdateUser = async (
   user: SeedUser,
-  getPasswordHash: () => Promise<string>,
+  getPasswordHash: () => Promise<string>
 ): Promise<{ email: string; created: boolean }> => {
   const existing = await prisma.user.findUnique({
     where: { email: user.email.toLowerCase() },
@@ -51,6 +53,8 @@ const createOrUpdateUser = async (
         studentId: user.studentId,
         employeeId: user.employeeId,
         isActive: true,
+        mustChangePassword: false,
+        password: await getPasswordHash(),
       },
     });
 
@@ -68,6 +72,7 @@ const createOrUpdateUser = async (
       email: user.email.toLowerCase(),
       password: passwordHash,
       isActive: true,
+      mustChangePassword: false,
     },
   });
 
@@ -79,7 +84,7 @@ async function main() {
 
   const getPasswordHash = async (): Promise<string> => {
     if (!passwordHashPromise) {
-      passwordHashPromise = bcrypt.hash(getDefaultSeedPassword(), 10);
+      passwordHashPromise = bcrypt.hash(getAdminSeedPassword(), 12);
     }
 
     return passwordHashPromise;
@@ -90,14 +95,14 @@ async function main() {
   const createdCount = results.filter((item) => item.created).length;
   const updatedCount = results.length - createdCount;
 
-  console.log("[seed] Completed default user seeding");
+  console.log("[seed] Completed admin user seeding");
   console.log(`[seed] Created: ${createdCount}, Updated: ${updatedCount}`);
   console.log("[seed] Login accounts:");
   for (const account of seedUsers) {
-    console.log(`- ${account.role}: ${account.email}`);
+    console.log(`- ${account.role}: ${account.email} (${account.name})`);
   }
-  if (createdCount > 0) {
-    console.log("[seed] Password for newly created accounts was read from DEFAULT_SEED_PASSWORD and was not printed.");
+  if (createdCount > 0 || updatedCount > 0) {
+    console.log("[seed] Admin password was read from ADMIN_SEED_PASSWORD/DEFAULT_SEED_PASSWORD and was not printed.");
   }
 }
 
