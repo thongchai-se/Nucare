@@ -1,60 +1,19 @@
-const exactNamePrefixes = new Set([
-  "นาย",
-  "นาง",
-  "นางสาว",
-  "ด.ช.",
-  "ด.ญ.",
-  "เด็กชาย",
-  "เด็กหญิง",
-  "น.ส.",
-  "นส.",
-  "คุณ",
-  "mr.",
-  "mrs.",
-  "ms.",
-  "miss",
-]);
+import { stripKnownNamePrefix } from "@/lib/name-prefix";
 
-const compactNamePrefixes = [
-  "นางสาว",
-  "เด็กชาย",
-  "เด็กหญิง",
-  "น.ส.",
-  "นส.",
-  "ด.ช.",
-  "ด.ญ.",
-  "นาย",
-  "นาง",
-  "คุณ",
-];
-
-const normalizePrefix = (value: string): string => value.trim().toLowerCase();
-
+/**
+ * ดึงชื่อจริง (ไม่รวมคำนำหน้า) สำหรับทักทาย เช่น "สวัสดี สมชาย"
+ * ใช้กฎตัดคำนำหน้าเดียวกับ initials
+ */
 export const getStudentPreferredFirstName = (
   fullName: string | null | undefined,
-  fallback = "นักศึกษา",
+  fallback = "นักศึกษา"
 ): string => {
-  const nameParts = fullName?.trim().split(/\s+/).filter(Boolean) || [];
-
-  while (nameParts.length > 0 && exactNamePrefixes.has(normalizePrefix(nameParts[0]))) {
-    nameParts.shift();
-  }
+  const personal = stripKnownNamePrefix(fullName || "");
+  const nameParts = personal.split(/\s+/).filter(Boolean);
 
   if (nameParts.length === 0) {
     return fallback;
   }
 
-  const firstPart = nameParts[0];
-  const compactPrefix = compactNamePrefixes.find(
-    (prefix) => firstPart !== prefix && firstPart.startsWith(prefix),
-  );
-
-  if (compactPrefix) {
-    const firstName = firstPart.slice(compactPrefix.length).trim();
-    if (firstName) {
-      return firstName;
-    }
-  }
-
-  return firstPart || fallback;
+  return nameParts[0] || fallback;
 };

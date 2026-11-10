@@ -1,0 +1,49 @@
+% TC21 — หมุดส่งต่อ + เจรจานัดปรึกษาสองฝ่าย
+\begin{testscenario}{21}{5}
+  \tcmeta{TC21}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 2 พฤศจิกายน พ.ศ.\ 2569}{1.2}
+  \tcname{เส้นทางหมุดติดตามการส่งต่อ และการเจรจานัดปรึกษาจนยินยอมทั้งสองฝ่าย}
+  \tcpre{เคลียร์ referral ทดสอบด้วย \tccode{cleanup-test-duplicate-referrals.ts} แล้ว · มีบัญชีทดสอบ · รันหน่วยทดสอบ referral/schedule/active-referral และสคริปต์ flow}
+  \tcdesc{ตรวจสอบการสร้างหมุดติดตามเคสส่งต่อ การเจรจานัดปรึกษา และการกันส่งต่อซ้ำเมื่อเคสยังรอรับหรือกำลังดูแล — หลังเคลียร์ข้อมูลปนจากเทสเดิม}
+
+  \tccase{1}{PENDING มีเฉพาะหมุดส่งต่อ}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{buildReferralRoadmap} ด้วยสถานะ PENDING
+      \item ตรวจจำนวนขั้นและ kind ของหมุดแรก
+    \end{tcsteps}}{%
+    ได้ 1 ขั้น kind=\tccode{sent}}{%
+    ผ่านตามหน่วยทดสอบ}{Pass}
+
+  \tccase{2}{ACCEPTED/CLOSED สร้างหมุดครบตามเหตุการณ์}{%
+    \begin{tcsteps}
+      \item สร้าง roadmap สถานะ ACCEPTED พร้อมบันทึกดูแล
+      \item สร้าง roadmap สถานะ CLOSED
+    \end{tcsteps}}{%
+    ACCEPTED ได้ sent/accepted/care · CLOSED ลงท้ายด้วย closed}{%
+    ผ่านตามหน่วยทดสอบ}{Pass}
+
+  \tccase{3}{ข้อเสนอนัดระบุว่าใครต้องตอบ}{%
+    \begin{tcsteps}
+      \item map ข้อเสนอที่อาจารย์เสนอ
+      \item map ข้อเสนอที่นิสิตขอเปลี่ยน
+      \item เลือกข้อเสนอ PENDING ล่าสุดด้วย \tccode{pickLatestPendingOffer}
+    \end{tcsteps}}{%
+    waitingOn เป็น STUDENT / ADVISOR ตามลำดับ และเลือกข้อล่าสุด}{%
+    ผ่านตามหน่วยทดสอบ}{Pass}
+
+  \tccase{4}{flow ส่งต่อจริง: สร้าง → รับ → ปิด}{%
+    \begin{tcsteps}
+      \item รัน \tccode{npx tsx scripts/test-referral-roadmap-flow.ts}
+      \item ตรวจ roadmap PENDING/ACCEPTED แล้วให้ MH ปิดเคสทิ้ง
+    \end{tcsteps}}{%
+    สร้างหมุด sent → accepted สำเร็จ และปิดเคสหลังเทส}{%
+    ผ่านครบหลังเคลียร์ DB}{Pass}
+
+  \tccase{5}{กันส่งต่อซ้ำเมื่อเคสกำลังดูแลหรือรอรับ}{%
+    \begin{tcsteps}
+      \item รัน \tccode{active-referral.test.ts} และ \tccode{test-active-referral-block.ts}
+      \item POST ส่งต่อซ้ำเมื่อมีเคส \tccode{PENDING}/\tccode{ACCEPTED}
+      \item รัน \tccode{cleanup-test-duplicate-referrals.ts} ลบเหตุผลที่มี \tccode{[TEST]}
+    \end{tcsteps}}{%
+    หน่วยทดสอบผ่าน · API ได้ 409 · cleanup ลบเคสเทสหมด}{%
+    ผ่าน · remaining referrals = none}{Pass}
+\end{testscenario}

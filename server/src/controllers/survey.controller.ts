@@ -1,14 +1,29 @@
 import {
   Prisma,
+  RiskLevel,
   Role,
+  SurveyAudienceType,
+  SurveyFrequency,
+  SurveyInstrumentCode,
   SurveyQuestionType,
+  SurveyScheduleUnit,
   SurveyStatus,
+  SurveyWaveStatus,
+  WellnessTrendSignalCode,
 } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { prisma } from "../lib/prisma";
+import { createSurveyScreeningAlerts } from "../lib/screening";
 import {
+  ensureStudentAssignmentIfEligible,
+  syncWaveAssignments,
+  toEligibilityRuleInput,
+} from "../lib/survey-eligibility-service";
+import { validateCustomSchedule } from "../lib/survey-schedule";
+import {
+  buildStudentFacingSurveyResult,
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
   calculateSurveyScorePercent,
@@ -18,7 +33,10 @@ import {
   getSurveyRiskLevel,
   isGhq28SurveyTitle,
 } from "../lib/survey-scoring";
+import { serializeStudentFacingSurvey } from "../lib/survey-student-serialize";
+import { hasAssignedRole } from "../lib/roles";
 import { formatStudentIdForResponse } from "../lib/user-format";
+import { syncSurveyActiveFromWaves } from "./survey-wave.controller";
 
 const MAX_SURVEY_QUESTIONS = 100;
 const MAX_QUESTION_OPTIONS = 50;
@@ -99,6 +117,13 @@ const nullableDateSchema = z.preprocess((value) => {
   return value;
 }, z.date().nullable());
 
+const eligibilityRuleSchema = z.object({
+  priorRiskLevels: z.array(z.nativeEnum(RiskLevel)).default([]),
+  wellnessSignalCodes: z.array(z.nativeEnum(WellnessTrendSignalCode)).default([]),
+  studyYears: z.array(z.coerce.number().int().min(1).max(8)).default([]),
+  sections: z.array(z.string().trim().min(1).max(40)).default([]),
+});
+
 const surveyPayloadSchema = z
   .object({
     title: z.string().trim().min(3).max(200),
@@ -107,6 +132,12 @@ const surveyPayloadSchema = z
     isActive: z.boolean().default(false),
     startsAt: nullableDateSchema.optional().default(null),
     endsAt: nullableDateSchema.optional().default(null),
+    frequency: z.nativeEnum(SurveyFrequency).default(SurveyFrequency.ONE_SHOT),
+    scheduleEvery: z.union([z.coerce.number().int().min(1).max(365), z.null()]).optional().default(null),
+    scheduleUnit: z.nativeEnum(SurveyScheduleUnit).nullable().optional().default(null),
+    audienceType: z.nativeEnum(SurveyAudienceType).default(SurveyAudienceType.ALL_STUDENTS),
+    instrumentCode: z.nativeEnum(SurveyInstrumentCode).optional(),
+    eligibilityRule: eligibilityRuleSchema.nullable().optional(),
     questions: z.array(surveyQuestionInputSchema).min(1).max(MAX_SURVEY_QUESTIONS),
   })
   .superRefine((survey, context) => {
@@ -117,9 +148,66 @@ const surveyPayloadSchema = z
         message: "End date must be after start date",
       });
     }
+
+    const scheduleError = validateCustomSchedule({
+      frequency: survey.frequency,
+      scheduleEvery: survey.scheduleEvery ?? null,
+      scheduleUnit: survey.scheduleUnit ?? null,
+    });
+    if (scheduleError) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduleEvery"],
+        message: scheduleError,
+      });
+    }
   });
 
+const resolveInstrumentCode = (
+  title: string,
+  explicit?: SurveyInstrumentCode
+): SurveyInstrumentCode => {
+  if (explicit) {
+    return explicit;
+  }
+  return isGhq28SurveyTitle(title) ? SurveyInstrumentCode.GHQ28 : SurveyInstrumentCode.CUSTOM;
+};
+
+const upsertEligibilityRule = async (
+  tx: Prisma.TransactionClient,
+  surveyId: string,
+  audienceType: SurveyAudienceType,
+  rule: z.infer<typeof eligibilityRuleSchema> | null | undefined
+) => {
+  if (audienceType === SurveyAudienceType.ALL_STUDENTS) {
+    await tx.surveyEligibilityRule.deleteMany({ where: { surveyId } });
+    return;
+  }
+
+  if (!rule) {
+    return;
+  }
+
+  await tx.surveyEligibilityRule.upsert({
+    where: { surveyId },
+    create: {
+      surveyId,
+      priorRiskLevels: rule.priorRiskLevels,
+      wellnessSignalCodes: rule.wellnessSignalCodes,
+      studyYears: rule.studyYears,
+      sections: rule.sections.map((item) => item.trim()).filter(Boolean),
+    },
+    update: {
+      priorRiskLevels: rule.priorRiskLevels,
+      wellnessSignalCodes: rule.wellnessSignalCodes,
+      studyYears: rule.studyYears,
+      sections: rule.sections.map((item) => item.trim()).filter(Boolean),
+    },
+  });
+};
+
 const submitSurveyResponseSchema = z.object({
+  waveId: z.string().trim().min(1).optional(),
   answers: z
     .array(
       z.object({
@@ -134,6 +222,20 @@ const submitSurveyResponseSchema = z.object({
 type SurveyQuestionInput = z.infer<typeof surveyQuestionInputSchema>;
 type SurveyPayload = z.infer<typeof surveyPayloadSchema>;
 type SurveyQuestionOption = z.infer<typeof surveyQuestionOptionSchema>;
+
+/** เก็บค่าช่วงกำหนดเองเฉพาะเมื่อเลือก CUSTOM_INTERVAL */
+const normalizeSurveyScheduleFields = (payload: SurveyPayload) => {
+  if (payload.frequency !== SurveyFrequency.CUSTOM_INTERVAL) {
+    return {
+      scheduleEvery: null as number | null,
+      scheduleUnit: null as SurveyScheduleUnit | null,
+    };
+  }
+  return {
+    scheduleEvery: payload.scheduleEvery ?? null,
+    scheduleUnit: payload.scheduleUnit ?? null,
+  };
+};
 
 type SurveyQuestionForValidation = {
   id: string;
@@ -222,12 +324,32 @@ const serializeSurvey = (survey: {
   isActive: boolean;
   startsAt: Date | null;
   endsAt: Date | null;
+  frequency?: SurveyFrequency;
+  scheduleEvery?: number | null;
+  scheduleUnit?: SurveyScheduleUnit | null;
+  audienceType?: SurveyAudienceType;
+  instrumentCode?: SurveyInstrumentCode;
   createdAt: Date;
   updatedAt: Date;
   createdBy?: {
     id: string;
     name: string;
   } | null;
+  eligibilityRule?: {
+    priorRiskLevels: RiskLevel[];
+    wellnessSignalCodes: WellnessTrendSignalCode[];
+    studyYears: number[];
+    sections: string[];
+  } | null;
+  waves?: Array<{
+    id: string;
+    label: string;
+    status: SurveyWaveStatus;
+    opensAt: Date;
+    closesAt: Date | null;
+    termKey: string | null;
+    _count?: { assignments?: number; responses?: number };
+  }>;
   questions?: Array<{
     id: string;
     type: SurveyQuestionType;
@@ -251,6 +373,29 @@ const serializeSurvey = (survey: {
   isActive: survey.isActive,
   startsAt: survey.startsAt,
   endsAt: survey.endsAt,
+  frequency: survey.frequency ?? SurveyFrequency.ONE_SHOT,
+  scheduleEvery: survey.scheduleEvery ?? null,
+  scheduleUnit: survey.scheduleUnit ?? null,
+  audienceType: survey.audienceType ?? SurveyAudienceType.ALL_STUDENTS,
+  instrumentCode: survey.instrumentCode ?? SurveyInstrumentCode.CUSTOM,
+  eligibilityRule: survey.eligibilityRule
+    ? {
+        priorRiskLevels: survey.eligibilityRule.priorRiskLevels,
+        wellnessSignalCodes: survey.eligibilityRule.wellnessSignalCodes,
+        studyYears: survey.eligibilityRule.studyYears,
+        sections: survey.eligibilityRule.sections,
+      }
+    : null,
+  waves: (survey.waves || []).map((wave) => ({
+    id: wave.id,
+    label: wave.label,
+    status: wave.status,
+    opensAt: wave.opensAt,
+    closesAt: wave.closesAt,
+    termKey: wave.termKey,
+    assignmentCount: wave._count?.assignments ?? 0,
+    responseCount: wave._count?.responses ?? 0,
+  })),
   createdAt: survey.createdAt,
   updatedAt: survey.updatedAt,
   createdBy: survey.createdBy || null,
@@ -449,7 +594,7 @@ const deactivateOtherSurveysIfNeeded = async (
 };
 
 export const listAdminSurveys = async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -483,7 +628,7 @@ export const listAdminSurveys = async (req: Request, res: Response): Promise<voi
 };
 
 export const getAdminSurvey = async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -496,6 +641,18 @@ export const getAdminSurvey = async (req: Request, res: Response): Promise<void>
           select: {
             id: true,
             name: true,
+          },
+        },
+        eligibilityRule: true,
+        waves: {
+          orderBy: [{ opensAt: "desc" }, { createdAt: "desc" }],
+          include: {
+            _count: {
+              select: {
+                assignments: true,
+                responses: true,
+              },
+            },
           },
         },
         questions: {
@@ -526,7 +683,7 @@ export const getAdminSurvey = async (req: Request, res: Response): Promise<void>
 
 export const createAdminSurvey = async (req: Request, res: Response): Promise<void> => {
   const actorUserId = req.user?.userId;
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -542,6 +699,8 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
 
   const status = normalizeSurveyStatus(parsed.data);
   const isActive = normalizeSurveyIsActive(parsed.data);
+  const instrumentCode = resolveInstrumentCode(parsed.data.title, parsed.data.instrumentCode);
+  const scheduleFields = normalizeSurveyScheduleFields(parsed.data);
 
   try {
     const survey = await prisma.$transaction(async (tx) => {
@@ -553,6 +712,11 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
           isActive,
           startsAt: parsed.data.startsAt,
           endsAt: parsed.data.endsAt,
+          frequency: parsed.data.frequency,
+          scheduleEvery: scheduleFields.scheduleEvery,
+          scheduleUnit: scheduleFields.scheduleUnit,
+          audienceType: parsed.data.audienceType,
+          instrumentCode,
           createdById: actorUserId,
           questions: {
             create: parsed.data.questions.map((question, index) =>
@@ -567,6 +731,12 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
               name: true,
             },
           },
+          eligibilityRule: true,
+          waves: {
+            include: {
+              _count: { select: { assignments: true, responses: true } },
+            },
+          },
           questions: {
             orderBy: { order: "asc" },
           },
@@ -579,8 +749,56 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
         },
       });
 
-      await deactivateOtherSurveysIfNeeded(tx, createdSurvey.id, createdSurvey.isActive);
-      return createdSurvey;
+      await upsertEligibilityRule(
+        tx,
+        createdSurvey.id,
+        parsed.data.audienceType,
+        parsed.data.eligibilityRule
+      );
+
+      if (isActive) {
+        const wave = await tx.surveyWave.create({
+          data: {
+            surveyId: createdSurvey.id,
+            label: "รอบเปิดแรก",
+            opensAt: parsed.data.startsAt ?? new Date(),
+            closesAt: parsed.data.endsAt,
+            status: SurveyWaveStatus.OPEN,
+          },
+        });
+        await syncWaveAssignments({
+          waveId: wave.id,
+          audienceType: parsed.data.audienceType,
+          rule: toEligibilityRuleInput(
+            parsed.data.eligibilityRule
+              ? {
+                  priorRiskLevels: parsed.data.eligibilityRule.priorRiskLevels,
+                  wellnessSignalCodes: parsed.data.eligibilityRule.wellnessSignalCodes,
+                  studyYears: parsed.data.eligibilityRule.studyYears,
+                  sections: parsed.data.eligibilityRule.sections,
+                }
+              : null
+          ),
+          db: tx,
+        });
+        await syncSurveyActiveFromWaves(tx, createdSurvey.id);
+      } else {
+        await deactivateOtherSurveysIfNeeded(tx, createdSurvey.id, createdSurvey.isActive);
+      }
+
+      return tx.survey.findUniqueOrThrow({
+        where: { id: createdSurvey.id },
+        include: {
+          createdBy: { select: { id: true, name: true } },
+          eligibilityRule: true,
+          waves: {
+            orderBy: [{ opensAt: "desc" }],
+            include: { _count: { select: { assignments: true, responses: true } } },
+          },
+          questions: { orderBy: { order: "asc" } },
+          _count: { select: { questions: true, responses: true } },
+        },
+      });
     });
 
     await writeAuditLog({
@@ -604,7 +822,7 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
 
 export const updateAdminSurvey = async (req: Request, res: Response): Promise<void> => {
   const actorUserId = req.user?.userId;
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -620,6 +838,7 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
 
   const status = normalizeSurveyStatus(parsed.data);
   const isActive = normalizeSurveyIsActive(parsed.data);
+  const instrumentCode = resolveInstrumentCode(parsed.data.title, parsed.data.instrumentCode);
 
   try {
     const existingSurvey = await prisma.survey.findUnique({
@@ -672,6 +891,8 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
       }
     }
 
+    const scheduleFields = normalizeSurveyScheduleFields(parsed.data);
+
     const survey = await prisma.$transaction(async (tx) => {
       await tx.survey.update({
         where: { id: existingSurvey.id },
@@ -682,8 +903,20 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
           isActive,
           startsAt: parsed.data.startsAt,
           endsAt: parsed.data.endsAt,
+          frequency: parsed.data.frequency,
+          scheduleEvery: scheduleFields.scheduleEvery,
+          scheduleUnit: scheduleFields.scheduleUnit,
+          audienceType: parsed.data.audienceType,
+          instrumentCode,
         },
       });
+
+      await upsertEligibilityRule(
+        tx,
+        existingSurvey.id,
+        parsed.data.audienceType,
+        parsed.data.eligibilityRule
+      );
 
       if (!hasResponses) {
         await tx.surveyQuestion.deleteMany({
@@ -720,7 +953,55 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
         }
       }
 
-      await deactivateOtherSurveysIfNeeded(tx, existingSurvey.id, isActive);
+      if (isActive) {
+        let openWave = await tx.surveyWave.findFirst({
+          where: { surveyId: existingSurvey.id, status: SurveyWaveStatus.OPEN },
+          orderBy: { opensAt: "desc" },
+        });
+
+        if (!openWave) {
+          openWave = await tx.surveyWave.create({
+            data: {
+              surveyId: existingSurvey.id,
+              label: "รอบที่เปิด",
+              opensAt: parsed.data.startsAt ?? new Date(),
+              closesAt: parsed.data.endsAt,
+              status: SurveyWaveStatus.OPEN,
+            },
+          });
+        } else {
+          openWave = await tx.surveyWave.update({
+            where: { id: openWave.id },
+            data: {
+              opensAt: parsed.data.startsAt ?? openWave.opensAt,
+              closesAt: parsed.data.endsAt,
+            },
+          });
+        }
+
+        await syncWaveAssignments({
+          waveId: openWave.id,
+          audienceType: parsed.data.audienceType,
+          rule: toEligibilityRuleInput(
+            parsed.data.eligibilityRule
+              ? {
+                  priorRiskLevels: parsed.data.eligibilityRule.priorRiskLevels,
+                  wellnessSignalCodes: parsed.data.eligibilityRule.wellnessSignalCodes,
+                  studyYears: parsed.data.eligibilityRule.studyYears,
+                  sections: parsed.data.eligibilityRule.sections,
+                }
+              : null
+          ),
+          db: tx,
+        });
+        await syncSurveyActiveFromWaves(tx, existingSurvey.id);
+      } else {
+        await tx.surveyWave.updateMany({
+          where: { surveyId: existingSurvey.id, status: SurveyWaveStatus.OPEN },
+          data: { status: SurveyWaveStatus.CLOSED, closesAt: new Date() },
+        });
+        await deactivateOtherSurveysIfNeeded(tx, existingSurvey.id, false);
+      }
 
       return tx.survey.findUniqueOrThrow({
         where: { id: existingSurvey.id },
@@ -730,6 +1011,11 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
               id: true,
               name: true,
             },
+          },
+          eligibilityRule: true,
+          waves: {
+            orderBy: [{ opensAt: "desc" }],
+            include: { _count: { select: { assignments: true, responses: true } } },
           },
           questions: {
             orderBy: { order: "asc" },
@@ -765,7 +1051,7 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
 
 export const deleteAdminSurvey = async (req: Request, res: Response): Promise<void> => {
   const actorUserId = req.user?.userId;
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -840,7 +1126,7 @@ export const deleteAdminSurvey = async (req: Request, res: Response): Promise<vo
 };
 
 export const listAdminSurveyResponses = async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.role !== Role.ADMIN) {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
     return;
   }
@@ -927,51 +1213,127 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
 
 export const getActiveStudentSurvey = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.STUDENT) {
+  if (!userId || !hasAssignedRole(req.user, Role.STUDENT)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
 
   try {
-    const survey = await prisma.survey.findFirst({
-      where: buildStudentSurveyWhere(),
-      orderBy: [{ startsAt: "desc" }, { updatedAt: "desc" }],
-      include: {
-        questions: {
-          orderBy: { order: "asc" },
+    const now = new Date();
+    const openWaves = await prisma.surveyWave.findMany({
+      where: {
+        status: SurveyWaveStatus.OPEN,
+        opensAt: { lte: now },
+        OR: [{ closesAt: null }, { closesAt: { gte: now } }],
+        survey: {
+          status: SurveyStatus.PUBLISHED,
         },
-        responses: {
-          where: {
-            studentId: userId,
-          },
-          orderBy: {
-            submittedAt: "desc",
-          },
-          take: 1,
-          select: {
-            id: true,
-            submittedAt: true,
+      },
+      orderBy: [{ opensAt: "desc" }],
+      include: {
+        survey: {
+          include: {
+            questions: { orderBy: { order: "asc" } },
+            eligibilityRule: true,
           },
         },
       },
     });
 
-    if (!survey) {
-      res.status(200).json({ survey: null, response: null, hasSubmitted: false });
-      return;
+    const surveysPayload: Array<ReturnType<typeof serializeStudentFacingSurvey>> = [];
+    let primaryResponse: { id: string; submittedAt: Date } | null = null;
+    let primaryHasSubmitted = false;
+    let primarySurvey: ReturnType<typeof serializeStudentFacingSurvey> | null = null;
+
+    for (const wave of openWaves) {
+      let assignment = await prisma.surveyAssignment.findUnique({
+        where: {
+          waveId_studentId: {
+            waveId: wave.id,
+            studentId: userId,
+          },
+        },
+      });
+
+      if (!assignment) {
+        const granted = await ensureStudentAssignmentIfEligible({
+          studentId: userId,
+          waveId: wave.id,
+          audienceType: wave.survey.audienceType,
+          rule: toEligibilityRuleInput(wave.survey.eligibilityRule),
+        });
+        if (!granted) {
+          continue;
+        }
+        assignment = await prisma.surveyAssignment.findUnique({
+          where: {
+            waveId_studentId: {
+              waveId: wave.id,
+              studentId: userId,
+            },
+          },
+        });
+      }
+
+      if (!assignment) {
+        continue;
+      }
+
+      const facing = serializeStudentFacingSurvey({
+        id: wave.survey.id,
+        title: wave.survey.title,
+        description: wave.survey.description,
+        questions: wave.survey.questions,
+        waveId: wave.id,
+        waveLabel: wave.label,
+        closesAt: wave.closesAt,
+      });
+
+      if (assignment.completedAt) {
+        if (!primarySurvey) {
+          primarySurvey = facing;
+          primaryHasSubmitted = true;
+          const existing = await prisma.surveyResponse.findUnique({
+            where: {
+              waveId_studentId: {
+                waveId: wave.id,
+                studentId: userId,
+              },
+            },
+            select: {
+              id: true,
+              submittedAt: true,
+              totalScore: true,
+              maxScore: true,
+            },
+          });
+          primaryResponse = existing
+            ? buildStudentFacingSurveyResult({
+                id: existing.id,
+                submittedAt: existing.submittedAt,
+                totalScore: existing.totalScore,
+                maxScore: existing.maxScore,
+                surveyTitle: wave.survey.title,
+              })
+            : null;
+        }
+        continue;
+      }
+
+      surveysPayload.push(facing);
+      if (!primarySurvey) {
+        primarySurvey = facing;
+        primaryHasSubmitted = false;
+        primaryResponse = null;
+      }
     }
 
-    const response = survey.responses[0] || null;
-
+    // รองรับ client เดิม: survey เดี่ยว + hasSubmitted และเพิ่ม surveys[] สำหรับหลายคลื่น
     res.status(200).json({
-      survey: serializeSurvey(survey),
-      response: response
-        ? {
-            id: response.id,
-            submittedAt: response.submittedAt,
-          }
-        : null,
-      hasSubmitted: Boolean(response),
+      survey: primarySurvey,
+      surveys: surveysPayload.length > 0 ? surveysPayload : primarySurvey ? [primarySurvey] : [],
+      response: primaryResponse,
+      hasSubmitted: primaryHasSubmitted && surveysPayload.length === 0,
     });
   } catch (error) {
     console.error("Get active student survey error:", error);
@@ -981,7 +1343,7 @@ export const getActiveStudentSurvey = async (req: Request, res: Response): Promi
 
 export const submitStudentSurveyResponse = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
-  if (!userId || req.user?.role !== Role.STUDENT) {
+  if (!userId || !hasAssignedRole(req.user, Role.STUDENT)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
@@ -996,36 +1358,73 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
   }
 
   try {
-    const survey = await prisma.survey.findFirst({
-      where: buildStudentSurveyWhere(req.params.id),
+    const now = new Date();
+    const requestedWaveId =
+      typeof req.body?.waveId === "string" && req.body.waveId.trim()
+        ? req.body.waveId.trim()
+        : undefined;
+
+    const openWave = await prisma.surveyWave.findFirst({
+      where: {
+        surveyId: req.params.id,
+        ...(requestedWaveId ? { id: requestedWaveId } : {}),
+        status: SurveyWaveStatus.OPEN,
+        opensAt: { lte: now },
+        OR: [{ closesAt: null }, { closesAt: { gte: now } }],
+        survey: { status: SurveyStatus.PUBLISHED },
+      },
       include: {
-        questions: {
-          orderBy: { order: "asc" },
+        survey: {
+          include: {
+            questions: { orderBy: { order: "asc" } },
+            eligibilityRule: true,
+          },
         },
       },
+      orderBy: { opensAt: "desc" },
     });
 
-    if (!survey) {
+    if (!openWave) {
       res.status(404).json({ message: "Survey is not available" });
       return;
     }
 
-    const existingResponse = await prisma.surveyResponse.findUnique({
+    let assignment = await prisma.surveyAssignment.findUnique({
       where: {
-        surveyId_studentId: {
-          surveyId: survey.id,
+        waveId_studentId: {
+          waveId: openWave.id,
           studentId: userId,
         },
       },
-      select: {
-        id: true,
-      },
     });
 
-    if (existingResponse) {
+    if (!assignment) {
+      const granted = await ensureStudentAssignmentIfEligible({
+        studentId: userId,
+        waveId: openWave.id,
+        audienceType: openWave.survey.audienceType,
+        rule: toEligibilityRuleInput(openWave.survey.eligibilityRule),
+      });
+      if (!granted) {
+        res.status(404).json({ message: "Survey is not available" });
+        return;
+      }
+      assignment = await prisma.surveyAssignment.findUnique({
+        where: {
+          waveId_studentId: {
+            waveId: openWave.id,
+            studentId: userId,
+          },
+        },
+      });
+    }
+
+    if (!assignment || assignment.completedAt) {
       res.status(409).json({ message: "You have already submitted this survey" });
       return;
     }
+
+    const survey = openWave.survey;
 
     const answerByQuestionId = new Map<string, unknown>();
     for (const answer of parsed.data.answers) {
@@ -1078,31 +1477,45 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       return;
     }
 
-    const {
-      totalScore,
-      maxScore,
-      scorePercent,
-      riskLevel,
-      distressLevel,
-      distressLabel,
-    } = enrichSurveyResponseScores(survey.title, survey.questions, normalizedAnswers);
+    const { totalScore, maxScore, scorePercent, riskLevel } = enrichSurveyResponseScores(
+      survey.title,
+      survey.questions,
+      normalizedAnswers
+    );
     const instrument = getSurveyInstrumentLabel(survey.title);
     const scoredAt = new Date();
 
-    const surveyResponse = await prisma.surveyResponse.create({
-      data: {
-        surveyId: survey.id,
-        studentId: userId,
-        totalScore,
-        maxScore,
-        scorePercent,
-        riskLevel,
-        instrument,
-        scoredAt,
-        answers: {
-          create: normalizedAnswers,
+    const surveyResponse = await prisma.$transaction(async (tx) => {
+      const created = await tx.surveyResponse.create({
+        data: {
+          surveyId: survey.id,
+          waveId: openWave.id,
+          studentId: userId,
+          totalScore,
+          maxScore,
+          scorePercent,
+          riskLevel,
+          instrument,
+          scoredAt,
+          answers: {
+            create: normalizedAnswers,
+          },
         },
-      },
+      });
+
+      await tx.surveyAssignment.update({
+        where: { id: assignment!.id },
+        data: { completedAt: scoredAt },
+      });
+
+      return created;
+    });
+
+    await createSurveyScreeningAlerts({
+      studentId: userId,
+      responseId: surveyResponse.id,
+      riskLevel,
+      instrumentLabel: instrument,
     });
 
     await writeAuditLog({
@@ -1114,18 +1527,16 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       ipAddress: getRequestIpAddress(req),
     });
 
+    // ส่งสรุปผลให้นิสิตดูหลังทำแบบ (ตามเกณฑ์ในคำอธิบายแบบประเมิน)
     res.status(201).json({
       message: "Survey response submitted successfully",
-      response: {
+      response: buildStudentFacingSurveyResult({
         id: surveyResponse.id,
         submittedAt: surveyResponse.submittedAt,
-        totalScore,
-        maxScore,
-        scorePercent,
-        riskLevel,
-        distressLevel,
-        distressLabel,
-      },
+        totalScore: surveyResponse.totalScore,
+        maxScore: surveyResponse.maxScore,
+        surveyTitle: survey.title,
+      }),
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

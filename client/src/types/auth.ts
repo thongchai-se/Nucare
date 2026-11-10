@@ -18,6 +18,7 @@ export interface User {
   role: Role;
   roles: Role[];
   image: string | null;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 }

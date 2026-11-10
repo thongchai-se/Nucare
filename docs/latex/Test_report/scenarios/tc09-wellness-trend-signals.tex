@@ -1,0 +1,36 @@
+% TC09 — สัญญาณแนวโน้มสุขภาวะจากแชท (ไม่เก็บข้อความ)
+\begin{testscenario}{9}{4}
+  \tcmeta{TC09}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 28 ตุลาคม พ.ศ.\ 2569}{1.0}
+  \tcname{Wellness Trend Indicators จากแชทเพื่อน AI}
+  \tcpre{มีหน่วยทดสอบ \tccode{wellness-signals.test.ts} และ schema สรุป/จุดตรวจจับแนวโน้ม}
+  \tcdesc{ตรวจว่าสกัดรหัสแนวโน้มจากข้อความได้โดยไม่คืนหรือเก็บเนื้อหา และรองรับหลายสัญญาณในข้อความเดียว}
+
+  \tccase{1}{ตรวจจับประเด็นอารมณ์ซึมเศร้า}{%
+    \begin{tcsteps}
+      \item เปิดไฟล์ \tccode{src/lib/student-chat/wellness-signals.ts}
+      \item รันกรณี WT-01 ด้วยข้อความที่มีคำว่าซึมเศร้า/ท้อแท้
+    \end{tcsteps}}{%
+    คืนรหัส \tccode{DEPRESSIVE_THEME} และมีชื่อทางการภาษาไทย}{%
+    หน่วยทดสอบ WT-01 ผ่าน}{Pass}
+
+  \tccase{2}{หลายแนวโน้มในข้อความเดียว}{%
+    \begin{tcsteps}
+      \item รันกรณี WT-02 ด้วยข้อความเครียดสอบ + นอนไม่หลับ + เหงา
+    \end{tcsteps}}{%
+    คืน \tccode{ACADEMIC\_STRESS}, \tccode{SLEEP\_DISTURBANCE}, \tccode{LONELINESS\_ISOLATION}}{%
+    หน่วยทดสอบ WT-02 ผ่าน}{Pass}
+
+  \tccase{3}{สัญญาณวิกฤต}{%
+    \begin{tcsteps}
+      \item รันกรณี WT-03 ด้วยภาษาอยากทำร้ายตนเอง
+    \end{tcsteps}}{%
+    มีรหัส \tccode{SELF\_HARM\_CRISIS} ในผลลัพธ์}{%
+    หน่วยทดสอบ WT-03 ผ่าน}{Pass}
+
+  \tccase{4}{ข้อความกลาง ๆ ไม่สร้างสัญญาณ}{%
+    \begin{tcsteps}
+      \item รันกรณี WT-04 และ WT-05
+    \end{tcsteps}}{%
+    คืนอาร์เรย์ว่าง}{%
+    หน่วยทดสอบ WT-04/WT-05 ผ่าน}{Pass}
+\end{testscenario}

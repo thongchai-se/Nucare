@@ -1,0 +1,39 @@
+% TC32 — งานพัฒนานิสิต production hardening
+\begin{testscenario}{32}{4}
+  \tcmeta{TC32}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 6 พฤศจิกายน พ.ศ.\ 2569}{1.0}
+  \tcname{การ hardening พอร์ทัลงานพัฒนานิสิตให้ใช้งานจริง}
+  \tcpre{มีนิสิตค้างประเมิน (assignment คลื่น OPEN หรือยังไม่มีผล) และบัญชี \tccode{sd.test@nucare.local}}
+  \tcdesc{ตรวจสอบว่า cohort แจ้งเตือนตรงกับแดชบอร์ด กลุ่มเสี่ยงไม่ถูกเรียกว่ากิจกรรม Wellness และฟิลเตอร์ชั้นปีใช้ค่าจริง}
+
+  \tccase{1}{นิยามค้างประเมินตรงกันระหว่างแดชบอร์ดกับ reminder}{%
+    \begin{tcsteps}
+      \item เรียก unit \tccode{isStudentDevelopmentPendingAssessment}
+      \item เปิดแดชบอร์ด SD ดูจำนวนค้างประเมิน
+      \item ส่งแจ้งเตือนทั้งหมดโดยไม่ระบุ studentUserIds
+    \end{tcsteps}}{%
+    ส่งได้เฉพาะกลุ่มค้างประเมินตามนิยามเดียวกับแดชบอร์ด}{%
+    unit SDP-01..03 ผ่าน และ API ส่งเฉพาะ pending cohort}{Pass}
+
+  \tccase{2}{ปฏิเสธส่ง reminder ให้นิสิตที่ไม่ค้างประเมิน}{%
+    \begin{tcsteps}
+      \item POST \tccode{/api/student-development/screening-reminders} พร้อม studentUserIds ของนิสิตที่ประเมินแล้ว
+    \end{tcsteps}}{%
+    API ตอบ 400 ระบุว่าส่งได้เฉพาะนิสิตค้างประเมิน}{%
+    ได้ 400 ตาม validation}{Pass}
+
+  \tccase{3}{ป้ายสรุปกลุ่มเสี่ยงไม่สับสนกับกิจกรรม Wellness}{%
+    \begin{tcsteps}
+      \item เข้าพอร์ทัล SD
+      \item เปิดเมนู ``สรุปกลุ่มเสี่ยง''
+    \end{tcsteps}}{%
+    แสดงจำนวนตามระดับเสี่ยง ไม่ใช่ระบบลงทะเบียนกิจกรรม}{%
+    หน้าแสดงสรุปกลุ่มจากผลคัดกรอง}{Pass}
+
+  \tccase{4}{ฟิลเตอร์ชั้นปีใช้ค่าจริงจากข้อมูล}{%
+    \begin{tcsteps}
+      \item เปิดมุมมองติดตามการคัดกรอง
+      \item เลือกชั้นปีจากตัวเลือกที่สร้างจากรายชื่อจริง
+    \end{tcsteps}}{%
+    รายชื่อกรองตามชั้นปีที่เลือกได้ถูกต้อง}{%
+    ฟิลเตอร์ใช้ yearOptions จาก API ไม่ใช่ค่า hardcode ``ปี 1''}{Pass}
+\end{testscenario}

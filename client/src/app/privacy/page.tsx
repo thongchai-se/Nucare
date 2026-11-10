@@ -17,6 +17,7 @@ import {
 import { type MouseEvent, useEffect, useMemo, useState } from "react";
 import LegalTopNav from "@/components/legal-top-nav";
 import LegalFooter from "@/components/legal-footer";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import { facultyFullName } from "@/lib/brand";
 
 type SectionId = "terms" | "privacy" | "cookies";
@@ -124,17 +125,7 @@ export default function PrivacyPolicyPage() {
     };
   }, []);
 
-  useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-
-    if (isMobileTopicsOpen) {
-      document.body.style.overflow = "hidden";
-    }
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [isMobileTopicsOpen]);
+  useBodyScrollLock(isMobileTopicsOpen);
 
   return (
     <>

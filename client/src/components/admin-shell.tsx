@@ -8,8 +8,8 @@ import {
   ClipboardList,
   Database,
   FileText,
+  Images,
   LayoutDashboard,
-  Lock,
   Menu,
   Server,
   Settings,
@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { AppBrand } from "@/components/app-brand";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
-import { StaffSidebarMobileProfile } from "@/components/staff-sidebar-mobile-profile";
 import { StaffSidebarNavLink } from "@/components/staff-sidebar-nav-item";
 import { StaffSidebarSection } from "@/components/staff-sidebar-section";
 import { getNameInitials } from "@/lib/name-prefix";
@@ -30,7 +29,17 @@ import {
   STAFF_SIDEBAR_NAV_SCROLL,
 } from "@/lib/ui-classes";
 
-type AdminNavKey = "dashboard" | "students" | "staff" | "import" | "surveys" | "reports" | "audit" | "settings" | "changePassword";
+type AdminNavKey =
+  | "dashboard"
+  | "students"
+  | "staff"
+  | "import"
+  | "externalDirectory"
+  | "surveys"
+  | "siteMedia"
+  | "reports"
+  | "audit"
+  | "settings";
 
 type HeaderSearchProps = {
   onChange: (value: string) => void;
@@ -59,32 +68,44 @@ const primaryNavItems: NavItem[] = [
   {
     key: "dashboard",
     label: "แดชบอร์ดภาพรวม",
-    href: "/dashboard/admin",
+    href: "/admin",
     icon: <LayoutDashboard size={20} />,
   },
   {
     key: "students",
     label: "จัดการนักศึกษา",
-    href: "/dashboard/admin/manage-students",
+    href: "/admin/manage-students",
     icon: <Users size={20} />,
   },
   {
     key: "staff",
     label: "จัดการบุคลากร",
-    href: "/dashboard/admin/manage-staff",
+    href: "/admin/manage-staff",
     icon: <BriefcaseBusiness size={20} />,
   },
   {
     key: "import",
     label: "นำเข้าข้อมูล",
-    href: "/dashboard/admin/import-students",
+    href: "/admin/import-students",
     icon: <Database size={20} />,
+  },
+  {
+    key: "externalDirectory",
+    label: "รายชื่อจาก API",
+    href: "/admin/external-directory",
+    icon: <Server size={20} />,
   },
   {
     key: "surveys",
     label: "แบบสอบถาม",
-    href: "/dashboard/admin/surveys",
+    href: "/admin/surveys",
     icon: <ClipboardList size={20} />,
+  },
+  {
+    key: "siteMedia",
+    label: "ภาพประชาสัมพันธ์",
+    href: "/admin/site-media",
+    icon: <Images size={20} />,
   },
 ];
 
@@ -92,13 +113,13 @@ const secondaryNavItems: NavItem[] = [
   {
     key: "reports",
     label: "สถิติและรายงาน",
-    href: "/dashboard/admin?view=reports",
+    href: "/admin?view=reports",
     icon: <BarChart3 size={20} />,
   },
   {
     key: "audit",
     label: "บันทึกระบบ (Audit Logs)",
-    href: "/dashboard/admin?view=audit",
+    href: "/admin?view=audit",
     icon: <FileText size={20} />,
   },
 ];
@@ -107,7 +128,7 @@ const settingsNavItems: NavItem[] = [
   {
     key: "settings",
     label: "ตั้งค่าระบบพื้นฐาน",
-    href: "/dashboard/admin?view=settings",
+    href: "/admin?view=settings",
     icon: <Settings size={20} />,
   },
 ];
@@ -126,7 +147,6 @@ export function AdminShell({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   void _headerSearch;
 
-  const isChangePasswordPage = activeNav === "changePassword";
   const initials = useMemo(() => getInitials(userName), [userName]);
   const activeLabel = useMemo(() => {
     const allItems = [...primaryNavItems, ...secondaryNavItems, ...settingsNavItems];
@@ -170,7 +190,7 @@ export function AdminShell({
         ))}
       </StaffSidebarSection>
 
-      <StaffSidebarSection title="ระบบและความปลอดภัย">
+      <StaffSidebarSection title="ระบบ">
         {settingsNavItems.map(({ key, href, icon, label }) => (
           <StaffSidebarNavLink
             key={key}
@@ -181,13 +201,6 @@ export function AdminShell({
             onClick={closeMobileMenu}
           />
         ))}
-        <StaffSidebarNavLink
-          href="/dashboard/admin?view=change-password"
-          icon={<Lock size={20} />}
-          isActive={isChangePasswordPage}
-          label="เปลี่ยนรหัสผ่าน"
-          onClick={closeMobileMenu}
-        />
       </StaffSidebarSection>
     </>
   );
@@ -216,7 +229,6 @@ export function AdminShell({
       </div>
 
       <div className={STAFF_SIDEBAR_MOBILE_NAV_SCROLL}>
-        <StaffSidebarMobileProfile roleLabel={userRoleLabel} userName={userName} />
         <NavSections />
       </div>
 
@@ -239,14 +251,14 @@ export function AdminShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setIsMobileMenuOpen((current) => !current)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden">
               <Menu size={20} />
             </button>
 
             <div className="hidden items-center gap-2 text-sm font-medium text-slate-500 lg:flex">
-              <span>Admin Portal</span>
+              <span>พอร์ทัลผู้ดูแลระบบ</span>
               <ChevronRight size={14} />
               <span className="font-bold text-slate-800">{activeLabel}</span>
             </div>
@@ -254,7 +266,7 @@ export function AdminShell({
 
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="hidden items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 sm:flex">
-              <Server size={14} /> System Online
+              <Server size={14} /> ระบบพร้อมใช้งาน
             </div>
             <div className="hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-3">
@@ -269,7 +281,7 @@ export function AdminShell({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl">{children}</div>
         </main>
       </div>

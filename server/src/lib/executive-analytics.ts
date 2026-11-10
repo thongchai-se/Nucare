@@ -56,6 +56,13 @@ export type SectionStat = {
   highRiskPercent: number;
 };
 
+export type ExecutiveOperationsStats = {
+  avgConsultationResponseHours: number | null;
+  caseClosureRate: number | null;
+  openReferrals: number;
+  openSos: number;
+};
+
 export type StudyYearBucket = {
   studyYear: number | null;
   label: string;
@@ -69,13 +76,8 @@ export type StudyYearBucket = {
   commonIssues: CommonIssueItem[];
   trends: TrendItem[];
   sections: SectionStat[];
-};
-
-export type ExecutiveOperationsStats = {
-  avgConsultationResponseHours: number | null;
-  caseClosureRate: number | null;
-  openReferrals: number;
-  openSos: number;
+  /** สถิติปฏิบัติการของบัคเก็ตนี้ (กรองตามชั้นปีแล้ว) */
+  operations: ExecutiveOperationsStats;
 };
 
 export type ExecutiveDashboardPayload = {
@@ -100,6 +102,8 @@ export type StudentScreeningProfile = {
 type ConsultationRecord = {
   topic: string;
   createdAt: Date;
+  acceptedAt: Date | null;
+  status: ConsultationRequestStatus;
   studentStudyYear: number | null;
 };
 
@@ -407,9 +411,15 @@ export const buildStudyYearBucket = (input: {
   const screenedCount = profiles.filter((profile) => profile.isScreened).length;
   const highRiskCount = profiles.filter((profile) => profile.riskLevel === RiskLevel.HIGH).length;
 
-  const consultationTopics = input.consultations
-    .filter((consultation) => matchesStudyYearFilter(consultation.studentStudyYear, filterStudyYear))
-    .map((consultation) => consultation.topic);
+  const filteredConsultations = input.consultations.filter((consultation) =>
+    matchesStudyYearFilter(consultation.studentStudyYear, filterStudyYear)
+  );
+  const filteredReferrals = input.referrals.filter((referral) =>
+    matchesStudyYearFilter(referral.studentStudyYear, filterStudyYear)
+  );
+  const filteredEmergencies = input.emergencies.filter((emergency) =>
+    matchesStudyYearFilter(emergency.studentStudyYear, filterStudyYear)
+  );
 
   return {
     studyYear: input.studyYear,
@@ -423,7 +433,7 @@ export const buildStudyYearBucket = (input: {
     highRiskPercent:
       profiles.length === 0 ? 0 : Math.round((highRiskCount / profiles.length) * 100),
     avgGhq28Score: ghq28ScoreCount === 0 ? null : Math.round(ghq28ScoreTotal / ghq28ScoreCount),
-    commonIssues: aggregateCommonIssues(consultationTopics),
+    commonIssues: aggregateCommonIssues(filteredConsultations.map((consultation) => consultation.topic)),
     trends: buildTrendItems({
       screeningEvents: input.screeningEvents,
       referrals: input.referrals,
@@ -432,6 +442,11 @@ export const buildStudyYearBucket = (input: {
       now: input.now,
     }),
     sections: buildSectionStats(input.profiles, filterStudyYear),
+    operations: buildOperationsStats({
+      consultations: filteredConsultations,
+      referrals: filteredReferrals,
+      emergencies: filteredEmergencies,
+    }),
   };
 };
 
@@ -487,6 +502,7 @@ export const buildStudyYearBuckets = (input: {
   return { overall, byStudyYear };
 };
 
+/** สรุปตัวชี้วัดปฏิบัติการจากรายการเคสที่กรองแล้ว */
 export const buildOperationsStats = (input: {
   consultations: Array<{ status: ConsultationRequestStatus; createdAt: Date; acceptedAt: Date | null }>;
   referrals: Array<{ status: ReferralStatus }>;
@@ -686,6 +702,16 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
 
   const screeningEvents: ScreeningEvent[] = [];
 
+  // นับทุกครั้งที่ประเมินเพื่อกราฟแนวโน้มรายเดือน (ไม่ตัดเหลือแค่ล่าสุด)
+  assessments.forEach((assessment) => {
+    screeningEvents.push({
+      at: assessment.assessedAt,
+      studentId: assessment.studentId,
+      studentStudyYear: studentStudyYearById.get(assessment.studentId) ?? null,
+      riskLevel: assessment.riskLevel,
+    });
+  });
+
   surveyResponseByStudentId.forEach((response, studentId) => {
     screeningEvents.push({
       at: response.submittedAt,
@@ -695,22 +721,11 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
     });
   });
 
-  latestAssessmentByStudentId.forEach((assessment, studentId) => {
-    if (surveyResponseByStudentId.has(studentId)) {
-      return;
-    }
-
-    screeningEvents.push({
-      at: assessment.assessedAt,
-      studentId,
-      studentStudyYear: studentStudyYearById.get(studentId) ?? null,
-      riskLevel: assessment.riskLevel,
-    });
-  });
-
   const consultationRecords: ConsultationRecord[] = consultations.map((consultation) => ({
     topic: consultation.topic,
     createdAt: consultation.createdAt,
+    acceptedAt: consultation.acceptedAt,
+    status: consultation.status,
     studentStudyYear: normalizeStudyYearKey(consultation.student.studyYear),
   }));
 
@@ -735,12 +750,6 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
     now,
   });
 
-  const operations = buildOperationsStats({
-    consultations,
-    referrals,
-    emergencies,
-  });
-
   return {
     generatedAt: now.toISOString(),
     activeSurvey: activeSurvey
@@ -751,6 +760,6 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
       : null,
     overall,
     byStudyYear,
-    operations,
+    operations: overall.operations,
   };
 };

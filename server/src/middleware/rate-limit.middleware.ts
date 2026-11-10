@@ -54,14 +54,14 @@ const isSafeReadRequest = (req: Request): boolean =>
 
 export const apiRateLimit = createLimiter(
   parsePositiveInt(process.env.API_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 5000),
+  parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 300),
   "มีคำขอเข้าใช้งานระบบมากเกินไป กรุณาลองใหม่อีกครั้ง",
   { skip: isHealthCheckRequest }
 );
 
 export const apiWriteRateLimit = createLimiter(
   parsePositiveInt(process.env.API_WRITE_RATE_LIMIT_WINDOW_MS, 60 * 1000),
-  parsePositiveInt(process.env.API_WRITE_RATE_LIMIT_MAX, 2000),
+  parsePositiveInt(process.env.API_WRITE_RATE_LIMIT_MAX, 60),
   "มีคำขอเปลี่ยนแปลงข้อมูลมากเกินไป กรุณาลองใหม่อีกครั้ง",
   {
     skip: (req) => isHealthCheckRequest(req) || isSafeReadRequest(req),
@@ -117,9 +117,22 @@ export const sosRateLimit = createLimiter(
   { keyGenerator: authenticatedUserKey }
 );
 
+export const consentRateLimit = createLimiter(
+  parsePositiveInt(process.env.CONSENT_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000),
+  parsePositiveInt(process.env.CONSENT_RATE_LIMIT_MAX, 20),
+  "บันทึกความยินยอมบ่อยเกินไป กรุณาลองใหม่ภายหลัง"
+);
+
 export const consultationRequestRateLimit = createLimiter(
   parsePositiveInt(process.env.CONSULTATION_REQUEST_RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000),
   parsePositiveInt(process.env.CONSULTATION_REQUEST_RATE_LIMIT_MAX, 10),
   "คุณส่งคำขอรับคำปรึกษาบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
+  { keyGenerator: authenticatedUserKey }
+);
+
+export const studentChatRateLimit = createLimiter(
+  parsePositiveInt(process.env.STUDENT_CHAT_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
+  parsePositiveInt(process.env.STUDENT_CHAT_RATE_LIMIT_MAX, 40),
+  "คุณส่งข้อความแชทบ่อยเกินไป กรุณาพักสักครู่แล้วลองใหม่",
   { keyGenerator: authenticatedUserKey }
 );

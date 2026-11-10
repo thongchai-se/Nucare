@@ -6,14 +6,35 @@ dist
 !.env.example
 !.env.local.example
 !.env.production.example
+!.env.faculty.example
 prisma/dev.db
 *.log
 *.tmp
 *.tsbuildinfo
+
+# Docker secrets (keep examples only)
 secrets/*
 !secrets/README.md
 !secrets/examples/
 secrets/examples/*
 !secrets/examples/*.example.txt
-.skill
+secrets/test-accounts.md
+secrets/seed-local-test-accounts.js
+
+# Local workspace / personal notes (keep at root, do not commit)
+status.md
+data.md
+.skill/
+.impeccable/
+.cursor/
+
+# Archive of non-delivery extras (local only)
+all/
+
+# App runtime / local artifacts
 server/backups/
+server/uploads/**
+!server/uploads/site-media/
+!server/uploads/site-media/.gitkeep
+client/logs/
+server/scripts/verify-test-links.ts

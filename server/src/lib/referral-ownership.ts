@@ -5,6 +5,10 @@ export type ReferralOwnerSnapshot = {
   createdAt: Date;
 };
 
+/**
+ * หาเจ้าของเคสที่รับแล้วจาก acceptedBy เป็นหลัก
+ * ถ้ายังไม่มี (ข้อมูลเก่า) ค่อย fallback จาก audit log
+ */
 export const getAcceptedReferralOwners = async (
   referralIds: string[]
 ): Promise<Map<string, ReferralOwnerSnapshot>> => {
@@ -12,11 +16,39 @@ export const getAcceptedReferralOwners = async (
     return new Map();
   }
 
+  const ownerByReferralId = new Map<string, ReferralOwnerSnapshot>();
+
+  const referrals = await prisma.caseReferral.findMany({
+    where: {
+      id: { in: referralIds },
+      acceptedByUserId: { not: null },
+    },
+    select: {
+      id: true,
+      updatedAt: true,
+      acceptedBy: {
+        select: { name: true },
+      },
+    },
+  });
+
+  for (const referral of referrals) {
+    ownerByReferralId.set(referral.id, {
+      actorName: referral.acceptedBy?.name ?? null,
+      createdAt: referral.updatedAt,
+    });
+  }
+
+  const missingIds = referralIds.filter((id) => !ownerByReferralId.has(id));
+  if (missingIds.length === 0) {
+    return ownerByReferralId;
+  }
+
   const auditLogs = await prisma.auditLog.findMany({
     where: {
       entityType: "CaseReferral",
       entityId: {
-        in: referralIds,
+        in: missingIds,
       },
       action: "mental-health.referral.update-status",
       description: {
@@ -34,8 +66,6 @@ export const getAcceptedReferralOwners = async (
       createdAt: "desc",
     },
   });
-
-  const ownerByReferralId = new Map<string, ReferralOwnerSnapshot>();
 
   for (const log of auditLogs) {
     if (!log.entityId || ownerByReferralId.has(log.entityId)) {

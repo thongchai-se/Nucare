@@ -3,6 +3,8 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock } from "lucide-react";
+import { useAuth } from "@/context/auth.context";
+import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import api from "@/lib/axios";
 
 export type PasswordFormTone = "student" | "portal" | "admin";
@@ -25,6 +27,7 @@ export function ChangePasswordForm({
   tone,
 }: ChangePasswordFormProps) {
   const router = useRouter();
+  const { refreshAuth } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,13 +40,13 @@ export function ChangePasswordForm({
 
   const panelClassName =
     tone === "student"
-      ? "rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8"
+      ? "max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
       : "rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
 
   const buttonClassName =
     tone === "admin"
       ? "bg-slate-800 hover:bg-slate-900"
-      : "bg-blue-700 hover:bg-blue-800";
+      : "bg-[#0057A8] hover:bg-[#00468a]";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -78,6 +81,7 @@ export function ChangePasswordForm({
       setNewPassword("");
       setConfirmPassword("");
       setSuccessMessage(response.data.message || "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
+      await refreshAuth();
 
       window.setTimeout(() => {
         router.replace(onSuccessRedirect);
@@ -195,14 +199,16 @@ export function ChangePasswordForm({
           <button
             type="submit"
             disabled={submitting}
-            className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition ${buttonClassName} disabled:cursor-not-allowed disabled:opacity-60`}
+            className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white shadow-sm transition ${buttonClassName} disabled:cursor-not-allowed disabled:opacity-60`}
           >
-            {submitting ? "กำลังบันทึก..." : submitLabel}
+            <ConfirmSubmitLabel busy={submitting}>
+              {submitting ? "กำลังบันทึก..." : submitLabel}
+            </ConfirmSubmitLabel>
           </button>
           <button
             type="button"
             onClick={() => router.push(cancelHref)}
-            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             ยกเลิก
           </button>

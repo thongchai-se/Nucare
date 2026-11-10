@@ -1,0 +1,38 @@
+% TC14 — roadmap ข้อสังเกตจากเหตุการณ์จริงเท่านั้น
+\begin{testscenario}{14}{15}
+  \tcmeta{TC14}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 2 พฤศจิกายน พ.ศ.\ 2569}{1.3}
+  \tcname{การสร้างเส้นทางติดตามข้อสังเกตจากเหตุการณ์ที่มีจริง}
+  \tcpre{รัน unit test ของ \tccode{buildObservationRoadmap}}
+  \tcdesc{ทดสอบว่า roadmap เริ่มจากขั้นแจ้งเท่านั้น เพิ่มรับเรื่อง/ปิดเรื่องพร้อมเหตุผล ส่งต่อผู้เชี่ยวชาญต่อได้หลังปิด และรวมหมุดส่งต่อปลายทางเดียวกัน}
+
+  \tccase{1}{ยังไม่มีใครรับเรื่อง}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{buildObservationRoadmap} ด้วย Alert สถานะ OPEN
+      \item ตรวจจำนวนและป้ายขั้น
+    \end{tcsteps}}{มีเพียงขั้น ``แจ้งข้อสังเกต''}{unit ผ่าน}{Pass}
+
+  \tccase{2}{ที่ปรึกษารับเรื่องบางใบ}{%
+    \begin{tcsteps}
+      \item เรียกด้วย ACKNOWLEDGED ร่วมกับ OPEN
+      \item ตรวจลำดับป้ายและชื่อผู้รับเรื่อง
+    \end{tcsteps}}{ได้ขั้นแจ้งแล้วตามด้วยรับเรื่องเฉพาะใบที่ดำเนินการ}{unit ผ่าน}{Pass}
+
+  \tccase{3}{ปิดเรื่องเก็บเหตุผลและยังส่งต่อได้}{%
+    \begin{tcsteps}
+      \item เรียกด้วย CLOSED พร้อม \tccode{resolutionNote}
+      \item เพิ่ม referral หลังเวลาปิดเรื่อง
+      \item ตรวจลำดับ kind และรายละเอียดเหตุผล
+    \end{tcsteps}}{ได้แจ้ง $\rightarrow$ รับ $\rightarrow$ ปิด (มีเหตุผล) $\rightarrow$ ส่งต่อสองบรรทัด}{unit ผ่าน}{Pass}
+
+  \tccase{4}{รวมส่งต่อปลายทางซ้ำเป็นหมุดเดียว}{%
+    \begin{tcsteps}
+      \item เรียกด้วย referral ปลายทางเดียวกัน 2 รายการ
+      \item ตรวจจำนวนหมุด kind referred และข้อความจำนวนครั้ง
+    \end{tcsteps}}{มีหมุดส่งต่อเพียง 1 อัน แสดงสถานะล่าสุดและจำนวนครั้ง}{unit ผ่าน}{Pass}
+
+  \tccase{5}{UI รวมหมุดซ้ำจากป้ายเก่าและตัดสองบรรทัด}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{prepareRoadmapSteps} ด้วยป้าย ``ส่งต่อ · \ldots'' ซ้ำ
+      \item ตรวจป้ายสองบรรทัดและจำนวนหมุด
+    \end{tcsteps}}{เหลือหมุดส่งต่อ 1 อัน ป้ายขึ้นบรรทัดใหม่}{unit ผ่าน}{Pass}
+\end{testscenario}

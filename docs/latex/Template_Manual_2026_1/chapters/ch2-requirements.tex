@@ -1,0 +1,226 @@
+% =====================================================================
+% บทที่ 2 ความต้องการของระบบและการติดตั้ง (ผู้อ่าน: ผู้ดูแลระบบ นักพัฒนา)
+% =====================================================================
+\label{ch:install}
+
+\begin{guide}
+ผู้อ่านบทนี้คือผู้ที่ต้องติดตั้งระบบจากซอร์สโค้ดหรือไฟล์ที่ส่ง เช่น ผู้ดูแลระบบ กรรมการ
+หรือรุ่นน้องที่รับช่วงต่อ ให้มีเนื้อหาดังนี้
+\begin{itemize}
+  \item ความต้องการของระบบ แยกฝั่งผู้ใช้งาน (อุปกรณ์ เบราว์เซอร์ ระบบปฏิบัติการ)
+        และฝั่งเครื่องแม่ข่าย (หน่วยประมวลผล หน่วยความจำ พื้นที่ดิสก์ ระบบปฏิบัติการ)
+        ระบุทั้งค่าขั้นต่ำและค่าที่แนะนำ
+  \item ซอฟต์แวร์ที่ต้องติดตั้งก่อน พร้อมรุ่นและคำสั่งตรวจสอบ
+  \item ขั้นตอนติดตั้งเรียงตามลำดับ ทุกคำสั่งคัดลอกไปใช้ได้ และบอกผลลัพธ์ที่ควรเห็นหลังขั้นตอนสำคัญ
+  \item การตั้งค่าเป็นตาราง (ชื่อ ค่าตัวอย่าง ความหมาย) และค่าที่ต้องเปลี่ยนก่อนใช้งานจริง
+  \item วิธีตรวจว่าติดตั้งสำเร็จ และบัญชีเริ่มต้นสำหรับทดสอบ
+\end{itemize}
+แอปบนมือถือ: ระบุรุ่น Android/iOS วิธีติดตั้งไฟล์ APK หรือจากสโตร์ และสิทธิ์ที่แอปขอ \\
+ระบบฮาร์ดแวร์/IoT: ใส่รายการอุปกรณ์พร้อมรุ่น แผนผังการต่อวงจร แหล่งจ่ายไฟ และการอัปโหลดเฟิร์มแวร์ \\
+งานวิจัย/โมเดล AI: ระบุรุ่น Python ไลบรารี GPU และตำแหน่งดาวน์โหลดโมเดลหรือชุดข้อมูล
+\end{guide}
+
+\section{ความต้องการของระบบ}
+\label{sec:requirements}
+
+ระบบเป็นเว็บแอปพลิเคชัน ผู้ใช้งานใช้ผ่านเว็บเบราว์เซอร์โดยไม่ต้องติดตั้งโปรแกรมเพิ่ม
+ส่วนเครื่องแม่ข่ายติดตั้งส่วนหลัง ฐานข้อมูล และตัวแปลเอกสาร \LaTeX{} ซึ่งทำงานในคอนเทนเนอร์ Docker
+
+\subsection{ความต้องการฝั่งผู้ใช้งาน}
+
+อุปกรณ์และซอฟต์แวร์ที่ผู้ใช้งานต้องมีแสดงดังตารางที่~\ref{tab:client-req}
+
+\begin{table}[H]
+\caption{ความต้องการฝั่งผู้ใช้งาน}
+\label{tab:client-req}
+\centering
+\begin{tabular}{|L{4cm}|L{\dimexpr\linewidth-4cm-4\tabcolsep-3\arrayrulewidth\relax}|}
+\hline
+\textbf{รายการ} & \textbf{ข้อกำหนด} \\ \hline
+เว็บเบราว์เซอร์ & Google Chrome, Microsoft Edge หรือ Mozilla Firefox รุ่นล่าสุด \\ \hline
+ความละเอียดหน้าจอ & ตั้งแต่ 1366 $\times$ 768 พิกเซลขึ้นไป (แนะนำ 1920 $\times$ 1080) \\ \hline
+บัญชีผู้ใช้ & อีเมลของมหาวิทยาลัย (\cmd{@kku.ac.th}) \\ \hline
+การเชื่อมต่อ & อินเทอร์เน็ตตลอดการใช้งาน (การแก้ไขร่วมกันใช้ WebSocket) \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{ความต้องการของเครื่องแม่ข่าย}
+
+เครื่องแม่ข่ายสำหรับใช้งานจริงควรมีคุณสมบัติตามตารางที่~\ref{tab:server-req}
+
+\begin{table}[H]
+\caption{ความต้องการของเครื่องแม่ข่าย}
+\label{tab:server-req}
+\centering
+\begin{tabular}{|L{4cm}|L{\dimexpr0.5\linewidth-2cm-3\tabcolsep-2\arrayrulewidth\relax}|L{\dimexpr0.5\linewidth-2cm-3\tabcolsep-2\arrayrulewidth\relax}|}
+\hline
+\textbf{รายการ} & \textbf{ขั้นต่ำ} & \textbf{แนะนำ} \\ \hline
+ระบบปฏิบัติการ & Ubuntu 22.04 LTS & Ubuntu 24.04 LTS \\ \hline
+หน่วยประมวลผล & 2 vCPU & 4 vCPU \\ \hline
+หน่วยความจำ & 4 GB & 8 GB \\ \hline
+พื้นที่ดิสก์ (SSD) & 20 GB & 50 GB \\ \hline
+เครือข่าย & 100 Mbps & 1 Gbps \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{note}
+อิมเมจ TeX Live ใช้พื้นที่ประมาณ 5 GB และการ Compile แต่ละครั้งใช้หน่วยความจำได้ไม่เกิน 512 MB
+จำนวนผู้ใช้ที่ Compile พร้อมกันได้จึงขึ้นกับหน่วยความจำของเครื่องแม่ข่าย
+\end{note}
+
+\subsection{ซอฟต์แวร์ที่ต้องติดตั้ง}
+
+ติดตั้งซอฟต์แวร์ในตารางที่~\ref{tab:prereq} บนเครื่องแม่ข่ายก่อนติดตั้งระบบ
+ฐานข้อมูล PostgreSQL และ TeX Live ไม่ต้องติดตั้งแยก เพราะทำงานในคอนเทนเนอร์ Docker
+
+\begin{table}[H]
+\caption{ซอฟต์แวร์ที่ต้องติดตั้งบนเครื่องแม่ข่าย}
+\label{tab:prereq}
+\centering
+\begin{tabular}{|L{4.2cm}|L{2.6cm}|L{\dimexpr\linewidth-11cm-8\tabcolsep-5\arrayrulewidth\relax}|L{4.2cm}|}
+\hline
+\textbf{ซอฟต์แวร์} & \textbf{รุ่น} & \textbf{ใช้สำหรับ} & \textbf{คำสั่งตรวจสอบ} \\ \hline
+Git & 2.30 ขึ้นไป & ดาวน์โหลดซอร์สโค้ด & \cmd{git --version} \\ \hline
+Docker และ Docker Compose & 24 ขึ้นไป & ฐานข้อมูล ส่วนหลัง และ TeX Live & \cmd{docker --version} \\ \hline
+Node.js และ npm & 20 LTS / 9 ขึ้นไป & build ส่วนหน้า & \cmd{node --version} \\ \hline
+Nginx & 1.18 ขึ้นไป & เว็บเซิร์ฟเวอร์ & \cmd{nginx -v} \\ \hline
+\end{tabular}
+\end{table}
+
+\section{การติดตั้งระบบ}
+\label{sec:install-steps}
+
+หัวข้อนี้ติดตั้งระบบบนเครื่องแม่ข่ายด้วย Docker Compose ซึ่งเริ่มฐานข้อมูลและส่วนหลังพร้อมกัน
+ส่วนการติดตั้งบนเครื่องของนักพัฒนาอธิบายในหัวข้อ~\ref{sec:dev-setup}
+
+\begin{steps}
+  \item ดาวน์โหลดซอร์สโค้ดไว้ที่โฟลเดอร์ \filename{~/cskkuproject}
+\begin{terminal}
+cd ~
+git clone <repo-url> cskkuproject
+cd cskkuproject
+\end{terminal}
+  \item สร้างไฟล์ตั้งค่าของส่วนหลัง และไฟล์รหัสผ่านสำหรับ Docker Compose
+        แล้วแก้ค่าตามหัวข้อ~\ref{sec:env}
+\begin{terminal}
+cp server/.env.example server/.env
+echo "DB_PASSWORD=<รหัสผ่านฐานข้อมูล>" > .env
+echo "JWT_SECRET=<คีย์ลับแบบสุ่ม>" >> .env
+\end{terminal}
+  \item สร้างอิมเมจ TeX Live สำหรับ Compile เอกสาร (ทำครั้งเดียว ใช้เวลานานตามความเร็วอินเทอร์เน็ต)
+\begin{terminal}
+docker-compose --profile build up texlive
+\end{terminal}
+  \item เริ่มฐานข้อมูลและส่วนหลัง แล้วตรวจสถานะ
+\begin{terminal}
+docker-compose up -d
+docker-compose ps
+\end{terminal}
+        \result{บริการ \cmd{db} และ \cmd{api} มีสถานะ \cmd{Up}}
+  \item สร้างข้อมูลเริ่มต้นและบัญชีทดสอบ (ครั้งแรกเท่านั้น)
+\begin{terminal}
+docker-compose exec api npm run db:seed
+\end{terminal}
+  \item Build ส่วนหน้าแล้วคัดลอกไปยังโฟลเดอร์ของเว็บเซิร์ฟเวอร์
+\begin{terminal}
+cd client
+npm install
+npm run build
+sudo mkdir -p /var/www/cskkuproject
+sudo cp -r dist/. /var/www/cskkuproject/
+\end{terminal}
+  \item ตั้งค่า Nginx ตามไฟล์ด้านล่าง แล้วโหลดการตั้งค่าใหม่ด้วยคำสั่ง \cmd{sudo nginx -s reload}
+        \result{เปิดที่อยู่ของเครื่องแม่ข่ายด้วยเว็บเบราว์เซอร์แล้วพบหน้าเข้าสู่ระบบ}
+\end{steps}
+
+\begin{codefile}{/etc/nginx/sites-available/cskkuproject}
+server {
+    listen 80;
+    server_name cskkuproject.example.com;
+    root /var/www/cskkuproject;
+
+    location / {
+        try_files $uri /index.html;
+    }
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+    }
+    location /collab {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+\end{codefile}
+
+\section{การตั้งค่าระบบ}
+\label{sec:env}
+
+ไฟล์ \filename{server/.env} กำหนดค่าการทำงานของส่วนหลังตามตารางที่~\ref{tab:env}
+ส่วนไฟล์ \filename{.env} ข้างไฟล์ \filename{docker-compose.yml} เก็บรหัสผ่านฐานข้อมูล (\cmd{DB_PASSWORD})
+และคีย์ลับ (\cmd{JWT_SECRET}) ที่ Docker Compose ส่งให้ส่วนหลัง
+
+\begin{envtable}[ตัวแปรสภาพแวดล้อมในไฟล์ server/.env][tab:env]
+\envvar{DATABASE_URL}{postgres://...:5432/cskkuproject}{ที่อยู่ฐานข้อมูล PostgreSQL ถ้าไม่กำหนด ระบบใช้ SQLite (สำหรับพัฒนา)}
+\envvar{JWT_SECRET}{change-this-secret}{คีย์ลงนาม token สุ่มอย่างน้อย 64 ไบต์ ห้ามใช้ค่าตัวอย่างในระบบจริง}
+\envvar{JWT_EXPIRES_IN}{7d}{อายุของ token หลังเข้าสู่ระบบ}
+\envvar{BCRYPT_ROUNDS}{12}{จำนวนรอบการเข้ารหัสรหัสผ่าน}
+\envvar{PORT}{3001}{พอร์ตของส่วนหลัง}
+\envvar{NODE_ENV}{production}{\cmd{development} หรือ \cmd{production}}
+\envvar{CLIENT_URL}{https://cskkuproject.example.com}{ที่อยู่ของส่วนหน้า (ใช้ตั้งค่า CORS)}
+\envvar{DOCKER_IMAGE}{texlive-thai:2023}{อิมเมจที่ใช้ Compile เอกสาร}
+\envvar{DOCKER_MEMORY_LIMIT}{536870912}{หน่วยความจำสูงสุดต่อการ Compile (512 MB)}
+\envvar{COMPILE_TIMEOUT_MS}{60000}{เวลาสูงสุดต่อการ Compile (มิลลิวินาที)}
+\envvar{MAX_FILE_SIZE}{2097152}{ขนาดไฟล์อัปโหลดสูงสุด (2 MB)}
+\end{envtable}
+
+\begin{codefile}[language=bash]{server/.env}
+# Server
+PORT=3001
+NODE_ENV=production
+CLIENT_URL=https://cskkuproject.example.com
+
+# JWT
+JWT_SECRET=change-this-to-a-strong-random-string
+JWT_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
+\end{codefile}
+
+\begin{tip}
+สร้างค่า \cmd{JWT_SECRET} แบบสุ่มได้ด้วยคำสั่งด้านล่าง แล้วคัดลอกผลลัพธ์ไปใส่ในไฟล์ \filename{.env}
+\end{tip}
+\begin{terminal}
+openssl rand -hex 64
+\end{terminal}
+
+\section{การตรวจสอบหลังติดตั้ง}
+\label{sec:verify}
+
+\begin{steps}
+  \item ตรวจว่าส่วนหลังทำงาน
+\begin{terminal}
+curl http://localhost:3001/api/health
+\end{terminal}
+        \result{ได้ข้อความที่ขึ้นต้นด้วย \cmd{\{"status":"ok"}}
+  \item เปิดระบบด้วยเว็บเบราว์เซอร์ แล้วเข้าสู่ระบบด้วยบัญชีทดสอบในตารางที่~\ref{tab:demo-accounts}
+  \item เปิดโครงงานที่อนุมัติแล้ว (สร้างได้ตามหัวข้อ~\ref{sec:proposal}) แล้วคลิก \btn{Compile}
+        \result{ไฟล์ PDF แสดงในพื้นที่ตัวอย่าง แสดงว่าอิมเมจ TeX Live พร้อมใช้งาน}
+\end{steps}
+
+\begin{table}[H]
+\caption{บัญชีสำหรับทดสอบระบบ}
+\label{tab:demo-accounts}
+\centering
+\begin{tabular}{|L{3.4cm}|L{\dimexpr\linewidth-6.8cm-6\tabcolsep-4\arrayrulewidth\relax}|L{3.4cm}|}
+\hline
+\textbf{บทบาท} & \textbf{อีเมล} & \textbf{รหัสผ่าน} \\ \hline
+นักศึกษา & \cmd{somchai.stud@kku.ac.th} & \cmd{password123} \\ \hline
+อาจารย์ที่ปรึกษา & \cmd{somchai@kku.ac.th} & \cmd{password123} \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{warning}
+บัญชีในตารางที่~\ref{tab:demo-accounts} สร้างจากคำสั่ง \cmd{npm run db:seed} เพื่อการทดสอบเท่านั้น
+ผู้ดูแลระบบต้องลบหรือเปลี่ยนรหัสผ่านก่อนเปิดใช้งานจริง
+\end{warning}

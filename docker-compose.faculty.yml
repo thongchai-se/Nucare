@@ -1,0 +1,140 @@
+# NUCARE — Faculty Ubuntu server (isolated Compose project)
+# Usage:
+#   docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml up -d --build
+#
+# Public surface: host port 89 → client:3000 only
+# Backend + PostgreSQL stay on internal Docker networks (not published)
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nucare-db
+    environment:
+      POSTGRES_DB: ${NUCARE_POSTGRES_DB:?NUCARE_POSTGRES_DB is required}
+      POSTGRES_USER: ${NUCARE_POSTGRES_USER:?NUCARE_POSTGRES_USER is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+    restart: unless-stopped
+    mem_limit: 256m
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: nucare-server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL_FILE: /run/secrets/database_url
+      JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
+      JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+      AI_API_KEY_FILE: /run/secrets/ai_api_key
+      CLIENT_ORIGIN: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
+      TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-1}
+      AUTH_COOKIE_SECURE: ${NUCARE_AUTH_COOKIE_SECURE:-false}
+      JSON_BODY_LIMIT: ${NUCARE_JSON_BODY_LIMIT:-1mb}
+      API_RATE_LIMIT_WINDOW_MS: ${NUCARE_API_RATE_LIMIT_WINDOW_MS:-60000}
+      API_RATE_LIMIT_MAX: ${NUCARE_API_RATE_LIMIT_MAX:-5000}
+      API_WRITE_RATE_LIMIT_WINDOW_MS: ${NUCARE_API_WRITE_RATE_LIMIT_WINDOW_MS:-60000}
+      API_WRITE_RATE_LIMIT_MAX: ${NUCARE_API_WRITE_RATE_LIMIT_MAX:-2000}
+      PASSWORD_RESET_TOKEN_EXPIRES_MINUTES: ${NUCARE_PASSWORD_RESET_TOKEN_EXPIRES_MINUTES:-5}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${NUCARE_AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      AUTH_RATE_LIMIT_MAX: ${NUCARE_AUTH_RATE_LIMIT_MAX:-10}
+      ASSESSMENT_RATE_LIMIT_WINDOW_MS: ${NUCARE_ASSESSMENT_RATE_LIMIT_WINDOW_MS:-3600000}
+      ASSESSMENT_RATE_LIMIT_MAX: ${NUCARE_ASSESSMENT_RATE_LIMIT_MAX:-30}
+      SURVEY_RATE_LIMIT_WINDOW_MS: ${NUCARE_SURVEY_RATE_LIMIT_WINDOW_MS:-3600000}
+      SURVEY_RATE_LIMIT_MAX: ${NUCARE_SURVEY_RATE_LIMIT_MAX:-60}
+      SOS_RATE_LIMIT_WINDOW_MS: ${NUCARE_SOS_RATE_LIMIT_WINDOW_MS:-600000}
+      SOS_RATE_LIMIT_MAX: ${NUCARE_SOS_RATE_LIMIT_MAX:-3}
+      CONSULTATION_REQUEST_RATE_LIMIT_WINDOW_MS: ${NUCARE_CONSULTATION_REQUEST_RATE_LIMIT_WINDOW_MS:-3600000}
+      CONSULTATION_REQUEST_RATE_LIMIT_MAX: ${NUCARE_CONSULTATION_REQUEST_RATE_LIMIT_MAX:-10}
+      STUDENT_IMPORT_BCRYPT_ROUNDS: ${NUCARE_STUDENT_IMPORT_BCRYPT_ROUNDS:-12}
+      STUDENT_IMPORT_CONCURRENCY: ${NUCARE_STUDENT_IMPORT_CONCURRENCY:-4}
+      # SMTP ยังไม่มี: ใช้ console + ALLOW_CONSOLE_EMAIL ก่อน
+      # เมื่อคณะให้ SMTP แล้วเปลี่ยน EMAIL_PROVIDER=smtp, ALLOW_CONSOLE_EMAIL=false
+      # และใส่ SMTP_* (+ เพิ่ม secret smtp_password ในไฟล์นี้ถ้าต้องการ)
+      EMAIL_PROVIDER: ${NUCARE_EMAIL_PROVIDER:-console}
+      ALLOW_CONSOLE_EMAIL: ${NUCARE_ALLOW_CONSOLE_EMAIL:-true}
+      SMTP_HOST: ${NUCARE_SMTP_HOST:-}
+      SMTP_PORT: ${NUCARE_SMTP_PORT:-587}
+      SMTP_SECURE: ${NUCARE_SMTP_SECURE:-false}
+      SMTP_USER: ${NUCARE_SMTP_USER:-}
+      SMTP_PASS: ${NUCARE_SMTP_PASS:-}
+      SMTP_FROM: ${NUCARE_SMTP_FROM:-}
+      CHAT_PROVIDER: ${NUCARE_CHAT_PROVIDER:-kku}
+      KKU_GEN_BASE_URL: ${NUCARE_KKU_GEN_BASE_URL:-https://gen.ai.kku.ac.th/api/v1}
+      KKU_GEN_CHAT_MODEL: ${NUCARE_KKU_GEN_CHAT_MODEL:-gemini-3.8-flash}
+      ENABLE_DEFAULT_USER_SEED: ${NUCARE_ENABLE_DEFAULT_USER_SEED:-false}
+      ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION: ${NUCARE_ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION:-false}
+    networks:
+      - edge
+      - backend
+    # No host ports — reachable only via client reverse rewrite on the Docker network
+    expose:
+      - "5000"
+    restart: unless-stopped
+    mem_limit: 384m
+    secrets:
+      - database_url
+      - jwt_access_secret
+      - jwt_refresh_secret
+      - ai_api_key
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # Same-origin browser calls → Next rewrite /api/* to internal server
+        NEXT_PUBLIC_API_URL: ""
+        NEXT_PUBLIC_SITE_URL: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
+        NUCARE_API_PROXY_URL: http://server:5000
+    container_name: nucare-client
+    depends_on:
+      - server
+    environment:
+      NUCARE_API_PROXY_URL: http://server:5000
+    networks:
+      - edge
+    ports:
+      - "${NUCARE_CLIENT_PORT:-89}:3000"
+    restart: unless-stopped
+    mem_limit: 384m
+
+networks:
+  edge:
+    name: nucare_edge
+  backend:
+    internal: true
+    name: nucare_backend
+
+secrets:
+  postgres_password:
+    file: ${NUCARE_POSTGRES_PASSWORD_SECRET_FILE:?NUCARE_POSTGRES_PASSWORD_SECRET_FILE is required}
+  database_url:
+    file: ${NUCARE_DATABASE_URL_SECRET_FILE:?NUCARE_DATABASE_URL_SECRET_FILE is required}
+  jwt_access_secret:
+    file: ${NUCARE_JWT_ACCESS_SECRET_FILE:?NUCARE_JWT_ACCESS_SECRET_FILE is required}
+  jwt_refresh_secret:
+    file: ${NUCARE_JWT_REFRESH_SECRET_FILE:?NUCARE_JWT_REFRESH_SECRET_FILE is required}
+  ai_api_key:
+    file: ${NUCARE_AI_API_KEY_SECRET_FILE:?NUCARE_AI_API_KEY_SECRET_FILE is required}
+
+volumes:
+  postgres_data:
+    name: nucare_postgres_data

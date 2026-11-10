@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { Cookie, Settings, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { acquireBodyScrollLock } from "@/lib/body-scroll-lock";
+import api from "@/lib/axios";
 
 const COOKIE_CONSENT_KEY = "nucare_cookie_consent_v1";
 const COOKIE_PREFERENCES_KEY = "nucare_cookie_preferences_v1";
+const COOKIE_ANONYMOUS_ID_KEY = "nucare_cookie_anonymous_id";
+const CONSENT_POLICY_VERSION = "2026-09-08";
 
 type CookiePreferences = {
   necessary: true;
@@ -20,13 +25,35 @@ export default function CookieConsentPopup() {
   const [allowAnalytics, setAllowAnalytics] = useState(true);
   const settingsDialogRef = useRef<HTMLDivElement | null>(null);
 
+  const getAnonymousId = (): string => {
+    const existing = window.localStorage.getItem(COOKIE_ANONYMOUS_ID_KEY);
+    if (existing) {
+      return existing;
+    }
+
+    const created = window.crypto?.randomUUID?.() || `anon-${Date.now()}`;
+    window.localStorage.setItem(COOKIE_ANONYMOUS_ID_KEY, created);
+    return created;
+  };
+
   const saveConsent = (preferences: CookiePreferences, status: ConsentStatus) => {
     try {
       window.localStorage.setItem(
         COOKIE_CONSENT_KEY,
-        JSON.stringify({ status, timestamp: new Date().toISOString() }),
+        JSON.stringify({ status, timestamp: new Date().toISOString(), policyVersion: CONSENT_POLICY_VERSION }),
       );
       window.localStorage.setItem(COOKIE_PREFERENCES_KEY, JSON.stringify(preferences));
+      void api
+        .post("/api/consent", {
+          anonymousId: getAnonymousId(),
+          status,
+          analytics: preferences.analytics,
+          policyVersion: CONSENT_POLICY_VERSION,
+        })
+        .catch((error) => {
+          // Local consent still applies; surface sync failure for ops without blocking UI.
+          console.warn("Failed to sync cookie consent to server", error);
+        });
     } catch {
       // Ignore storage errors to avoid blocking UI interactions.
     }
@@ -56,8 +83,7 @@ export default function CookieConsentPopup() {
 
     const previousActiveElement =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
     const focusableSelector =
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -104,7 +130,7 @@ export default function CookieConsentPopup() {
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
+      releaseScrollLock();
       window.removeEventListener("keydown", onKeyDown);
       previousActiveElement?.focus();
     };
@@ -190,11 +216,11 @@ export default function CookieConsentPopup() {
           <button
             type="button"
             aria-label="close cookie settings"
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/50"
             onClick={() => setIsSettingsOpen(false)}
           />
 
-          <div className="fixed inset-0 z-10 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4">
+          <div className="fixed inset-0 z-10 flex items-center justify-center overflow-hidden p-3 sm:p-4">
             <div
               id="cookie-settings-dialog"
               ref={settingsDialogRef}
@@ -262,9 +288,9 @@ export default function CookieConsentPopup() {
                 <button
                   type="button"
                   onClick={handleSaveSettings}
-                  className="flex-1 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-800"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-800"
                 >
-                  บันทึกการตั้งค่า
+                  <ConfirmSubmitLabel>บันทึกการตั้งค่า</ConfirmSubmitLabel>
                 </button>
                 <button
                   type="button"

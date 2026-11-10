@@ -14,6 +14,8 @@
 - `.env.production.example`
 - `secrets/examples/*.example.txt`
 
+สำหรับเซิร์ฟเวอร์คณะ (host port 89, single public entry, RAM จำกัด) ใช้ `docker-compose.faculty.yml` และดู [docker-faculty.md](./docker-faculty.md)
+
 ## Recommended setup
 
 1. Copy `.env.production.example` to `.env.production`.

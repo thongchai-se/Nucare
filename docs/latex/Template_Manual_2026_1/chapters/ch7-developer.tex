@@ -1,0 +1,277 @@
+% =====================================================================
+% บทที่ 7 คู่มือสำหรับนักพัฒนา (ผู้อ่าน: นักพัฒนาที่รับช่วงต่อ)
+% =====================================================================
+\label{ch:dev}
+
+\begin{guide}
+บทนี้สำหรับนักพัฒนาที่ต้องแก้ไขหรือพัฒนาระบบต่อ เช่น รุ่นน้องหรือหน่วยงานเจ้าของระบบ
+เป้าหมายคือให้ผู้อ่านเริ่มพัฒนาได้เองโดยไม่ต้องถามผู้จัดทำ
+\begin{itemize}
+  \item สถาปัตยกรรมของระบบ และเทคโนโลยีที่ใช้พร้อมรุ่น
+  \item โครงสร้างโฟลเดอร์ของซอร์สโค้ด และหน้าที่ของแต่ละส่วน
+  \item การเตรียมเครื่องสำหรับพัฒนา การรันระบบ และการทดสอบ
+  \item ฐานข้อมูล: ตารางหลักและความสัมพันธ์ (รายละเอียดทุกฟิลด์ใส่ภาคผนวก)
+  \item API หรือส่วนต่อประสาน: สรุปหลักการในบทนี้ รายการเต็มใส่ภาคผนวก
+  \item แนวทางพัฒนาต่อ: ขั้นตอนเพิ่มฟังก์ชันใหม่ ข้อตกลงในการเขียนโค้ด และการใช้ Git
+  \item สิ่งที่ต้องทำก่อนนำรุ่นใหม่ขึ้นใช้งานจริง
+\end{itemize}
+แผนภาพ UML ฉบับเต็มอยู่ในบทที่ 4 ของเล่มรายงานแล้ว ให้อ้างถึงแทนการคัดลอกมาทั้งหมด \\
+แอปบนมือถือ: เพิ่มการ build การ sign และการตั้งค่า endpoint ของส่วนหลัง \\
+ระบบฮาร์ดแวร์/IoT: เพิ่มการกำหนดขา (pin) โปรโตคอลสื่อสาร และวิธีอัปโหลดเฟิร์มแวร์ \\
+งานวิจัย/โมเดล AI: เพิ่มการเตรียมข้อมูล การฝึกโมเดลใหม่ ค่าพารามิเตอร์ และวิธีวัดผล
+\end{guide}
+
+\section{สถาปัตยกรรมของระบบ}
+\label{sec:architecture}
+
+ระบบแบ่งเป็น 3 ส่วนดังภาพที่~\ref{fig:architecture} ส่วนหน้าติดต่อส่วนหลังผ่าน REST API
+และใช้ WebSocket สำหรับการแก้ไขเอกสารร่วมกัน ส่วนหลังสั่ง Compile เอกสารในคอนเทนเนอร์ TeX Live
+ที่แยกจากระบบหลัก เทคโนโลยีที่ใช้แสดงดังตารางที่~\ref{tab:tech}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=18bp and 58bp,
+    tier/.style={draw=cskkuStep, fill=cskkuStep!8, rounded corners=3pt, align=center,
+      font=\normalfont\small, minimum height=50bp, text width=80bp, inner sep=3bp},
+    aux/.style={tier, draw=black!55, fill=black!4},
+    arr/.style={{Stealth[length=5bp]}-{Stealth[length=5bp]}, line width=0.8pt, draw=black!60},
+    one/.style={-{Stealth[length=5bp]}, line width=0.8pt, draw=black!60},
+    lbl/.style={font=\normalfont\footnotesize, text=black!75, inner sep=2bp, align=center}]
+  \node[tier] (fe) {ส่วนหน้า\\React + Vite\\Monaco Editor};
+  \node[tier, right=of fe] (be) {ส่วนหลัง\\Node.js + Express\\Yjs};
+  \node[tier, right=of be] (db) {ฐานข้อมูล\\PostgreSQL\\(พัฒนา: SQLite)};
+  \node[aux, below=of be] (tex) {Docker\\TeX Live + XeLaTeX};
+  \draw[arr] ([yshift=8bp]fe.east) -- node[lbl, above]{REST /api} ([yshift=8bp]be.west);
+  \draw[arr] ([yshift=-8bp]fe.east) -- node[lbl, below]{WebSocket\\/collab} ([yshift=-8bp]be.west);
+  \draw[arr] (be) -- node[lbl, above]{Sequelize} (db);
+  \draw[one] (be) -- node[lbl, right]{Compile} (tex);
+\end{tikzpicture}
+\caption{สถาปัตยกรรมของระบบ}
+\label{fig:architecture}
+\end{figure}
+
+\begin{table}[H]
+\caption{เทคโนโลยีที่ใช้ในระบบ}
+\label{tab:tech}
+\centering
+\begin{tabular}{|L{3.6cm}|L{\dimexpr\linewidth-7cm-6\tabcolsep-4\arrayrulewidth\relax}|L{3.4cm}|}
+\hline
+\textbf{ส่วน} & \textbf{เทคโนโลยี} & \textbf{รุ่น} \\ \hline
+ส่วนหน้า & React, Vite, Monaco Editor, Axios & 18 / 5 \\ \hline
+การแก้ไขร่วมกัน & Yjs (CRDT), y-websocket, y-monaco & 13.6 \\ \hline
+ส่วนหลัง & Node.js, Express, Sequelize & 20 / 4.18 / 6 \\ \hline
+ฐานข้อมูล & PostgreSQL (ใช้งานจริง), SQLite (พัฒนา) & 15 / 3 \\ \hline
+การยืนยันตัวตน & JWT และ bcrypt & -- \\ \hline
+Compile เอกสาร & Docker, TeX Live, XeLaTeX & TeX Live 2023 \\ \hline
+\end{tabular}
+\end{table}
+
+รายละเอียดการใช้งาน Node.js และ PostgreSQL ศึกษาเพิ่มเติมได้จากเอกสารของผู้พัฒนา~\cite{nodejs2025,postgres2025}
+
+\section{โครงสร้างซอร์สโค้ด}
+\label{sec:source-tree}
+
+ซอร์สโค้ดแบ่งเป็นโฟลเดอร์ \filename{client} (ส่วนหน้า) และ \filename{server} (ส่วนหลัง)
+โฟลเดอร์ที่ต้องแก้ไขบ่อยมีดังนี้
+
+\begin{lstlisting}[style=cskkuterminal]
+cskkuproject/
+|-- client/src/
+|   |-- App.jsx            เส้นทางของหน้าจอ (routing)
+|   |-- pages/             หน้าจอหลัก
+|   |-- components/        ส่วนประกอบที่ใช้ซ้ำ
+|   |-- contexts/          สถานะการเข้าสู่ระบบ
+|   `-- services/api.js    ฟังก์ชันเรียก API
+|-- server/
+|   |-- app.js             จุดเริ่มต้นของส่วนหลัง
+|   |-- collaboration.js   WebSocket แก้ไขร่วมกัน
+|   |-- config/            การเชื่อมต่อฐานข้อมูล
+|   |-- models/            โมเดลข้อมูล (Sequelize)
+|   |-- controllers/       การทำงานของแต่ละ API
+|   |-- routes/            เส้นทาง API
+|   |-- middleware/        ตรวจ token สิทธิ์ ข้อมูลนำเข้า
+|   |-- templates/         แม่แบบ LaTeX ของโครงงานใหม่
+|   |-- scripts/           สคริปต์ดูแลและทดสอบ
+|   `-- docker/            Dockerfile ของ TeX Live
+`-- docker-compose.yml
+\end{lstlisting}
+
+\section{การเตรียมเครื่องสำหรับพัฒนา}
+\label{sec:dev-setup}
+
+ระหว่างพัฒนา ส่วนหลังใช้ฐานข้อมูล SQLite (ไฟล์ \filename{server/database.sqlite}) เมื่อไม่ได้กำหนด
+\cmd{DATABASE_URL} จึงไม่ต้องติดตั้ง PostgreSQL ซอฟต์แวร์ที่ต้องมีแสดงดังตารางที่~\ref{tab:dev-prereq}
+
+\begin{table}[H]
+\caption{ซอฟต์แวร์สำหรับเครื่องของนักพัฒนา}
+\label{tab:dev-prereq}
+\centering
+\begin{tabular}{|L{3.8cm}|L{2.4cm}|C{2.6cm}|L{\dimexpr\linewidth-8.8cm-8\tabcolsep-5\arrayrulewidth\relax}|}
+\hline
+\textbf{ซอฟต์แวร์} & \textbf{รุ่น} & \textbf{จำเป็น} & \textbf{คำสั่งตรวจสอบ} \\ \hline
+Node.js            & 18 ขึ้นไป     & \cmark & \cmd{node --version} \\ \hline
+npm                & 9 ขึ้นไป      & \cmark & \cmd{npm --version} \\ \hline
+Git                & 2.30 ขึ้นไป   & \cmark & \cmd{git --version} \\ \hline
+TeX Live (XeLaTeX) & 2023 ขึ้นไป   & \cmark & \cmd{xelatex --version} \\ \hline
+Docker             & 24 ขึ้นไป     & --     & \cmd{docker --version} \\ \hline
+PostgreSQL         & 15 ขึ้นไป     & --     & \cmd{psql --version} \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{steps}
+  \item ดาวน์โหลดซอร์สโค้ดและติดตั้งแพ็กเกจของทั้งสองส่วน
+\begin{terminal}
+git clone <repo-url> cskkuproject
+cd cskkuproject/server && npm install
+cd ../client && npm install
+\end{terminal}
+  \item สร้างไฟล์ตั้งค่าจากไฟล์ตัวอย่าง แล้วลบบรรทัด \cmd{DATABASE_URL} ออกเพื่อใช้ SQLite
+\begin{terminal}
+cd ../server
+cp .env.example .env
+\end{terminal}
+  \item สร้างข้อมูลทดสอบ (ครั้งแรกเท่านั้น) และเริ่มส่วนหลังในเทอร์มินัลที่ 1
+\begin{terminal}
+npm run db:seed
+npm run dev
+\end{terminal}
+  \item เริ่มส่วนหน้าในเทอร์มินัลที่ 2
+\begin{terminal}
+cd client
+npm run dev
+\end{terminal}
+        \result{เปิด \url{http://localhost:5173} แล้วเข้าสู่ระบบด้วยบัญชีในตารางที่~\ref{tab:demo-accounts}}
+\end{steps}
+
+\begin{note}
+ส่วนหน้าที่รันด้วย \cmd{npm run dev} ส่งต่อคำขอ \cmd{/api} และ \cmd{/collab} ไปยังพอร์ต 3001 ให้เอง
+(ตั้งค่าไว้ใน \filename{client/vite.config.js}) ระหว่างพัฒนาจึงไม่ต้องตั้งค่า Nginx
+\end{note}
+
+\section{การทดสอบ}
+\label{sec:dev-test}
+
+สคริปต์ \filename{server/scripts/flowTest.js} ทดสอบการทำงานหลักผ่าน API จริง
+ตั้งแต่สมัครสมาชิก สร้างและอนุมัติข้อเสนอ จนถึงการสร้างไฟล์และความเห็น
+เริ่มส่วนหลังก่อน แล้วรันในเทอร์มินัลใหม่
+
+\begin{terminal}
+cd server
+node scripts/flowTest.js
+\end{terminal}
+
+ผลลัพธ์แสดงเครื่องหมาย \cmark{} หน้ากรณีที่ผ่าน และสรุปจำนวนกรณีที่ผ่านและไม่ผ่านท้ายรายงาน
+
+\begin{warning}
+สคริปต์ทดสอบสร้างผู้ใช้และข้อมูลทดสอบลงฐานข้อมูล ใช้กับฐานข้อมูลสำหรับพัฒนาเท่านั้น
+ล้างฐานข้อมูลสำหรับพัฒนาได้ด้วย \cmd{node scripts/resetDb.js} ซึ่งลบข้อมูลทั้งหมด
+\end{warning}
+
+\section{ฐานข้อมูล}
+\label{sec:database}
+
+ฐานข้อมูลมี 9 ตารางตามตารางที่~\ref{tab:db-tables} โมเดลของแต่ละตารางอยู่ใน \filename{server/models/}
+และความสัมพันธ์กำหนดไว้ใน \filename{server/models/index.js}
+ส่วนหลังสร้างตารางให้อัตโนมัติเมื่อเริ่มทำงาน และตั้งชื่อคอลัมน์แบบ snake\_case เช่น \cmd{created_at}
+
+\begin{table}[H]
+\caption{ตารางในฐานข้อมูล}
+\label{tab:db-tables}
+\centering
+\begin{tabular}{|L{3.4cm}|L{\dimexpr\linewidth-8.4cm-6\tabcolsep-4\arrayrulewidth\relax}|L{5cm}|}
+\hline
+\textbf{ตาราง} & \textbf{ข้อมูลที่เก็บ} & \textbf{เชื่อมกับตาราง} \\ \hline
+\cmd{users} & ผู้ใช้และบทบาท & -- \\ \hline
+\cmd{proposals} & ข้อเสนอโครงงานและสถานะ & \cmd{users} (นักศึกษา อาจารย์) \\ \hline
+\cmd{proposal_logs} & ประวัติการเปลี่ยนสถานะข้อเสนอ & \cmd{proposals}, \cmd{users} \\ \hline
+\cmd{projects} & โครงงานที่อนุมัติแล้ว & \cmd{proposals} (หนึ่งต่อหนึ่ง) \\ \hline
+\cmd{files} & ไฟล์ LaTeX ของโครงงาน เก็บเนื้อหาในฐานข้อมูล & \cmd{projects} \\ \hline
+\cmd{comments} & ความเห็นในไฟล์ และการตอบกลับ & \cmd{files}, \cmd{users}, \cmd{comments} \\ \hline
+\cmd{submissions} & การส่งงาน (สำเนาไฟล์ ณ เวลาส่ง) & \cmd{projects}, \cmd{users} \\ \hline
+\cmd{deadlines} & กำหนดส่งงาน & \cmd{users} (ผู้สร้าง) \\ \hline
+\cmd{notifications} & การแจ้งเตือนของผู้ใช้ & \cmd{users} \\ \hline
+\end{tabular}
+\end{table}
+
+\section{API}
+\label{sec:api}
+
+ส่วนหลังให้บริการ REST API ที่ \cmd{/api} รับและส่งข้อมูลแบบ JSON รายการทั้งหมดอยู่ในภาคผนวก~ข
+หลักการที่ใช้ร่วมกันทุก API มีดังนี้
+
+\begin{enumerate}
+  \item เข้าสู่ระบบด้วย \cmd{POST /api/auth/login} จะได้ token กลับมา
+        แล้วส่ง token ในส่วนหัว \cmd{Authorization: Bearer <token>} ทุกคำขอ
+  \item สิทธิ์ตามบทบาทตรวจด้วย middleware \cmd{roleGuard} ถ้าไม่มีสิทธิ์จะได้รหัส 403
+  \item การแก้ไขร่วมกันเชื่อมต่อ WebSocket ที่ \cmd{/collab?room=project:<id>:file:<id>\&token=<token>}
+  \item เมื่อเกิดข้อผิดพลาด ระบบตอบกลับด้วยรหัสสถานะ HTTP และข้อความในรูปแบบดังนี้
+\end{enumerate}
+
+\begin{terminal}
+{ "error": { "code": 403, "message": "..." } }
+\end{terminal}
+
+ตัวอย่างการเรียก API ด้วย curl
+
+\begin{terminal}
+curl -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "somchai.stud@kku.ac.th",
+       "password": "password123"}'
+\end{terminal}
+
+\section{แนวทางการพัฒนาต่อ}
+\label{sec:extend}
+
+\subsection{การเพิ่มฟังก์ชันใหม่}
+
+\begin{steps}
+  \item เพิ่มหรือแก้โมเดลใน \filename{server/models/} และกำหนดความสัมพันธ์ใน \filename{models/index.js}
+  \item เขียนการทำงานใน \filename{server/controllers/}
+  \item เพิ่มเส้นทางใน \filename{server/routes/} พร้อม middleware \cmd{auth} และ \cmd{roleGuard}
+        ตามสิทธิ์ (ตัวอย่างในโปรแกรมที่~\ref{lst:route}) แล้วลงทะเบียนเส้นทางใน \filename{app.js}
+  \item เพิ่มฟังก์ชันเรียก API ใน \filename{client/src/services/api.js}
+  \item เพิ่มหน้าหรือส่วนประกอบใน \filename{client/src/pages/} หรือ \filename{components/}
+        และเพิ่มเส้นทางใน \filename{App.jsx}
+  \item เพิ่มกรณีทดสอบใน \filename{scripts/flowTest.js} แล้วรันทดสอบตามหัวข้อ~\ref{sec:dev-test}
+  \item ปรับคู่มือผู้ใช้และภาคผนวก~ข ให้ตรงกับฟังก์ชันใหม่
+\end{steps}
+
+\begin{lstlisting}[language=Java, caption={เส้นทาง API ที่จำกัดสิทธิ์ตามบทบาท (server/routes/deadlines.js)}, label={lst:route}]
+const router = require('express').Router();
+const ctrl = require('../controllers/deadlineController');
+const auth = require('../middleware/auth');
+const roleGuard = require('../middleware/roleGuard');
+
+// ทุกบทบาทดูกำหนดส่งได้ แต่สร้างได้เฉพาะอาจารย์
+router.get('/', auth, ctrl.list);
+router.post('/', auth, roleGuard('instructor', 'advisor'), ctrl.create);
+
+module.exports = router;
+\end{lstlisting}
+
+\subsection{ข้อตกลงในการพัฒนา}
+
+\begin{enumerate}
+  \item ชื่อตัวแปร ฟังก์ชัน และความเห็นในโค้ดเป็นภาษาอังกฤษ ข้อความที่แสดงต่อผู้ใช้เป็นภาษาไทย
+  \item API ที่ต้องเข้าสู่ระบบใช้ middleware \cmd{auth} ทุกเส้นทาง และตรวจข้อมูลนำเข้าด้วยกฎใน
+        \filename{middleware/validate.js}
+  \item แยก branch ต่อหนึ่งฟังก์ชัน เช่น \cmd{feature/deadline-reminder} แล้วรวมเข้า \cmd{main}
+        ผ่าน pull request หลังทดสอบผ่าน
+  \item ห้าม commit ไฟล์ \filename{.env} และ \filename{database.sqlite}
+\end{enumerate}
+
+\section{การนำรุ่นใหม่ขึ้นใช้งานจริง}
+\label{sec:deploy}
+
+ขั้นตอนติดตั้งบนเครื่องแม่ข่ายอยู่ในหัวข้อ~\ref{sec:install-steps} และการปรับรุ่นอยู่ในหัวข้อ~\ref{sec:upgrade}
+ก่อนส่งมอบรุ่นใหม่ให้ผู้ดูแลระบบ นักพัฒนาต้องตรวจรายการต่อไปนี้
+
+\begin{enumerate}
+  \item Build ส่วนหน้าด้วย \cmd{npm run build} ได้โดยไม่มีข้อผิดพลาด
+  \item สคริปต์ทดสอบผ่านทุกกรณี
+  \item ทดลองแก้ไขเอกสารร่วมกันจากเบราว์เซอร์ 2 เครื่องผ่าน Nginx เพื่อยืนยันว่า WebSocket ทำงาน
+  \item เขียนบันทึกการเปลี่ยนแปลงของรุ่น โดยเฉพาะการเปลี่ยนโครงสร้างตาราง
+  \item ปรับคู่มือเล่มนี้ และเพิ่มรายการในประวัติการแก้ไขเอกสาร
+\end{enumerate}

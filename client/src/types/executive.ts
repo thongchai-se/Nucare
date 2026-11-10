@@ -37,6 +37,13 @@ export type SectionStat = {
   highRiskPercent: number;
 };
 
+export type ExecutiveOperationsStats = {
+  avgConsultationResponseHours: number | null;
+  caseClosureRate: number | null;
+  openReferrals: number;
+  openSos: number;
+};
+
 export type StudyYearBucket = {
   studyYear: number | null;
   label: string;
@@ -50,13 +57,7 @@ export type StudyYearBucket = {
   commonIssues: CommonIssueItem[];
   trends: TrendItem[];
   sections: SectionStat[];
-};
-
-export type ExecutiveOperationsStats = {
-  avgConsultationResponseHours: number | null;
-  caseClosureRate: number | null;
-  openReferrals: number;
-  openSos: number;
+  operations: ExecutiveOperationsStats;
 };
 
 export type ExecutiveDashboardResponse = {

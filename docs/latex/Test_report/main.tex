@@ -1,0 +1,207 @@
+% =====================================================================
+%  รายงานการทดสอบ — ตารางสถานการณ์ทดสอบ / Test Case
+%  Compile: XeLaTeX  (Overleaf: Menu > Settings > Compiler > XeLaTeX)
+%
+%  โฟลเดอร์นี้แยกจากเล่มคู่มือ ใช้เก็บ test case ตามรูปแบบตารางในเล่มรายงาน
+%  วิธีใช้: กรอกข้อมูลส่วนที่ 1 แล้วเพิ่มไฟล์ใน scenarios/ แล้ว \input ในส่วนที่ 3
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage{testreport}
+
+% ---------------------------------------------------------------------
+% 1) ข้อมูลเล่ม
+% ---------------------------------------------------------------------
+\projectCode{CS 2568/01}
+\titleTH{ระบบดูแลและคัดกรองสุขภาพจิตนิสิต (NUCARE)}
+\titleEN{NUCARE — Student Mental Health Care and Screening System}
+\doctype{รายงานการทดสอบ}
+
+\systemUnderTest{ระบบเว็บแอปพลิเคชัน ``NUCARE''}
+\systemVersion{1.0}
+\testerName{นายสมชาย ใจดี}
+\testDateTH{วันที่ 22 ตุลาคม พ.ศ.\ 2568}
+
+\firstStudentID{653450001-1}
+\firstStudentPrefixTH{นาย}
+\firstStudentNameTH{สมชาย ใจดี}
+\secondStudentID{653450002-9}
+\secondStudentPrefixTH{นางสาว}
+\secondStudentNameTH{สมหญิง รักเรียน}
+
+\advisorTH{ผศ.ดร.ประสิทธิ์ สร้างสรรค์}
+\courseCode{CP354 772}
+\courseName{โครงงานคอมพิวเตอร์ 2}
+\semester{2}
+\academicYearTH{2568}
+\submitMonthTH{ตุลาคม}
+\submitYearTH{2568}
+
+\begin{document}
+
+% ---------------------------------------------------------------------
+% 2) ปก (ลบ \maketestcover ถ้าไม่ต้องการปก)
+% ---------------------------------------------------------------------
+\maketestcover
+
+\section*{สรุปการทดสอบ}
+เอกสารฉบับนี้รวบรวมสถานการณ์ทดสอบ (Test Scenario) และกรณีทดสอบ (Test Case)
+ของระบบเว็บแอปพลิเคชัน ``NUCARE'' เพื่อบันทึกขั้นตอน ผลลัพธ์ที่คาดหวัง ผลลัพธ์จริง และผลการทดสอบ
+ในรูปแบบตารางมาตรฐานของเล่มรายงานโครงงาน
+
+\begin{center}
+\begin{tabularx}{0.92\linewidth}{|c|Y|c|c|}
+\hline
+\rowcolor{tcHeader}
+\textbf{รหัส} & \textbf{ชื่อสถานการณ์ทดสอบ} & \textbf{จำนวนกรณี} & \textbf{ผลรวม} \\
+\hline
+TC01 & การเข้าสู่ระบบของผู้ใช้งานผ่านหน้าเว็บแอปพลิเคชัน & 4 & Pass \\
+\hline
+TC02 & การทำแบบประเมินสุขภาพจิตของนิสิตผ่านหน้าเว็บแอปพลิเคชัน & 3 & Pass \\
+\hline
+TC03 & การตรวจสอบสิทธิ์บทบาทเพิ่มเติมและการเข้าถึงข้อมูลนิสิต & 3 & Pass \\
+\hline
+TC04 & การบันทึกนัดหมายของทีมสุขภาพจิตและแสดงให้นิสิต & 2 & Pass \\
+\hline
+TC05 & การดูสรุปรายงานและทางลัดตั้งค่าของผู้ดูแลระบบ & 2 & Pass \\
+\hline
+TC06 & การอัปเดตสถานะ referral ของงานพัฒนานิสิต & 3 & Pass \\
+\hline
+TC07 & การรับและติดตามข้อสังเกตจากผู้สอนโดยอาจารย์ที่ปรึกษา & 2 & Pass \\
+\hline
+TC08 & การคุยกับเพื่อน AI และการกันถามการบ้าน & 3 & Pass \\
+\hline
+TC09 & การตรวจจับ Wellness Trend Indicators จากแชทนิสิต & 4 & Pass \\
+\hline
+TC10 & การตั้งค่าคลื่นแบบประเมินและกฎคัดเลือกกลุ่มเป้าหมาย & 3 & Pass \\
+\hline
+TC11 & การย่อชื่อ/อวตาร์โดยไม่ใช้ท้ายรหัสนิสิต & 3 & Pass \\
+\hline
+TC12 & การสรุปสถานะติดตามข้อสังเกตผู้สอนจากสถานะ Alert & 3 & Pass \\
+\hline
+TC13 & การยุบบทบาทผู้สอนและการแจ้งข้อสังเกตเฉพาะนอกสังกัด & 4 & Pass \\
+\hline
+TC14 & การสร้างเส้นทางติดตามข้อสังเกตจากเหตุการณ์จริง + ส่งต่อต่อได้ & 5 & Pass \\
+\hline
+TC15 & การตั้งความถี่แบบสอบถามแบบกำหนดเองและร่างคลื่นรอบถัดไป & 3 & Pass \\
+\hline
+TC16 & โครงส่งอีเมลแบบเปลี่ยน provider ได้และช่องทางแจ้งเตือน & 3 & Pass \\
+\hline
+TC17 & สัญญาณจากแชท AI ในประวัตินิสิต (ไม่ขึ้นกล่องแจ้งเตือน) & 3 & Pass \\
+\hline
+TC18 & นโยบายปิดแจ้งเตือน: dismiss / บังคับรับเรื่องก่อนปิดเคส & 3 & Pass \\
+\hline
+TC19 & แชทเพื่อน AI ผ่าน KKU Gen AI (Gemini/GPT/Claude) & 3 & Pass \\
+\hline
+TC20 & คำขอปรึกษานิสิต--ที่ปรึกษา และการนัดปรึกษาสุขภาพจิต & 6 & Pass \\
+\hline
+TC21 & เส้นทางหมุดติดตามการส่งต่อ และการเจรจานัดปรึกษาสองฝ่าย & 5 & Pass \\
+\hline
+TC22 & แยกคิวเจรจานัดของที่ปรึกษา และการเรียงนัดใกล้ถึง & 4 & Pass \\
+\hline
+TC23 & กล่องงานนิสิต: ต้องตอบ ข้อเสนอนัด และนัดใกล้ถึง & 6 & Pass \\
+\hline
+TC24 & กันนิสิตมีคำขอปรึกษาเปิดพร้อมกันหลายรอบ & 3 & Pass \\
+\hline
+TC25 & รูปแบบออนไลน์/พบตัว ยกเลิกโดยนิสิตหรืออาจารย์ (ป้ายเหลือง) และสถานที่จากอาจารย์ & 5 & Pass \\
+\hline
+TC26 & การแจ้งช่วยเหลือด่วน (SOS) เมื่อส่งไม่สำเร็จ & 3 & Pass \\
+\hline
+TC27 & การแบ่งหน้ารายการยาวแบบเดียวกับหน้า admin & 3 & Pass \\
+\hline
+TC28 & ปรับพอร์ทัลผู้บริหารให้ตรง PDPA และการใช้งาน & 5 & Pass \\
+\hline
+TC29 & Dossier นิสิตผู้บริหารและความกว้างเลย์เอาต์ & 4 & Pass \\
+\hline
+TC30 & เวิร์กโฟลว์ผู้เชี่ยวชาญสุขภาพจิต (รับคิว นัด บันทึกผล ประวัติ) & 6 & Pass \\
+\hline
+TC31 & เสริมความพร้อมใช้งานจริงของพอร์ทัลผู้เชี่ยวชาญสุขภาพจิต & 5 & Pass \\
+\hline
+TC32 & การ hardening พอร์ทัลงานพัฒนานิสิตให้ใช้งานจริง & 4 & Pass \\
+\hline
+TC33 & การแจ้งช่วยเหลือด่วน (SOS) มีผู้รับและดำเนินการได้ & 4 & Pass \\
+\hline
+TC34 & ผลคัดกรองความเสี่ยงสูงแจ้งที่ปรึกษาทางแอปและอีเมล & 3 & Pass \\
+\hline
+TC35 & การเชื่อมโยงบทบาทหลังแก้จุดขาด handoff & 4 & Pass \\
+\hline
+TC36 & การจัดการภาพประชาสัมพันธ์โดยแอดมิน & 3 & Pass \\
+\hline
+TC37 & Toast หลังกดปุ่ม แยกข้อความตามการกระทำ + helper คัด alerts & 5 & Pass \\
+\hline
+TC38 & สิทธิ์งานพัฒนานิสิตจัดการภาพประชาสัมพันธ์หน้านิสิต & 3 & Pass \\
+\hline
+TC39 & การ hardening ความพร้อมใช้งานจริง (รหัสผ่าน อีเมล แชท) & 4 & Pass \\
+\hline
+TC40 & นิสิตขอนัดผู้เชี่ยวชาญสุขภาพจิตผ่านช่องทางเฉพาะ & 3 & Pass \\
+\hline
+TC41 & แชทเพื่อน AI จำต่อเนื่องแบบประหยัดและกันทำการบ้าน & 5 & Pass \\
+\hline
+TC42 & แยกคิวรอรับกับเคสที่ดูแล และปรับ UX triage & 6 & Pass \\
+\hline
+TC43 & เปิดโมดัลแล้วแถบบนไม่หาย / ไม่ดันเลย์เอาต์ด้วยสกอลล์บาร์ซ้อน & 3 & Pass \\
+\hline
+TC44 & ปฏิทินนัดใกล้ถึง 7 วันบนหน้าแรกที่ปรึกษา & 3 & Pass \\
+\hline
+TC45 & จำกัดรายการแจ้งเตือน ปฏิทินหลายวัน และกันชนนัด 1 ชั่วโมง & 4 & Pass \\
+\hline
+TC46 & การตั้งค่า Secure flag ของ cookie ยืนยันตัวตน & 4 & Pass \\
+\hline
+\end{tabularx}
+\end{center}
+
+\clearpage
+
+% ---------------------------------------------------------------------
+% 3) ตารางสถานการณ์ทดสอบ — เพิ่ม \input{scenarios/...} ตามจำนวนเคส
+% ---------------------------------------------------------------------
+\section*{รายละเอียดสถานการณ์ทดสอบ}
+\input{scenarios/tc01-login}
+\input{scenarios/tc02-assessment}
+\input{scenarios/tc03-access-control}
+\input{scenarios/tc04-mh-appointments}
+\input{scenarios/tc05-admin-reports}
+\input{scenarios/tc06-sd-welfare}
+\input{scenarios/tc07-advisor-academic}
+\input{scenarios/tc08-student-chat}
+\input{scenarios/tc09-wellness-trend-signals}
+\input{scenarios/tc10-survey-eligibility-waves}
+\input{scenarios/tc11-name-initials}
+\input{scenarios/tc12-behavior-follow-up}
+\input{scenarios/tc13-collapse-instructor}
+\input{scenarios/tc14-observation-roadmap}
+\input{scenarios/tc15-survey-schedule}
+\input{scenarios/tc16-email-notify}
+\input{scenarios/tc17-wellness-visibility}
+\input{scenarios/tc18-alert-dismiss-signal}
+\input{scenarios/tc19-kku-gen-chat}
+\input{scenarios/tc20-consultation-appointments}
+\input{scenarios/tc21-referral-roadmap-schedule-negotiate}
+\input{scenarios/tc22-consultation-negotiate-lanes}
+\input{scenarios/tc23-student-consultation-inbox}
+\input{scenarios/tc24-active-consultation-one-at-a-time}
+\input{scenarios/tc25-consultation-channel-cancel}
+\input{scenarios/tc26-student-sos-fail-safe}
+\input{scenarios/tc27-list-pagination}
+\input{scenarios/tc28-executive-portal-hardening}
+\input{scenarios/tc29-executive-student-dossier}
+\input{scenarios/tc30-mental-health-expert-workflow}
+\input{scenarios/tc31-mental-health-production-hardening}
+\input{scenarios/tc32-student-development-hardening}
+\input{scenarios/tc33-sos-staff-receiver}
+\input{scenarios/tc34-high-risk-screening-referral}
+\input{scenarios/tc35-cross-role-handoffs}
+\input{scenarios/tc36-site-media-admin}
+\input{scenarios/tc37-dashboard-toast-ingest}
+\input{scenarios/tc38-sd-site-media-access}
+\input{scenarios/tc39-production-readiness-guards}
+\input{scenarios/tc40-student-expert-counseling-request}
+\input{scenarios/tc41-student-chat-memory-guardrails}
+\input{scenarios/tc42-mh-queue-cases-ux}
+\input{scenarios/tc43-modal-scroll-lock-header}
+\input{scenarios/tc44-advisor-upcoming-week-calendar}
+\input{scenarios/tc45-schedule-conflict-alerts-scroll}
+\input{scenarios/tc46-auth-cookie-secure}
+
+% แม่แบบว่าง: คัดลอก scenarios/_template.tex เป็นไฟล์ใหม่ แล้ว \input ที่นี่
+
+\end{document}

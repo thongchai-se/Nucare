@@ -1,4 +1,4 @@
-import { RiskLevel, SurveyStatus } from "@prisma/client";
+import { RiskLevel, SurveyStatus, SurveyWaveStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import {
   calculateSurveyMaxScore,
@@ -19,8 +19,13 @@ export type LatestActiveSurveyResult = {
   totalScore: number | null;
   distressLevel: Ghq28DistressLevel | null;
   distressLabel: string | null;
+  waveId?: string;
+  waveLabel?: string;
 };
 
+/**
+ * ดึงผลแบบประเมินล่าสุดต่อนักศึกษาจากคลื่นที่เปิด หรือผลล่าสุดข้ามคลื่นถ้าไม่มีคลื่นเปิด
+ */
 export const getLatestActiveSurveyResultsForStudents = async (
   studentIds: string[]
 ): Promise<Map<string, LatestActiveSurveyResult>> => {
@@ -30,47 +35,50 @@ export const getLatestActiveSurveyResultsForStudents = async (
   }
 
   const now = new Date();
-  const survey = await prisma.survey.findFirst({
+  const openWave = await prisma.surveyWave.findFirst({
     where: {
-      status: SurveyStatus.PUBLISHED,
-      isActive: true,
-      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
-      AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+      status: SurveyWaveStatus.OPEN,
+      opensAt: { lte: now },
+      OR: [{ closesAt: null }, { closesAt: { gte: now } }],
+      survey: { status: SurveyStatus.PUBLISHED },
     },
-    orderBy: [{ startsAt: "desc" }, { updatedAt: "desc" }],
+    orderBy: [{ opensAt: "desc" }],
     include: {
-      questions: {
-        orderBy: { order: "asc" },
-      },
-      responses: {
-        where: {
-          studentId: {
-            in: uniqueStudentIds,
-          },
-        },
-        orderBy: {
-          submittedAt: "desc",
-        },
+      survey: {
         include: {
-          answers: true,
+          questions: { orderBy: { order: "asc" } },
         },
       },
     },
   });
 
-  if (!survey) {
-    return new Map();
-  }
+  const responses = await prisma.surveyResponse.findMany({
+    where: {
+      studentId: { in: uniqueStudentIds },
+      ...(openWave ? { waveId: openWave.id } : {}),
+    },
+    orderBy: { submittedAt: "desc" },
+    include: {
+      answers: true,
+      wave: { select: { id: true, label: true } },
+      survey: {
+        include: {
+          questions: { orderBy: { order: "asc" } },
+        },
+      },
+    },
+  });
 
-  const maxScore = calculateSurveyMaxScore(survey.questions, survey.title);
-  const instrument = getSurveyInstrumentLabel(survey.title);
   const results = new Map<string, LatestActiveSurveyResult>();
 
-  for (const response of survey.responses) {
+  for (const response of responses) {
     if (results.has(response.studentId)) {
       continue;
     }
 
+    const survey = openWave?.survey ?? response.survey;
+    const maxScore = calculateSurveyMaxScore(survey.questions, survey.title);
+    const instrument = getSurveyInstrumentLabel(survey.title);
     const responseMaxScore = response.maxScore > 0 ? response.maxScore : maxScore;
     const totalScore =
       response.totalScore ??
@@ -91,6 +99,8 @@ export const getLatestActiveSurveyResultsForStudents = async (
       totalScore,
       distressLevel: distress?.level ?? null,
       distressLabel: distress?.labelTh ?? null,
+      waveId: response.waveId,
+      waveLabel: response.wave?.label ?? openWave?.label,
     });
   }
 

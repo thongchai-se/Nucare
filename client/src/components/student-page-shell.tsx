@@ -5,26 +5,24 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell,
+  Bot,
   ChevronDown,
   ClipboardEdit,
   Contact,
   HeartPulse,
   Home,
-  Lock,
   LogOut,
   Menu,
   MessageSquare,
   X,
 } from "lucide-react";
 import { facultyFullName } from "@/lib/brand";
-import { StudentCreditFooter } from "@/components/student-credit-footer";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { useAuth } from "@/context/auth.context";
 import type { Role, User } from "@/types/auth";
 import { formatStudentIdDisplay, getUserInitials } from "@/lib/student-dashboard";
 
-type StudentAppPage = "home" | "assessment" | "advisor" | "profile";
+type StudentAppPage = "home" | "assessment" | "chat" | "advisor" | "profile";
 
 type StudentPageShellContext = {
   identifier: string;
@@ -39,12 +37,12 @@ type StudentPageShellProps = {
 };
 
 const roleRedirects: Partial<Record<Role, string>> = {
-  ADMIN: "/dashboard/admin",
-  ADVISOR: "/dashboard/advisor",
-  EXECUTIVE: "/dashboard/executive",
-  INSTRUCTOR: "/dashboard/instructor",
-  MENTAL_HEALTH: "/dashboard/mental-health",
-  STUDENT_DEVELOPMENT: "/dashboard/student-development",
+  ADMIN: "/admin",
+  ADVISOR: "/advisor",
+  EXECUTIVE: "/executive",
+  INSTRUCTOR: "/advisor",
+  MENTAL_HEALTH: "/mental-health",
+  STUDENT_DEVELOPMENT: "/student-development",
 };
 
 const studentShellNavItems: Array<{
@@ -54,25 +52,31 @@ const studentShellNavItems: Array<{
   label: string;
 }> = [
   {
-    href: "/dashboard/student",
+    href: "/student",
     icon: Home,
     id: "home",
     label: "หน้าหลัก",
   },
   {
-    href: "/dashboard/student/assessment",
+    href: "/student/assessment",
     icon: ClipboardEdit,
     id: "assessment",
     label: "ประเมิน",
   },
   {
-    href: "/dashboard/student/advisor",
+    href: "/student/chat",
+    icon: Bot,
+    id: "chat",
+    label: "แชท AI",
+  },
+  {
+    href: "/student/advisor",
     icon: MessageSquare,
     id: "advisor",
     label: "ที่ปรึกษา",
   },
   {
-    href: "/dashboard/student/profile",
+    href: "/student/profile",
     icon: Contact,
     id: "profile",
     label: "โปรไฟล์",
@@ -94,13 +98,13 @@ export function StudentPageShell({
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.replace("/login");
+      router.replace("/?auth=login");
     }
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {
     if (!loading && user?.role && user.role !== "STUDENT") {
-      router.replace(roleRedirects[user.role] || "/dashboard");
+      router.replace(roleRedirects[user.role] || "/");
     }
   }, [loading, router, user?.role]);
 
@@ -128,7 +132,7 @@ export function StudentPageShell({
 
   const handleLogout = async () => {
     await logout();
-    router.replace("/login");
+    router.replace("/?auth=login");
   };
 
   const openProfileMenu = () => {
@@ -176,7 +180,7 @@ export function StudentPageShell({
       <nav className="fixed z-50 w-full border-b border-white/70 bg-white/90 backdrop-blur-md transition-all duration-300">
         <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
           <div className="flex h-16 items-center justify-between gap-4 sm:h-20">
-            <Link href="/dashboard/student" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <Link href="/student" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
                 <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
@@ -191,7 +195,7 @@ export function StudentPageShell({
             </Link>
 
             <div className="hidden min-w-0 flex-1 items-center justify-center xl:flex">
-              <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
+              <div className="grid grid-cols-5 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
                 {studentShellNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = item.id === activePage || pathname === item.href;
@@ -216,17 +220,6 @@ export function StudentPageShell({
             </div>
 
             <div className="hidden items-center gap-4 xl:flex">
-              <button
-                type="button"
-                className="relative rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-blue-700"
-                aria-label="notifications"
-              >
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border border-white bg-red-500" />
-              </button>
-
-              <div className="h-7 border-l border-slate-200" />
-
               <div
                 className="relative w-[15.5rem]"
                 ref={profileMenuRef}
@@ -275,7 +268,7 @@ export function StudentPageShell({
                   role="menu"
                 >
                   <Link
-                    href="/dashboard/student/profile"
+                    href="/student/profile"
                     className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
                     onClick={() => setProfileMenuOpen(false)}
                   >
@@ -283,16 +276,6 @@ export function StudentPageShell({
                       <Contact className="h-4 w-4" />
                     </div>
                     <p className="text-sm font-semibold text-slate-800">โปรไฟล์และข้อมูลส่วนตัว</p>
-                  </Link>
-                  <Link
-                    href="/dashboard/student/profile#security"
-                    className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
-                    onClick={() => setProfileMenuOpen(false)}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                      <Lock className="h-4 w-4" />
-                    </div>
-                    <p className="text-sm font-semibold text-slate-800">เปลี่ยนรหัสผ่าน</p>
                   </Link>
                   <button
                     type="button"
@@ -327,18 +310,6 @@ export function StudentPageShell({
           }`}
         >
           <div className="space-y-3 px-4 py-3">
-            <div className="flex items-center gap-3 rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
-                {userInitials}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-base font-bold text-slate-900">{user.name}</p>
-                <p className="truncate text-xs font-medium text-slate-500">
-                  {user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}
-                </p>
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               {studentShellNavItems.map((item) => {
                 const Icon = item.icon;
@@ -361,14 +332,6 @@ export function StudentPageShell({
                   </Link>
                 );
               })}
-              <Link
-                href="/dashboard/student/profile#security"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                onClick={closeMobileMenu}
-              >
-                <Lock className="h-4 w-4" />
-                รหัสผ่าน
-              </Link>
               <button
                 type="button"
                 onClick={handleLogout}
@@ -386,7 +349,6 @@ export function StudentPageShell({
         <div className={contentClassName}>{children({ identifier, user, userInitials })}</div>
       </section>
 
-      <StudentCreditFooter />
       <StudentMobileBottomNav />
     </main>
   );

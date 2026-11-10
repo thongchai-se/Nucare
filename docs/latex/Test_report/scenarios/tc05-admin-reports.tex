@@ -1,0 +1,24 @@
+% TC05 — รายงานและตั้งค่าแอดมิน
+\begin{testscenario}{5}{5}
+  \tcmeta{TC05}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 22 ตุลาคม พ.ศ.\ 2569}{1.0}
+  \tcname{การดูสรุปรายงานและทางลัดตั้งค่าของผู้ดูแลระบบ}
+  \tcpre{มีบัญชี ADMIN และเซิร์ฟเวอร์พร้อมข้อมูลนิสิต/แบบประเมินอย่างน้อยบางส่วน}
+  \tcdesc{ทดสอบว่าหน้า reports ดึงสรุปแบบไม่ระบุตัวตนได้ และหน้า settings ลิงก์ไปเครื่องมือจริง}
+
+  \tccase{1}{เปิดหน้าสถิติและรายงาน}{%
+    \begin{tcsteps}
+      \item เข้าสู่ระบบด้วย ADMIN
+      \item เปิด \tccode{/admin?view=reports}
+      \item กดรีเฟรชสรุป
+    \end{tcsteps}}{%
+    แสดงจำนวนนิสิต คัดกรองแล้ว referral/SOS ที่เปิดอยู่ โดยไม่มีชื่อนิสิต}{%
+    API reports/summary คืน overall และ operations}{Pass}
+
+  \tccase{2}{เปิดหน้าตั้งค่าและเข้าแบบประเมิน}{%
+    \begin{tcsteps}
+      \item เปิด \tccode{/admin?view=settings}
+      \item กดการ์ดแบบประเมินและรอบคัดกรอง
+    \end{tcsteps}}{%
+    ระบบพาไป \tccode{/admin/surveys} ได้}{%
+    ลิงก์ใน SettingsView ทำงานตามที่คาดหวัง}{Pass}
+\end{testscenario}

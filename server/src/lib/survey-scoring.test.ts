@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { RiskLevel, SurveyQuestionType } from "@prisma/client";
 import {
+  buildStudentFacingSurveyResult,
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
   getGhq28DistressLevel,
@@ -97,5 +98,22 @@ describe("GHQ-28 Likert scoring", () => {
       calculateSurveyResponseScore(ghq28Questions, allMaxAnswers, ghq28Title),
       84
     );
+  });
+});
+
+describe("buildStudentFacingSurveyResult", () => {
+  it("ส่งคะแนนและป้ายผลให้นิสิตหลังทำแบบ", () => {
+    const result = buildStudentFacingSurveyResult({
+      id: "resp-1",
+      submittedAt: new Date("2026-11-05T03:00:00.000Z"),
+      totalScore: 20,
+      maxScore: 84,
+      surveyTitle: ghq28Title,
+    });
+    assert.equal(result.id, "resp-1");
+    assert.equal(result.totalScore, 20);
+    assert.equal(result.maxScore, 84);
+    assert.equal(result.distressLevel, "MILD");
+    assert.match(String(result.distressLabel), /น้อย|Mild/);
   });
 });

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Loader2, X } from "lucide-react";
+import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 
 type ConfirmDialogProps = {
   cancelLabel?: string;
@@ -13,6 +15,8 @@ type ConfirmDialogProps = {
   onConfirm: () => void;
   open: boolean;
   placement?: "viewport" | "admin-content";
+  /** danger = ลบ/ปิดถาวร (แดง), primary = ยืนยันทั่วไป (ฟ้า) */
+  tone?: "danger" | "primary";
   title: string;
 };
 
@@ -24,6 +28,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
   open,
+  tone = "danger",
   title,
 }: ConfirmDialogProps) {
   const [mounted, setMounted] = useState(false);
@@ -32,29 +37,16 @@ export function ConfirmDialog({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
+  useBodyScrollLock(open);
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open]);
-
-  if (!mounted) {
+  if (!mounted || !open) {
     return null;
   }
 
   return createPortal(
     <>
       <div
-        className={`fixed inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-200 ${
-          open ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
+        className="fixed inset-0 bg-slate-950/45 transition-opacity duration-200"
         style={{ inset: 0, position: "fixed", zIndex: 10000 }}
         onClick={() => {
           if (!loading) {
@@ -64,23 +56,25 @@ export function ConfirmDialog({
       />
 
       <div
-        className={`fixed inset-0 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4 ${
-          open ? "" : "pointer-events-none"
-        }`}
+        className="fixed inset-0 flex items-center justify-center overflow-hidden p-3 sm:p-4"
         style={{ inset: 0, position: "fixed", zIndex: 10001 }}
       >
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
-          className={`flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
-            open ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-95 opacity-0"
-          }`}
+          className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] sm:max-h-[calc(100dvh-2rem)]"
         >
           <div className="min-h-0 overflow-y-auto border-b border-slate-100 bg-slate-50/70 px-5 py-5 sm:px-6">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-red-600">
+                <div
+                  className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+                    tone === "danger"
+                      ? "border-red-100 bg-red-50 text-red-600"
+                      : "border-blue-100 bg-blue-50 text-[#0057A8]"
+                  }`}
+                >
                   <AlertTriangle className="h-5 w-5" />
                 </div>
                 <div>
@@ -116,10 +110,22 @@ export function ConfirmDialog({
               type="button"
               onClick={onConfirm}
               disabled={loading}
-              className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-200/60 transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 sm:min-w-[112px] sm:w-auto"
+              className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-70 sm:min-w-[112px] sm:w-auto ${
+                tone === "danger"
+                  ? "bg-red-600 shadow-red-200/60 hover:bg-red-700"
+                  : "bg-[#0057A8] shadow-blue-200/60 hover:bg-[#00468a]"
+              }`}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {confirmLabel}
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {confirmLabel}
+                </>
+              ) : tone === "primary" ? (
+                <ConfirmSubmitLabel>{confirmLabel}</ConfirmSubmitLabel>
+              ) : (
+                confirmLabel
+              )}
             </button>
           </div>
         </div>

@@ -1,0 +1,136 @@
+% =====================================================================
+% บทที่ 1 ภาพรวมของระบบ (ผู้อ่าน: ทุกกลุ่ม)
+% =====================================================================
+\label{ch:overview}
+
+\begin{guide}
+บทนี้ทำให้ผู้อ่านรู้ภายใน 2--3 หน้าว่าระบบทำอะไร ใครใช้ และควรอ่านบทใด
+\begin{itemize}
+  \item อธิบายระบบ 1 ย่อหน้า พร้อมภาพขั้นตอนการทำงานหลักของระบบ
+  \item ตารางผู้ใช้และสิทธิ์ (บทบาท $\times$ ฟังก์ชัน)
+  \item ตารางการใช้คู่มือ บอกว่าผู้อ่านแต่ละกลุ่มควรอ่านบทใด
+  \item สัญลักษณ์และรูปแบบข้อความที่ใช้ในคู่มือ
+\end{itemize}
+ไม่ต้องเขียนความเป็นมา วัตถุประสงค์ หรือทฤษฎีซ้ำกับเล่มรายงาน
+\end{guide}
+
+\section{เกี่ยวกับระบบ}
+
+\systemname{} (CS KKU Project Manager) เป็นเว็บแอปพลิเคชันสำหรับจัดการเอกสารโครงงานคอมพิวเตอร์
+ของวิทยาลัยการคอมพิวเตอร์ มหาวิทยาลัยขอนแก่น ตั้งแต่การยื่นข้อเสนอโครงงาน การพิจารณาของอาจารย์ที่ปรึกษา
+การเขียนเอกสารฉบับสมบูรณ์ด้วย \LaTeX{} ไปจนถึงการส่งงานตามกำหนด
+ผู้ใช้เข้าใช้งานผ่านเว็บเบราว์เซอร์ที่ \systemurl{} หรือที่อยู่ที่ผู้ดูแลระบบแจ้ง
+ขั้นตอนการทำงานหลักของระบบแสดงดังภาพที่~\ref{fig:workflow}
+
+% แผนภาพขั้นตอน วาดด้วย TikZ (แก้ข้อความในวงเล็บปีกกาได้โดยตรง)
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=10bp and 30bp,
+    box/.style={draw=cskkuStep, fill=cskkuStep!8, rounded corners=3pt, align=center,
+      font=\normalfont\small, minimum height=32bp, text width=62bp, inner sep=3bp},
+    adv/.style={box, draw=cskkuTip, fill=cskkuTip!8},
+    arr/.style={-{Stealth[length=5bp]}, line width=0.8pt, draw=black!60},
+    lbl/.style={font=\normalfont\footnotesize, text=black!75, inner sep=2bp}]
+  \node[box] (a) {สมัครสมาชิก};
+  \node[box, right=of a] (b) {สร้างและส่ง\\ข้อเสนอโครงงาน};
+  \node[adv, right=of b] (c) {อาจารย์\\พิจารณาข้อเสนอ};
+  \node[box, right=of c] (d) {ระบบสร้าง\\โครงงาน};
+  \node[box, below=30bp of d] (e) {เขียนเอกสาร\\ด้วย \LaTeX};
+  \node[box, left=of e] (f) {Compile\\และตรวจ PDF};
+  \node[box, left=of f] (g) {ส่งงาน\\ตามกำหนด};
+  \node[adv, left=of g] (h) {อาจารย์ตรวจ\\และให้ความเห็น};
+  \draw[arr] (a) -- (b);
+  \draw[arr] (b) -- (c);
+  \draw[arr] (c) -- node[lbl, above]{อนุมัติ} (d);
+  \draw[arr] (d) -- (e);
+  \draw[arr] (e) -- (f);
+  \draw[arr] (f) -- (g);
+  \draw[arr] (g) -- (h);
+  % เส้นย้อนกลับ: ขึ้นเหนือแถวบน / ลงใต้แถวล่าง เพื่อไม่ทับเส้นอื่น
+  \draw[arr] (c.north) -- ++(0,12bp) -| node[lbl, pos=0.25, above]{ส่งกลับแก้ไข} (b.north);
+  \draw[arr] (h.south) -- ++(0,-12bp) -| node[lbl, pos=0.25, below]{แก้ไขตามความเห็น} (e.south);
+\end{tikzpicture}
+\caption{ขั้นตอนการทำงานหลักของระบบ (กรอบสีเขียวคือขั้นตอนของอาจารย์ที่ปรึกษา)}
+\label{fig:workflow}
+\end{figure}
+
+\section{ผู้ใช้งานและสิทธิ์การใช้งาน}
+
+ระบบแบ่งผู้ใช้งานเป็น 3 บทบาท แต่ละบทบาทใช้งานฟังก์ชันได้ตามตารางที่~\ref{tab:roles}
+เครื่องหมาย \cmark{} หมายถึงใช้งานได้ และ -- หมายถึงไม่มีสิทธิ์
+
+\begin{table}[H]
+\caption{สิทธิ์การใช้งานของผู้ใช้แต่ละบทบาท}
+\label{tab:roles}
+\centering
+\begin{tabular}{|L{6.4cm}|C{2.2cm}|C{2.2cm}|C{2.2cm}|}
+\hline
+\textbf{ฟังก์ชัน} & \textbf{นักศึกษา} & \textbf{อาจารย์ที่ปรึกษา} & \textbf{ผู้ดูแลรายวิชา} \\ \hline
+สร้างและส่งข้อเสนอโครงงาน      & \cmark & --     & --     \\ \hline
+พิจารณาอนุมัติ/ส่งกลับข้อเสนอ  & --     & \cmark & --     \\ \hline
+แก้ไขเอกสาร \LaTeX{} และ Compile & \cmark & \cmark & --     \\ \hline
+แสดงความเห็นในเอกสาร          & \cmark & \cmark & --     \\ \hline
+ส่งงาน (Submission)            & \cmark & --     & --     \\ \hline
+กำหนดวันส่งงาน                  & --     & \cmark & \cmark \\ \hline
+ดูแดชบอร์ดสรุปและส่งออก CSV    & --     & --     & \cmark \\ \hline
+\end{tabular}
+\end{table}
+
+\section{การใช้คู่มือ}
+\label{sec:howto-read}
+
+คู่มือแบ่งเนื้อหาตามกลุ่มผู้อ่าน ผู้อ่านเปิดเฉพาะบทที่เกี่ยวข้องกับงานของตนได้ตามตารางที่~\ref{tab:readers}
+
+\begin{table}[H]
+\caption{บทที่ผู้อ่านแต่ละกลุ่มควรอ่าน}
+\label{tab:readers}
+\centering
+\begin{tabular}{|L{4cm}|L{\dimexpr\linewidth-8cm-6\tabcolsep-4\arrayrulewidth\relax}|L{4cm}|}
+\hline
+\textbf{ผู้อ่าน} & \textbf{งานที่ทำ} & \textbf{บทที่ควรอ่าน} \\ \hline
+นักศึกษา & สร้างข้อเสนอโครงงาน เขียนเอกสาร และส่งงาน
+  & บทที่~\ref{ch:start}, \ref{ch:student} และ~\ref{ch:trouble} \\ \hline
+อาจารย์ที่ปรึกษาและผู้ดูแลรายวิชา & พิจารณาข้อเสนอ ให้ความเห็น และกำหนดวันส่งงาน
+  & บทที่~\ref{ch:start}, \ref{ch:advisor} และ~\ref{ch:trouble} \\ \hline
+ผู้ดูแลระบบ & ติดตั้ง ตั้งค่า สำรองข้อมูล และปรับรุ่นระบบ
+  & บทที่~\ref{ch:install}, \ref{ch:admin} และ~\ref{ch:trouble} \\ \hline
+นักพัฒนา & แก้ไขและพัฒนาระบบต่อ
+  & บทที่~\ref{ch:install}, \ref{ch:dev} และภาคผนวก~ข \\ \hline
+\end{tabular}
+\end{table}
+
+\section{สัญลักษณ์และรูปแบบที่ใช้ในคู่มือ}
+
+คู่มือนี้ใช้รูปแบบข้อความตามตารางที่~\ref{tab:conventions} เพื่อให้ผู้อ่านแยกองค์ประกอบบนหน้าจอออกจากเนื้อความได้ง่าย
+
+\begin{table}[H]
+\caption{สัญลักษณ์และรูปแบบข้อความที่ใช้ในคู่มือ}
+\label{tab:conventions}
+\centering
+\begin{tabular}{|C{4.4cm}|L{8.8cm}|}
+\hline
+\textbf{รูปแบบ} & \textbf{ความหมาย} \\ \hline
+\btn{เข้าสู่ระบบ} & ปุ่มบนหน้าจอที่ต้องคลิก \\ \hline
+\field{อีเมล} & ช่องกรอกข้อมูลหรือตัวเลือกในแบบฟอร์ม \\ \hline
+\menu{แทรก > ตาราง} & เมนูและเมนูย่อยที่ต้องเลือกตามลำดับ \\ \hline
+\keys{Ctrl+S} & แป้นพิมพ์หรือแป้นพิมพ์ลัดที่ต้องกดพร้อมกัน \\ \hline
+\calloutmark{1} & หมายเลขกำกับบนภาพหน้าจอ อธิบายไว้ใต้ภาพ \\ \hline
+\cmd{npm run dev} & คำสั่งหรือข้อความที่ต้องพิมพ์ตามตัวอักษร \\ \hline
+\end{tabular}
+\end{table}
+
+ข้อความสำคัญจะอยู่ในกรอบ 4 แบบ ดังนี้
+
+\begin{note}
+ข้อมูลเพิ่มเติมที่ช่วยให้เข้าใจการทำงานของระบบ
+\end{note}
+\begin{tip}
+วิธีที่ช่วยให้ใช้งานได้สะดวกหรือรวดเร็วขึ้น
+\end{tip}
+\begin{warning}
+สิ่งที่ต้องระวัง หากไม่ปฏิบัติตามอาจทำให้ข้อมูลผิดพลาดหรือใช้งานไม่ได้
+\end{warning}
+\begin{important}
+ข้อกำหนดที่ต้องปฏิบัติตามเสมอ เช่น กำหนดส่งงานหรือเงื่อนไขของรายวิชา
+\end{important}

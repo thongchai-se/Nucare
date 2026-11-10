@@ -1,0 +1,328 @@
+% =====================================================================
+%  testreport.sty — ตารางสถานการณ์ทดสอบ (รูปแบบตามเอกสารโครงงาน)
+%  Compile ด้วย XeLaTeX
+% =====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{testreport}[2026/10/22 v1.0.0 NUCare test scenario tables]
+
+\RequirePackage{iftex}
+\ifXeTeX\else
+  \PackageError{testreport}
+    {ต้อง compile ด้วย XeLaTeX}
+    {Overleaf: Menu > Settings > Compiler > XeLaTeX}
+\fi
+
+\RequirePackage{etoolbox}
+\RequirePackage{calc}
+\RequirePackage{xcolor}
+\RequirePackage{graphicx}
+\RequirePackage{array}
+\RequirePackage{tabularx}
+\RequirePackage{longtable}
+\RequirePackage{colortbl}
+\RequirePackage{enumitem}
+\RequirePackage{setspace}
+\RequirePackage{fancyhdr}
+\RequirePackage{hyperref}
+\RequirePackage{xurl}
+
+\RequirePackage[a4paper,
+  top=1.5in, bottom=1in, left=1.5in, right=1in,
+  headheight=18pt, headsep=12pt, footskip=0.5in]{geometry}
+
+\RequirePackage[no-math]{fontspec}
+\newcommand*\tr@fontpath{theme/fonts/}
+\IfFileExists{\tr@fontpath THSarabunNew-Regular.ttf}{%
+  \setmainfont{THSarabunNew}[
+    Path=\tr@fontpath, Extension=.ttf,
+    UprightFont=*-Regular, BoldFont=*-Bold,
+    ItalicFont=*-Italic, BoldItalicFont=*-BoldItalic,
+    Ligatures=TeX]%
+  \setsansfont{THSarabunNew}[
+    Path=\tr@fontpath, Extension=.ttf,
+    UprightFont=*-Regular, BoldFont=*-Bold,
+    ItalicFont=*-Italic, BoldItalicFont=*-BoldItalic,
+    Ligatures=TeX]%
+}{%
+  \PackageError{testreport}{ไม่พบฟอนต์ theme/fonts/THSarabunNew-Regular.ttf}
+    {คัดลอก TH Sarabun New จาก Template_Manual_2026_1/theme/fonts/}}
+
+% ฟอนต์โค้ดย่อส่วน — กันความสูงบรรทัดชนกับไทยแล้วทับกัน
+\setmonofont{lmmono10-regular.otf}[
+  Scale=0.82,
+  BoldFont=lmmono10-regular.otf,
+  ItalicFont=lmmono10-regular.otf,
+  BoldItalicFont=lmmono10-regular.otf]
+
+\renewcommand\UrlFont{\ttfamily}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue!50!black, citecolor=black}
+
+% โค้ด/พาธที่ตัดบรรทัดได้ในตาราง (ห้ามใช้ \texttt กับสตริงยาวในเซลล์)
+\newcommand{\tccode}[1]{%
+  {\fontsize{9}{11}\selectfont\ttfamily\nolinkurl{#1}}}
+
+% ---------------------------------------------------------------------
+% ช่องข้อมูลเล่ม
+% ---------------------------------------------------------------------
+\newcommand*\tr@field[2]{%
+  \expandafter\newcommand\csname #1\endcsname[1]{%
+    \expandafter\gdef\csname @#1\endcsname{##1}}%
+  \expandafter\gdef\csname @#1\endcsname{#2}}
+
+\tr@field{projectCode}{CS 2568/xx}
+\tr@field{titleTH}{ชื่อระบบ}
+\tr@field{titleEN}{System Title}
+\tr@field{doctype}{รายงานการทดสอบ}
+\tr@field{systemUnderTest}{ระบบเว็บแอปพลิเคชัน}
+\tr@field{systemVersion}{1.0}
+\tr@field{testerName}{ชื่อผู้ทดสอบ}
+\tr@field{testDateTH}{วันที่ \ldots\ เดือน พ.ศ.\ \ldots}
+\tr@field{advisorTH}{อาจารย์ที่ปรึกษา}
+\tr@field{courseCode}{รหัสวิชา}
+\tr@field{courseName}{ชื่อวิชา}
+\tr@field{semester}{1}
+\tr@field{academicYearTH}{2568}
+\tr@field{submitMonthTH}{ตุลาคม}
+\tr@field{submitYearTH}{2568}
+\tr@field{firstStudentID}{6xxxxxxxx-x}
+\tr@field{firstStudentPrefixTH}{นาย}
+\tr@field{firstStudentNameTH}{ชื่อ นามสกุล}
+\tr@field{secondStudentID}{}
+\tr@field{secondStudentPrefixTH}{}
+\tr@field{secondStudentNameTH}{}
+\tr@field{logoPath}{theme/kku-logo.png}
+
+\newcommand\tr@ifempty[3]{%
+  \expandafter\ifx\expandafter\relax\detokenize\expandafter{#1}\relax#2\else#3\fi}
+\newcommand*\tr@ifsecond{\tr@ifempty{\@secondStudentID}}
+
+% ---------------------------------------------------------------------
+% หน้า / ตัวอักษร
+% ---------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[R]{\thepage}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[R]{\thepage}}
+
+\setstretch{1.15}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.4em}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\renewcommand{\tabularxcolumn}[1]{p{#1}}
+
+% เซลล์ตาราง: ตัดบรรทัดหลวม ๆ กันล้นทับคอลัมน์ข้าง / ชิดบนเหมือนเล่มอ้างอิง
+\newcolumntype{L}[1]{>{\raggedright\sloppy\setlength{\emergencystretch}{1.2em}\arraybackslash}p{#1}}
+\newcolumntype{M}[1]{>{\centering\arraybackslash}p{#1}}
+
+\definecolor{tcHeader}{gray}{0.85}
+\newcommand{\tccellpad}{\renewcommand{\arraystretch}{1.3}}
+
+% รายการขั้นตอนในเซลล์ตาราง (รูปแบบ 1. 2. 3. ตามเล่ม)
+\newenvironment{tcsteps}{%
+  \raggedright\sloppy
+  \setlength{\emergencystretch}{1.2em}%
+  \begin{enumerate}[
+    leftmargin=1.2em,
+    itemsep=0.08em,
+    parsep=0pt,
+    topsep=0.05em,
+    partopsep=0pt,
+    label=\arabic*.]
+}{\end{enumerate}}
+
+% ---------------------------------------------------------------------
+% ปกแบบย่อ — รายงานการทดสอบ
+% ---------------------------------------------------------------------
+\newcommand{\maketestcover}{%
+  \thispagestyle{empty}%
+  \begin{center}
+    \IfFileExists{\@logoPath}{%
+      \includegraphics[height=2.6cm]{\@logoPath}\\[1.2em]}{}%
+    {\fontsize{18}{22}\selectfont\bfseries \@projectCode\par}
+    \vspace{1.8em}
+    {\fontsize{22}{28}\selectfont\bfseries \@doctype\par}
+    \vspace{1.4em}
+    {\fontsize{18}{24}\selectfont \@titleTH\par}
+    \vspace{0.4em}
+    {\fontsize{16}{22}\selectfont \@titleEN\par}
+    \vspace{2.2em}
+    {\fontsize{16}{22}\selectfont โดย\par}
+    \vspace{0.6em}
+    {\fontsize{16}{22}\selectfont
+      \@firstStudentID\quad\@firstStudentPrefixTH\@firstStudentNameTH\par
+      \tr@ifsecond{}{%
+        \@secondStudentID\quad\@secondStudentPrefixTH\@secondStudentNameTH\par}}%
+    \vspace{1.6em}
+    {\fontsize{16}{22}\selectfont อาจารย์ที่ปรึกษา\par}
+    \vspace{0.3em}
+    {\fontsize{16}{22}\selectfont \@advisorTH\par}
+    \vfill
+    {\fontsize{14}{18}\selectfont
+      \@courseCode\ \@courseName\\
+      ภาคการศึกษาที่ \@semester\ ปีการศึกษา \@academicYearTH\\[0.4em]
+      สาขาวิชาวิทยาการคอมพิวเตอร์\\
+      วิทยาลัยการคอมพิวเตอร์ มหาวิทยาลัยขอนแก่น\\[0.6em]
+      (\@submitMonthTH\ \@submitYearTH)\par}
+  \end{center}%
+  \clearpage}
+
+% ---------------------------------------------------------------------
+% ตารางสถานการณ์ทดสอบ — รูปแบบตามเล่มอ้างอิง
+%   หน้าแรก: คำบรรยาย + meta 4 คอลัมน์ + หัวเคสเทา + แถวเคส (ติดกันเป็นตารางเดียว)
+%   หน้าถัดไป: ``ตารางที่ N สถานการณ์ทดสอบที่ M (ต่อ)'' + หัวเคส + แถวที่เหลือ
+%
+% \begin{testscenario}{เลขตาราง}{เลขสถานการณ์}
+%   \tcmeta{TC01}{CS2-1}{ชื่อโปรแกรม}{ผู้ทดสอบ}{วันที่ทดสอบ}{1.0}
+%   \tcname{...}\tcpre{...}\tcdesc{...}
+%   \tccase{1}{กรณี}{\begin{tcsteps}\item ...\end{tcsteps}}{คาดหวัง}{จริง}{Pass}
+%   \tccasecont{2 (ต่อ)}{\begin{tcsteps}\setcounter{enumi}{4}\item ...\end{tcsteps}}
+% \end{testscenario}
+% ---------------------------------------------------------------------
+\newcommand{\tc@id}{}
+\newcommand{\tc@project}{}
+\newcommand{\tc@program}{}
+\newcommand{\tc@tester}{}
+\newcommand{\tc@date}{}
+\newcommand{\tc@version}{}
+\newcommand{\tc@name}{}
+\newcommand{\tc@pre}{}
+\newcommand{\tc@desc}{}
+\newcommand{\tc@cases}{}
+\newcommand{\tc@tablenum}{}
+\newcommand{\tc@scenarionum}{}
+
+\newlength{\tc@wLabel}
+\newlength{\tc@wLabelB}
+\newlength{\tc@wVal}
+\newlength{\tc@wValB}
+\newlength{\tc@wSpan}
+\newlength{\tc@wA}
+\newlength{\tc@wB}
+\newlength{\tc@wC}
+\newlength{\tc@wD}
+\newlength{\tc@wE}
+\newlength{\tc@wF}
+
+\newcommand{\tc@setwidths}{%
+  \setlength{\tabcolsep}{4pt}%
+  \setlength{\tc@wLabel}{3.6cm}%
+  \setlength{\tc@wLabelB}{2.3cm}%
+  \setlength{\tc@wVal}{\dimexpr0.5\textwidth-0.5\tc@wLabel-0.5\tc@wLabelB-4\tabcolsep-2.5\arrayrulewidth\relax}%
+  \setlength{\tc@wValB}{\tc@wVal}%
+  \setlength{\tc@wSpan}{\dimexpr\textwidth-\tc@wLabel-4\tabcolsep-2\arrayrulewidth\relax}%
+  \setlength{\tc@wA}{1.15cm}%
+  \setlength{\tc@wB}{2.7cm}%
+  \setlength{\tc@wD}{2.55cm}%
+  \setlength{\tc@wE}{2.55cm}%
+  \setlength{\tc@wF}{1.45cm}%
+  \setlength{\tc@wC}{\dimexpr\textwidth-\tc@wA-\tc@wB-\tc@wD-\tc@wE-\tc@wF-12\tabcolsep-7\arrayrulewidth\relax}%
+}
+
+\newcommand{\tcmeta}[6]{%
+  \gdef\tc@id{#1}\gdef\tc@project{#2}%
+  \gdef\tc@program{#3}\gdef\tc@tester{#4}%
+  \gdef\tc@date{#5}\gdef\tc@version{#6}}
+\newcommand{\tcname}[1]{\gdef\tc@name{#1}}
+\newcommand{\tcpre}[1]{\gdef\tc@pre{#1}}
+\newcommand{\tcdesc}[1]{\gdef\tc@desc{#1}}
+
+\newcommand{\tccase}[6]{%
+  \gappto\tc@cases{%
+    #1 & #2 & #3 & #4 & #5 & #6 \tabularnewline
+    \hline
+  }}
+
+% แถวต่อเนื่องของกรณีเดิม (เช่น ลำดับ = ``2 (ต่อ)'' มีเฉพาะขั้นตอน — คอลัมน์อื่นว่าง)
+\newcommand{\tccasecont}[2]{%
+  \gappto\tc@cases{%
+    #1 & & #2 & & & \tabularnewline
+    \hline
+  }}
+
+% บังคับขึ้นหน้าใหม่กลางตารางเคส (ใช้คู่กับ \tccasecont ให้ได้หน้า ``(ต่อ)'' แบบเล่มอ้างอิง)
+\newcommand{\tccasebreak}{%
+  \gappto\tc@cases{\pagebreak}}
+
+\newcommand{\tc@printmeta}{%
+  \noindent
+  \begin{tabular}{|L{\tc@wLabel}|L{\tc@wVal}|L{\tc@wLabelB}|L{\tc@wValB}|}
+    \hline
+    รหัสสถานการณ์ทดสอบ & \tc@id & รหัสโครงงาน & \tc@project \\
+    \hline
+    โปรแกรมที่อยู่ระหว่างทดสอบ & \tc@program & ผู้ทดสอบ & \tc@tester \\
+    \hline
+    วันที่ทดสอบ & \tc@date & เวอร์ชัน & \tc@version \\
+    \hline
+    ชื่อสถานการณ์การทดสอบ &
+      \multicolumn{3}{L{\tc@wSpan}|}{\tc@name} \\
+    \hline
+    ข้อกำหนดเบื้องต้น &
+      \multicolumn{3}{L{\tc@wSpan}|}{\tc@pre} \\
+    \hline
+    คำอธิบาย &
+      \multicolumn{3}{L{\tc@wSpan}|}{\tc@desc} \\
+    \hline
+  \end{tabular}%
+}
+
+\newcommand{\tc@caseheader}{%
+  \rowcolor{tcHeader}%
+  \centering\textbf{ลำดับ} &
+  \centering\textbf{กรณีทดสอบ} &
+  \centering\textbf{ขั้นตอน} &
+  \centering\textbf{ผลลัพธ์ที่คาดหวัง} &
+  \centering\textbf{ผลลัพธ์จริง} &
+  \centering\textbf{ผลการทดสอบ} \tabularnewline
+  \hline
+}
+
+\newcommand{\tc@printcases}{%
+  \setlength{\LTleft}{0pt}%
+  \setlength{\LTright}{0pt}%
+  \setlength{\LTpre}{0pt}%
+  \setlength{\LTpost}{0.6em}%
+  \noindent
+  \begin{longtable}{|M{\tc@wA}|L{\tc@wB}|L{\tc@wC}|L{\tc@wD}|L{\tc@wE}|M{\tc@wF}|}
+    \hline
+    \tc@caseheader
+    \endfirsthead
+    \multicolumn{6}{@{}l@{}}{%
+      \textbf{ตารางที่ \tc@tablenum\ สถานการณ์ทดสอบที่ \tc@scenarionum\ (ต่อ)}}\\[0.45em]
+    \hline
+    \tc@caseheader
+    \endhead
+    \tc@cases
+  \end{longtable}%
+}
+
+\newenvironment{testscenario}[2]{%
+  \gdef\tc@cases{}%
+  \gdef\tc@id{}\gdef\tc@project{}%
+  \gdef\tc@program{}\gdef\tc@tester{}%
+  \gdef\tc@date{}\gdef\tc@version{}%
+  \gdef\tc@name{}\gdef\tc@pre{}\gdef\tc@desc{}%
+  \gdef\tc@tablenum{#1}%
+  \gdef\tc@scenarionum{#2}%
+}{%
+  \par\addvspace{1.0em}%
+  \begingroup
+  \setstretch{1}%
+  \tc@setwidths
+  \tccellpad
+  \noindent\textbf{ตารางที่ \tc@tablenum\ สถานการณ์ทดสอบที่ \tc@scenarionum}\par
+  \vspace{0.4em}%
+  \tc@printmeta
+  \par\vspace{-\arrayrulewidth}%
+  \tc@printcases
+  \endgroup
+  \par\addvspace{0.3em}%
+}
+
+\newcommand{\tcuseDefaults}{%
+  \tcmeta{TCxx}{\@projectCode}{\@systemUnderTest}{\@testerName}{\@testDateTH}{\@systemVersion}}

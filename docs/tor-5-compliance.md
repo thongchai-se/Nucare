@@ -54,7 +54,7 @@ The following manual tests should be executed in a browser before final acceptan
   - `/terms`
 - Added `noindex` metadata for:
   - `/login`, `/forgot-password`, `/reset-password`
-  - `/dashboard/*`
+  - authenticated app routes `/student`, `/admin`, `/advisor`, `/instructor`, `/executive`, `/mental-health`, `/student-development`, `/change-password`
 - Added canonical URLs via App Router metadata.
 
 ### Current status

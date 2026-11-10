@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { RiskLevel } from "@prisma/client";
+import {
+  ConsultationRequestStatus,
+  EmergencyCaseStatus,
+  ReferralStatus,
+  RiskLevel,
+} from "@prisma/client";
 import {
   aggregateCommonIssues,
+  buildOperationsStats,
   buildSectionStats,
   buildStudyYearBucket,
   buildStudyYearBuckets,
@@ -113,6 +119,68 @@ describe("executive analytics", () => {
     assert.equal(bucket.distressCounts.SEVERE, 1);
     assert.equal(bucket.riskCounts.HIGH, 1);
     assert.equal(bucket.highRiskPercent, 50);
+    assert.equal(bucket.operations.openReferrals, 0);
+    assert.equal(bucket.operations.openSos, 0);
+  });
+
+  it("EA-05b buildOperationsStats and year-scoped bucket ops", () => {
+    const ops = buildOperationsStats({
+      consultations: [
+        {
+          status: ConsultationRequestStatus.CLOSED,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          acceptedAt: new Date("2026-01-01T02:00:00.000Z"),
+        },
+        {
+          status: ConsultationRequestStatus.PENDING,
+          createdAt: new Date("2026-01-02T00:00:00.000Z"),
+          acceptedAt: null,
+        },
+      ],
+      referrals: [{ status: ReferralStatus.PENDING }, { status: ReferralStatus.CLOSED }],
+      emergencies: [{ status: EmergencyCaseStatus.OPEN }, { status: EmergencyCaseStatus.RESOLVED }],
+    });
+
+    assert.equal(ops.openReferrals, 1);
+    assert.equal(ops.openSos, 1);
+    assert.equal(ops.caseClosureRate, 50);
+    assert.equal(ops.avgConsultationResponseHours, 2);
+
+    const bucket = buildStudyYearBucket({
+      studyYear: 1,
+      filterStudyYear: 1,
+      profiles: [mergeStudentScreeningProfile({ id: "s1", studyYear: 1, section: "A" })],
+      consultations: [
+        {
+          topic: "สุขภาพใจและความเครียด",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          acceptedAt: new Date("2026-01-01T01:00:00.000Z"),
+          status: ConsultationRequestStatus.CLOSED,
+          studentStudyYear: 1,
+        },
+        {
+          topic: "สุขภาพใจและความเครียด",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          acceptedAt: null,
+          status: ConsultationRequestStatus.PENDING,
+          studentStudyYear: 2,
+        },
+      ],
+      referrals: [
+        { createdAt: new Date(), status: ReferralStatus.PENDING, studentStudyYear: 1 },
+        { createdAt: new Date(), status: ReferralStatus.PENDING, studentStudyYear: 2 },
+      ],
+      emergencies: [
+        { openedAt: new Date(), status: EmergencyCaseStatus.OPEN, studentStudyYear: 1 },
+        { openedAt: new Date(), status: EmergencyCaseStatus.OPEN, studentStudyYear: 2 },
+      ],
+      screeningEvents: [],
+    });
+
+    assert.equal(bucket.operations.openReferrals, 1);
+    assert.equal(bucket.operations.openSos, 1);
+    // ปี 1: ปิด 1 จาก 3 เคส → 33%
+    assert.equal(bucket.operations.caseClosureRate, 33);
   });
 
   it("EA-06 buildStudyYearBuckets returns overall and per-year rows", () => {

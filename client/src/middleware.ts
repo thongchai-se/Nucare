@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const PROTECTED_PREFIXES = ["/dashboard"];
-const AUTH_ROUTES = ["/login"];
+import { isProtectedPath } from "@/lib/auth-routes";
 
 const decodeJwtPayload = (token: string): { exp?: number } | null => {
   try {
@@ -24,8 +22,8 @@ const hasValidAccessToken = (token: string | undefined): boolean => {
     return false;
   }
 
-  const payload = decodeJwtPayload(token);
-  if (!payload?.exp) {
+  const payload = decodeJwtPayload(token) as { exp?: number; userId?: string } | null;
+  if (!payload?.exp || !payload.userId) {
     return false;
   }
 
@@ -40,25 +38,34 @@ export function middleware(request: NextRequest) {
   const hasValidAccess = hasValidAccessToken(accessToken);
   const hasRefreshSession = Boolean(refreshToken);
 
-  const isProtectedRoute = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-  const isAuthRoute = AUTH_ROUTES.includes(pathname);
-
-  // Allow protected pages when refresh token exists so client can refresh access token.
-  if (isProtectedRoute && !hasValidAccess && !hasRefreshSession) {
-    const loginUrl = new URL("/login", request.url);
+  // Only gate protected pages. Do not bounce public auth pages based on cookie shape —
+  // that causes infinite flicker when cookies exist but /api/auth/session disagrees.
+  if (isProtectedPath(pathname) && !hasValidAccess && !hasRefreshSession) {
+    const loginUrl = new URL("/", request.url);
+    loginUrl.searchParams.set("auth", "login");
     loginUrl.searchParams.set("next", pathname);
     const response = NextResponse.redirect(loginUrl);
     response.cookies.delete("accessToken");
     return response;
   }
 
-  if (isAuthRoute && hasValidAccess) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/login", "/dashboard/:path*"],
+  matcher: [
+    "/",
+    "/login",
+    "/student/:path*",
+    "/admin/:path*",
+    "/advisor/:path*",
+    "/instructor/:path*",
+    "/executive/:path*",
+    "/mental-health/:path*",
+    "/student-development/:path*",
+    "/change-password",
+    "/change-password/:path*",
+    "/dashboard",
+    "/dashboard/:path*",
+  ],
 };

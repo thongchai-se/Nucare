@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Archive, CheckCircle2, Download, Loader2, Trash2, X } from "lucide-react";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 
 export type DeleteSurveyDialogProps = {
   deleting: boolean;
@@ -33,16 +34,9 @@ export function DeleteSurveyDialog({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  useBodyScrollLock(open);
 
-  if (!mounted) return null;
+  if (!mounted || !open) return null;
 
   const hasResponses = responseCount > 0;
   const isBackupRequired = hasResponses && !hasDownloaded;
@@ -52,9 +46,7 @@ export function DeleteSurveyDialog({
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity duration-200 ${
-          open ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
+        className="fixed inset-0 bg-slate-950/45 transition-opacity duration-200"
         style={{ position: "fixed", inset: 0, zIndex: 10000 }}
         onClick={() => {
           if (!deleting) onCancel();
@@ -63,18 +55,14 @@ export function DeleteSurveyDialog({
 
       {/* Dialog wrapper */}
       <div
-        className={`fixed inset-0 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4 ${
-          open ? "" : "pointer-events-none"
-        }`}
+        className="fixed inset-0 flex items-center justify-center overflow-hidden p-3 sm:p-4"
         style={{ position: "fixed", inset: 0, zIndex: 10001 }}
       >
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-survey-dialog-title"
-          className={`flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
-            open ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-95 opacity-0"
-          }`}
+          className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] sm:max-h-[calc(100dvh-2rem)]"
         >
           {/* Header */}
           <div

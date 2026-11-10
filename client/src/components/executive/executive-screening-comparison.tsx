@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Download, RefreshCw } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, RefreshCw } from "lucide-react";
+import { ExecutiveQuietExport } from "@/components/executive/executive-quiet-export";
+import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
+import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
+import { useListPagination } from "@/hooks/use-list-pagination";
 import api from "@/lib/axios";
 import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
-import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
 import type {
   ExecutiveYearFilter,
   ScreeningComparisonResponse,
@@ -63,7 +66,7 @@ const exportComparisonCsv = (
     [
       "รหัสนักศึกษา",
       "ชั้นปี",
-      "Section",
+      "ตอน",
       `คะแนน ${round1Title}`,
       `คะแนน ${round2Title}`,
       "เปลี่ยนแปลง",
@@ -98,8 +101,10 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
   const [toSurveyId, setToSurveyId] = useState("");
 
   const loadComparison = useCallback(
-    async (fromId: string, toId: string) => {
-      setLoading(true);
+    async (fromId: string, toId: string, options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -133,17 +138,45 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
   );
 
   useEffect(() => {
-    void loadComparison("", "");
+    // เปลี่ยนชั้นปีเท่านั้นที่รีโหลดรอบเริ่มต้น — ไม่กระพริบถ้ามีข้อมูลเดิม
+    void loadComparison("", "", { silent: Boolean(data) });
+    // ไม่ใส่ data ใน deps เพื่อกันโหลดวน
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadComparison]);
 
   const roundOptions = useMemo(() => data?.availableRounds ?? [], [data?.availableRounds]);
+  const comparisonRows = data?.rows ?? [];
+  const pagination = useListPagination(comparisonRows, `${yearFilter}:${fromSurveyId}:${toSurveyId}`, {
+    fixedRowsPerPage: 12,
+  });
 
   const canCompare = Boolean(data?.round1 && data?.round2 && data.rows.length > 0);
+
+  const handleFromRoundChange = (nextFromId: string) => {
+    setFromSurveyId(nextFromId);
+    if (nextFromId && toSurveyId) {
+      void loadComparison(nextFromId, toSurveyId);
+    }
+  };
+
+  const handleToRoundChange = (nextToId: string) => {
+    setToSurveyId(nextToId);
+    if (fromSurveyId && nextToId) {
+      void loadComparison(fromSurveyId, nextToId);
+    }
+  };
 
   return (
     <ExecutiveSectionShell
       title="เปรียบเทียบรายบุคคล (รอบต่อรอบ)"
-      subtitle="เทียบคะแนน GHQ-28 รอบแรกกับรอบถัดไป — แสดงเฉพาะรหัสนักศึกษา ไม่มีชื่อ-นามสกุล"
+      subtitle="เทียบคะแนน GHQ-28 รอบต่อรอบ — แสดงรหัสนักศึกษา (ยังระบุตัวตนได้) ไม่มีชื่อ-นามสกุล"
+      action={
+        <ExecutiveQuietExport
+          label="ส่งออก CSV เทียบรอบ"
+          disabled={!canCompare}
+          onClick={() => data && exportComparisonCsv(data, yearFilter)}
+        />
+      }
     >
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
@@ -151,7 +184,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
             <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 1 (ก่อนหน้า)</span>
             <select
               value={fromSurveyId}
-              onChange={(event) => setFromSurveyId(event.target.value)}
+              onChange={(event) => handleFromRoundChange(event.target.value)}
               disabled={loading || roundOptions.length === 0}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
             >
@@ -168,7 +201,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
             <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 2 (ล่าสุด)</span>
             <select
               value={toSurveyId}
-              onChange={(event) => setToSurveyId(event.target.value)}
+              onChange={(event) => handleToRoundChange(event.target.value)}
               disabled={loading || roundOptions.length === 0}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
             >
@@ -182,26 +215,15 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
           </label>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => void loadComparison(fromSurveyId, toSurveyId)}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            โหลดใหม่
-          </button>
-          <button
-            type="button"
-            onClick={() => data && exportComparisonCsv(data, yearFilter)}
-            disabled={!canCompare}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-60"
-          >
-            <Download size={16} />
-            ส่งออก CSV
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void loadComparison(fromSurveyId, toSurveyId)}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
+        >
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          โหลดใหม่
+        </button>
       </div>
 
       {loading ? (
@@ -210,7 +232,14 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
         </div>
       ) : error ? (
         <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-6 text-center text-sm font-medium text-red-700">
-          {error}
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => void loadComparison(fromSurveyId, toSurveyId)}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white"
+          >
+            <RefreshCw size={16} /> ลองใหม่
+          </button>
         </div>
       ) : !data?.round1 || !data.round2 ? (
         <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center">
@@ -264,7 +293,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
                   <tr>
                     <th className="px-4 py-3">รหัสนักศึกษา</th>
                     <th className="px-4 py-3">ชั้นปี</th>
-                    <th className="px-4 py-3">Section</th>
+                    <th className="px-4 py-3">ตอน</th>
                     <th className="px-4 py-3">รอบ 1</th>
                     <th className="px-4 py-3">รอบ 2</th>
                     <th className="px-4 py-3">เปลี่ยนแปลง</th>
@@ -272,7 +301,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {data.rows.map((row) => {
+                  {pagination.pageItems.map((row) => {
                     const deltaClassName =
                       row.deltaScore < 0
                         ? "text-emerald-700"
@@ -307,6 +336,18 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
                   })}
                 </tbody>
               </table>
+              {pagination.total > pagination.rowsPerPage ? (
+                <ListPaginationFooter
+                  total={pagination.total}
+                  rangeStart={pagination.rangeStart}
+                  rangeEnd={pagination.rangeEnd}
+                  currentPage={pagination.currentPage}
+                  canGoPrev={pagination.canGoPrev}
+                  canGoNext={pagination.canGoNext}
+                  onPrev={() => pagination.setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  onNext={() => pagination.setCurrentPage((prev) => prev + 1)}
+                />
+              ) : null}
             </div>
           )}
         </>

@@ -2,9 +2,12 @@ import {
   AlertPriority,
   AlertStatus,
   AlertType,
+  BehaviorSeverity,
+  ConsultationOfferStatus,
   ConsultationPreferredChannel,
   ConsultationRequestStatus,
   Prisma,
+  ReferralStatus,
   ReferralTarget,
   Role,
   RiskLevel,
@@ -13,9 +16,52 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere, isAdvisorRole } from "../lib/access-control";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import {
+  assertObservationReportTarget,
+  createStudentObservation,
+  listReporterObservations,
+  searchStudentsForObservation,
+} from "../lib/behavior-observation";
+import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
+import {
+  ACTIVE_REFERRAL_STATUSES,
+  activeReferralConflictMessage,
+  isActiveReferralStatus,
+} from "../lib/active-referral";
+import { buildReferralRoadmap } from "../lib/referral-roadmap";
 import { getAcceptedReferralOwners } from "../lib/referral-ownership";
+import {
+  canAdvisorCloseCompletedConsultation,
+  canAdvisorConfirmCancelConsultation,
+  canAdvisorDirectCancelConsultation,
+  consultationChannelLabel,
+} from "../lib/consultation-channels";
+import {
+  CANCELLED_CASE_LABEL,
+  consultationClosedStatusLabel,
+  formatAdvisorConfirmCancelNote,
+  formatAdvisorDirectCancelNote,
+  isAdvisorCancelReason,
+  validateAdvisorCancelReasonInput,
+} from "../lib/consultation-close";
+import {
+  formatBehaviorHistoryOutcome,
+  formatConsultationHistoryAction,
+  formatConsultationHistoryOutcome,
+  formatReferralHistoryOutcome,
+  stripSeedMarkers,
+} from "../lib/history-display";
+import {
+  mapConsultationScheduleOffer,
+  pickLatestPendingOffer,
+} from "../lib/consultation-schedule-offers";
 import { getLatestActiveSurveyResultsForStudents } from "../lib/survey-results";
+import {
+  hasCrisisWellnessSignal,
+  loadWellnessSignalsByStudentId,
+} from "../lib/student-wellness-summary";
+import { buildUserHasRoleWhere } from "../lib/roles";
 import {
   formatStudentIdForResponse,
   getUserInitials,
@@ -43,7 +89,8 @@ const createCareRecordSchema = z.object({
 
 const createReferralSchema = z.object({
   target: z.nativeEnum(ReferralTarget),
-  reason: z.string().trim().min(1).max(4000),
+  /** ต้องมีบริบทพอให้ผู้เชี่ยวชาญอ่านก่อนนัดนิสิต — ไม่บังคับว่าต้องเป็นเคสวิกฤต */
+  reason: z.string().trim().min(20).max(4000),
   isUrgent: z.boolean().optional(),
 });
 
@@ -56,17 +103,15 @@ const updateConsultationRequestStatusSchema = z.object({
     ConsultationRequestStatus.ACCEPTED,
     ConsultationRequestStatus.SCHEDULED,
     ConsultationRequestStatus.CLOSED,
+    ConsultationRequestStatus.CANCELLED,
   ]),
   scheduledAt: z.string().trim().optional(),
   advisorNote: z.string().trim().max(1200).optional(),
+  /** เหตุผลยกเลิกเมื่ออาจารย์ยกเลิกเองจาก PENDING/ACCEPTED */
+  cancelReason: z.string().trim().max(200).optional(),
+  cancelDetail: z.string().trim().max(500).optional(),
 });
 
-const consultationPreferredChannelLabels: Record<ConsultationPreferredChannel, string> = {
-  IN_PERSON: "พบที่คณะ/ห้องพักอาจารย์",
-  ONLINE: "ออนไลน์",
-  PHONE: "โทรศัพท์",
-  MESSAGE: "ข้อความในระบบ",
-};
 
 const normalizeSearch = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
@@ -93,6 +138,17 @@ const mapReferralTargetLabel = (target: ReferralTarget): string =>
     ? "ศูนย์ให้คำปรึกษา / ทีมจิตแพทย์"
     : "ฝ่ายพัฒนานักศึกษา";
 
+type AdvisorConsultationOfferRecord = {
+  id: string;
+  proposedAt: Date;
+  location: string;
+  note: string | null;
+  status: "PENDING" | "ACCEPTED" | "SUPERSEDED" | "CANCELLED";
+  createdAt: Date;
+  proposedById: string;
+  proposedBy: { id: string; name: string };
+};
+
 type AdvisorConsultationRequestRecord = {
   id: string;
   topic: string;
@@ -101,6 +157,7 @@ type AdvisorConsultationRequestRecord = {
   status: ConsultationRequestStatus;
   advisorNote: string | null;
   scheduledAt: Date | null;
+  scheduleLocation: string | null;
   acceptedAt: Date | null;
   closedAt: Date | null;
   createdAt: Date;
@@ -112,27 +169,40 @@ type AdvisorConsultationRequestRecord = {
     studentId: string | null;
     studyYear: number | null;
   };
+  teacherId?: string;
+  scheduleOffers?: AdvisorConsultationOfferRecord[];
 };
 
-const mapAdvisorConsultationRequest = (request: AdvisorConsultationRequestRecord) => ({
-  id: request.id,
-  studentId: request.student.id,
-  studentName: request.student.name,
-  studentCode: formatStudentIdForResponse(request.student.studentId),
-  year: inferStudyYear(request.student.studentId, request.student.studyYear),
-  topic: request.topic,
-  preferredChannel: request.preferredChannel,
-  preferredChannelLabel: consultationPreferredChannelLabels[request.preferredChannel],
-  note: request.note,
-  status: request.status,
-  advisorNote: request.advisorNote,
-  scheduledAt: request.scheduledAt,
-  acceptedAt: request.acceptedAt,
-  closedAt: request.closedAt,
-  createdAt: request.createdAt,
-  updatedAt: request.updatedAt,
-  alertId: request.alertId,
-});
+const mapAdvisorConsultationRequest = (request: AdvisorConsultationRequestRecord) => {
+  const teacherId = request.teacherId ?? "";
+  const offers = (request.scheduleOffers ?? []).map((offer) =>
+    mapConsultationScheduleOffer(offer, request.student.id, teacherId)
+  );
+  const latestPendingOffer = pickLatestPendingOffer(offers);
+
+  return {
+    id: request.id,
+    studentId: request.student.id,
+    studentName: request.student.name,
+    studentCode: formatStudentIdForResponse(request.student.studentId),
+    year: inferStudyYear(request.student.studentId, request.student.studyYear),
+    topic: request.topic,
+    preferredChannel: request.preferredChannel,
+    preferredChannelLabel: consultationChannelLabel(request.preferredChannel),
+    note: request.note,
+    status: request.status,
+    advisorNote: request.advisorNote,
+    scheduledAt: request.scheduledAt,
+    scheduleLocation: request.scheduleLocation,
+    acceptedAt: request.acceptedAt,
+    closedAt: request.closedAt,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
+    alertId: request.alertId,
+    latestPendingOffer,
+    scheduleOffers: offers,
+  };
+};
 
 const resolveStudent = async (studentUserId: string) =>
   prisma.user.findFirst({
@@ -299,14 +369,17 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
       ],
       take: ADVISOR_STUDENT_LIST_MAX_RESULTS,
     });
-    const latestSurveyByStudentId = await getLatestActiveSurveyResultsForStudents(
-      students.map((student) => student.id)
-    );
+    const studentIds = students.map((student) => student.id);
+    const [latestSurveyByStudentId, wellnessByStudentId] = await Promise.all([
+      getLatestActiveSurveyResultsForStudents(studentIds),
+      loadWellnessSignalsByStudentId(prisma, studentIds),
+    ]);
 
     res.status(200).json({
       students: students.map((student) => {
         const latestSurvey = latestSurveyByStudentId.get(student.id);
         const latestAssessment = student.studentAssessments[0] ?? null;
+        const wellnessSignals = wellnessByStudentId.get(student.id) ?? [];
 
         return {
           id: student.id,
@@ -320,6 +393,8 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
           behaviorRecordCount: student._count.studentBehaviorRecords,
           latestScore: latestSurvey?.totalScore ?? latestAssessment?.totalScore ?? null,
           latestInstrument: latestSurvey?.instrument ?? latestAssessment?.instrument ?? null,
+          wellnessSignals,
+          hasCrisisWellnessSignal: hasCrisisWellnessSignal(wellnessSignals),
         };
       }),
       total: students.length,
@@ -359,6 +434,11 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
             studyYear: true,
           },
         },
+        advisor: {
+          select: {
+            name: true,
+          },
+        },
         specializedCareRecords: {
           orderBy: [{ sessionDate: "desc" }, { createdAt: "desc" }],
           take: 1,
@@ -391,6 +471,7 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
       referrals: referrals.map((referral) => {
         const latestCareRecord = referral.specializedCareRecords[0] ?? null;
         const acceptedOwner = acceptedOwnerByReferralId.get(referral.id) ?? null;
+        const currentOwnerName = latestCareRecord?.mentalHealthUser.name ?? acceptedOwner?.actorName ?? null;
 
         return {
           id: referral.id,
@@ -404,10 +485,24 @@ export const listAdvisorReferrals = async (req: Request, res: Response): Promise
           status: referral.status,
           createdAt: referral.createdAt,
           updatedAt: referral.updatedAt,
-          currentOwnerName: latestCareRecord?.mentalHealthUser.name ?? acceptedOwner?.actorName ?? null,
+          currentOwnerName,
           currentOwnerAssignedAt: acceptedOwner?.createdAt ?? null,
           careSessionCount: referral._count.specializedCareRecords,
           latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
+          roadmap: buildReferralRoadmap({
+            createdAt: referral.createdAt,
+            status: referral.status,
+            advisorName: referral.advisor.name,
+            targetLabel: mapReferralTargetLabel(referral.target),
+            reason: referral.reason,
+            isUrgent: referral.isUrgent,
+            acceptedAt: acceptedOwner?.createdAt ?? (referral.status === "PENDING" ? null : referral.updatedAt),
+            acceptedByName: currentOwnerName,
+            closedAt: referral.status === "CLOSED" ? referral.updatedAt : null,
+            careSessionCount: referral._count.specializedCareRecords,
+            latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
+            latestCareProviderName: latestCareRecord?.mentalHealthUser.name ?? null,
+          }),
         };
       }),
     });
@@ -441,12 +536,14 @@ export const listAdvisorConsultationRequests = async (req: Request, res: Respons
       take: 100,
       select: {
         id: true,
+        teacherId: true,
         topic: true,
         preferredChannel: true,
         note: true,
         status: true,
         advisorNote: true,
         scheduledAt: true,
+        scheduleLocation: true,
         acceptedAt: true,
         closedAt: true,
         createdAt: true,
@@ -458,6 +555,25 @@ export const listAdvisorConsultationRequests = async (req: Request, res: Respons
             name: true,
             studentId: true,
             studyYear: true,
+          },
+        },
+        scheduleOffers: {
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            proposedAt: true,
+            location: true,
+            note: true,
+            status: true,
+            createdAt: true,
+            proposedById: true,
+            proposedBy: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -501,8 +617,11 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
     return;
   }
 
-  if (parsedBody.data.status === ConsultationRequestStatus.SCHEDULED && !scheduledAt) {
-    res.status(400).json({ message: "กรุณาระบุวันเวลานัดหมาย" });
+  if (parsedBody.data.status === ConsultationRequestStatus.SCHEDULED) {
+    res.status(400).json({
+      message: "กรุณาใช้ปุ่มเสนอนัดแล้วให้นิสิตยอมรับ — ไม่สามารถตั้งนัดตรงได้",
+      code: "USE_SCHEDULE_OFFER",
+    });
     return;
   }
 
@@ -515,6 +634,8 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
       select: {
         id: true,
         alertId: true,
+        status: true,
+        advisorNote: true,
       },
     });
 
@@ -525,32 +646,106 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
 
     const now = new Date();
     const nextStatus = parsedBody.data.status;
-    const advisorNote = parsedBody.data.advisorNote?.trim();
+    const rawAdvisorNote = parsedBody.data.advisorNote?.trim();
+
+    let cancelAdvisorNote: string | null = null;
+    if (nextStatus === ConsultationRequestStatus.CANCELLED) {
+      const confirmingStudentCancel = canAdvisorConfirmCancelConsultation(existingRequest.status);
+      const directCancel = canAdvisorDirectCancelConsultation(existingRequest.status);
+      if (!confirmingStudentCancel && !directCancel) {
+        res.status(400).json({
+          message: "ยกเลิกได้เมื่อคิวยังไม่ยืนยันนัด หรือเมื่อนิสิตขอยกเลิกแล้วเท่านั้น",
+          code: "CANCEL_NOT_ALLOWED",
+        });
+        return;
+      }
+
+      if (directCancel) {
+        const reasonError = validateAdvisorCancelReasonInput(
+          parsedBody.data.cancelReason,
+          parsedBody.data.cancelDetail
+        );
+        if (reasonError) {
+          res.status(400).json({ message: reasonError, code: "CANCEL_REASON_REQUIRED" });
+          return;
+        }
+        // validate ผ่านแล้ว — reason เป็นค่าในรายการ
+        const reason = parsedBody.data.cancelReason!.trim();
+        if (!isAdvisorCancelReason(reason)) {
+          res.status(400).json({ message: "เหตุผลไม่ถูกต้อง", code: "CANCEL_REASON_INVALID" });
+          return;
+        }
+        cancelAdvisorNote = formatAdvisorDirectCancelNote(reason, parsedBody.data.cancelDetail);
+      } else {
+        cancelAdvisorNote = formatAdvisorConfirmCancelNote(
+          existingRequest.advisorNote,
+          rawAdvisorNote
+        );
+      }
+    }
+
+    if (nextStatus === ConsultationRequestStatus.CLOSED) {
+      if (!canAdvisorCloseCompletedConsultation(existingRequest.status)) {
+        res.status(400).json({
+          message: "ปิดเคสหลังคุยได้เมื่อมีนัดยืนยันแล้ว — หากจะเลิกคิวก่อนนัดให้ใช้ปุ่มยกเลิก",
+          code: "CLOSE_NOT_ALLOWED",
+        });
+        return;
+      }
+    }
+
+    const advisorNote =
+      nextStatus === ConsultationRequestStatus.CANCELLED
+        ? cancelAdvisorNote
+        : rawAdvisorNote || null;
 
     const updatedRequest = await prisma.$transaction(async (tx) => {
+      if (nextStatus === ConsultationRequestStatus.CANCELLED) {
+        await tx.consultationScheduleOffer.updateMany({
+          where: {
+            requestId: existingRequest.id,
+            status: ConsultationOfferStatus.PENDING,
+          },
+          data: { status: ConsultationOfferStatus.CANCELLED },
+        });
+      }
+
       const request = await tx.consultationRequest.update({
         where: {
           id: existingRequest.id,
         },
         data: {
           status: nextStatus,
-          advisorNote: advisorNote || null,
-          scheduledAt: nextStatus === ConsultationRequestStatus.SCHEDULED ? scheduledAt : undefined,
+          advisorNote,
+          scheduledAt:
+            nextStatus === ConsultationRequestStatus.CANCELLED
+              ? null
+              : nextStatus === ConsultationRequestStatus.SCHEDULED
+                ? scheduledAt
+                : undefined,
+          scheduleLocation:
+            nextStatus === ConsultationRequestStatus.CANCELLED ? null : undefined,
           acceptedAt:
             nextStatus === ConsultationRequestStatus.ACCEPTED ||
             nextStatus === ConsultationRequestStatus.SCHEDULED
               ? now
               : undefined,
-          closedAt: nextStatus === ConsultationRequestStatus.CLOSED ? now : null,
+          closedAt:
+            nextStatus === ConsultationRequestStatus.CLOSED ||
+            nextStatus === ConsultationRequestStatus.CANCELLED
+              ? now
+              : null,
         },
         select: {
           id: true,
+          teacherId: true,
           topic: true,
           preferredChannel: true,
           note: true,
           status: true,
           advisorNote: true,
           scheduledAt: true,
+          scheduleLocation: true,
           acceptedAt: true,
           closedAt: true,
           createdAt: true,
@@ -560,8 +755,23 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
             select: {
               id: true,
               name: true,
+              email: true,
               studentId: true,
               studyYear: true,
+            },
+          },
+          scheduleOffers: {
+            orderBy: { createdAt: "desc" },
+            take: 20,
+            select: {
+              id: true,
+              proposedAt: true,
+              location: true,
+              note: true,
+              status: true,
+              createdAt: true,
+              proposedById: true,
+              proposedBy: { select: { id: true, name: true } },
             },
           },
         },
@@ -575,7 +785,8 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
           },
           data: {
             status:
-              nextStatus === ConsultationRequestStatus.CLOSED
+              nextStatus === ConsultationRequestStatus.CLOSED ||
+              nextStatus === ConsultationRequestStatus.CANCELLED
                 ? AlertStatus.CLOSED
                 : AlertStatus.ACKNOWLEDGED,
           },
@@ -584,6 +795,45 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
 
       return request;
     });
+
+    if (
+      nextStatus === ConsultationRequestStatus.SCHEDULED ||
+      nextStatus === ConsultationRequestStatus.ACCEPTED ||
+      nextStatus === ConsultationRequestStatus.CLOSED ||
+      nextStatus === ConsultationRequestStatus.CANCELLED
+    ) {
+      const statusLabel =
+        nextStatus === ConsultationRequestStatus.SCHEDULED
+          ? "นัดหมายแล้ว"
+          : nextStatus === ConsultationRequestStatus.ACCEPTED
+            ? "รับคำขอแล้ว"
+            : nextStatus === ConsultationRequestStatus.CANCELLED
+              ? CANCELLED_CASE_LABEL
+              : consultationClosedStatusLabel(updatedRequest.status, updatedRequest.advisorNote);
+      const whenLabel = updatedRequest.scheduledAt
+        ? updatedRequest.scheduledAt.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })
+        : null;
+      const detail = whenLabel ? `${statusLabel} · ${whenLabel}` : statusLabel;
+      await notifyUser({
+        recipientUserId: updatedRequest.student.id,
+        recipientEmail: updatedRequest.student.email,
+        channels: { inApp: true, email: Boolean(updatedRequest.student.email) },
+        alert: {
+          actorUserId: advisorId,
+          studentId: updatedRequest.student.id,
+          type: AlertType.ADVISOR_FOLLOW_UP,
+          priority: AlertPriority.MEDIUM,
+          title: `อัปเดตคำขอปรึกษา: ${statusLabel}`,
+          message: `${updatedRequest.topic} — ${detail}`,
+          sourceType: "ConsultationRequest",
+          sourceId: updatedRequest.id,
+        },
+        email: {
+          subject: `NuCare: คำขอปรึกษา${statusLabel}`,
+          text: `เรียน ${updatedRequest.student.name}\n\nคำขอปรึกษาเรื่อง "${updatedRequest.topic}" ${statusLabel}${whenLabel ? `\nวันเวลานัด: ${whenLabel}` : ""}\n\nเข้าสู่ระบบ NuCare เพื่อดูรายละเอียด`,
+        },
+      });
+    }
 
     await writeAuditLog({
       actorUserId: advisorId,
@@ -655,7 +905,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         orderBy: {
           careDate: "desc",
         },
-        take: 100,
+        take: 20,
       }),
       prisma.caseReferral.findMany({
         where: {
@@ -677,7 +927,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         orderBy: {
           createdAt: "desc",
         },
-        take: 100,
+        take: 20,
       }),
       prisma.behaviorRecord.findMany({
         where: {
@@ -698,7 +948,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         orderBy: {
           observedAt: "desc",
         },
-        take: 100,
+        take: 20,
       }),
       prisma.specializedCareRecord.findMany({
         where: {
@@ -719,7 +969,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         orderBy: {
           sessionDate: "desc",
         },
-        take: 100,
+        take: 20,
       }),
       prisma.consultationRequest.findMany({
         where: {
@@ -744,7 +994,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         orderBy: {
           createdAt: "desc",
         },
-        take: 100,
+        take: 20,
       }),
     ]);
 
@@ -775,9 +1025,9 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           kind: "CARE",
           date: record.careDate,
           type: record.careType,
-          topic: record.topic,
-          action: record.action,
-          outcome: record.outcome,
+          topic: stripSeedMarkers(record.topic) || record.topic,
+          action: stripSeedMarkers(record.action) || record.action,
+          outcome: record.outcome ? stripSeedMarkers(record.outcome) || null : null,
           actorName: record.advisor.name,
           isUrgent: false,
         })
@@ -789,8 +1039,8 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           date: record.createdAt,
           type: "ส่งต่อเคส",
           topic: `ส่งต่อไปยัง ${mapReferralTargetLabel(record.target)}`,
-          action: record.reason,
-          outcome: `สถานะ: ${record.status}`,
+          action: stripSeedMarkers(record.reason) || record.reason,
+          outcome: formatReferralHistoryOutcome(record.status),
           actorName: record.advisor.name,
           isUrgent: record.isUrgent,
         })
@@ -800,10 +1050,10 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           id: record.id,
           kind: "BEHAVIOR",
           date: record.observedAt,
-          type: "พฤติกรรมผิดปกติ",
+          type: "ข้อสังเกตจากผู้สอน",
           topic: record.category,
-          action: record.details,
-          outcome: `ระดับความรุนแรง: ${record.severity}`,
+          action: stripSeedMarkers(record.details) || record.details,
+          outcome: formatBehaviorHistoryOutcome(record.severity),
           actorName: record.instructor.name,
           isUrgent: record.severity === "HIGH",
         })
@@ -815,24 +1065,31 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           date: record.createdAt,
           type: "คำขอปรึกษา",
           topic: record.topic,
-          action: [
-            `ช่องทางที่สะดวก: ${consultationPreferredChannelLabels[record.preferredChannel]}`,
-            record.note ? `รายละเอียด: ${record.note}` : null,
-          ].filter(Boolean).join("\n"),
-          outcome: [
-            `สถานะ: ${record.status}`,
-            record.scheduledAt ? `นัดหมาย: ${record.scheduledAt.toISOString()}` : null,
-            record.advisorNote ? `หมายเหตุ: ${record.advisorNote}` : null,
-          ].filter(Boolean).join("\n"),
+          action: formatConsultationHistoryAction({
+            channelLabel: consultationChannelLabel(record.preferredChannel),
+            note: record.note,
+            scheduleLocation: record.scheduleLocation,
+          }),
+          outcome: formatConsultationHistoryOutcome({
+            status: record.status,
+            scheduledAt: record.scheduledAt,
+            advisorNote: record.advisorNote,
+          }),
           actorName: record.teacher.name,
           isUrgent: false,
         })
       ),
-    ].sort((left, right) => right.date.getTime() - left.date.getTime());
+    ]
+      .sort((left, right) => right.date.getTime() - left.date.getTime())
+      .slice(0, 20);
 
-    const latestSurveyByStudentId = await getLatestActiveSurveyResultsForStudents([student.id]);
+    const [latestSurveyByStudentId, wellnessByStudentId] = await Promise.all([
+      getLatestActiveSurveyResultsForStudents([student.id]),
+      loadWellnessSignalsByStudentId(prisma, [student.id]),
+    ]);
     const latestSurvey = latestSurveyByStudentId.get(student.id);
     const latestAssessment = student.studentAssessments[0] ?? null;
+    const wellnessSignals = wellnessByStudentId.get(student.id) ?? [];
 
     await writeAuditLog({
       actorUserId: userId,
@@ -856,6 +1113,8 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         behaviorRecordCount: student._count.studentBehaviorRecords,
         latestScore: latestSurvey?.totalScore ?? latestAssessment?.totalScore ?? null,
         latestInstrument: latestSurvey?.instrument ?? latestAssessment?.instrument ?? null,
+        wellnessSignals,
+        hasCrisisWellnessSignal: hasCrisisWellnessSignal(wellnessSignals),
       },
       history,
     });
@@ -985,23 +1244,75 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const referral = await prisma.caseReferral.create({
-      data: {
-        studentId: student.id,
-        advisorId,
-        target: parsedBody.data.target,
-        reason: parsedBody.data.reason.trim(),
-        isUrgent: Boolean(parsedBody.data.isUrgent),
-      },
-      select: {
-        id: true,
-        target: true,
-        reason: true,
-        isUrgent: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+    const reason = parsedBody.data.reason.trim();
+    const isUrgent = Boolean(parsedBody.data.isUrgent);
+
+    let referral: {
+      id: string;
+      target: ReferralTarget;
+      reason: string;
+      isUrgent: boolean;
+      status: ReferralStatus;
+      createdAt: Date;
+    };
+
+    try {
+      referral = await prisma.$transaction(
+        async (tx) => {
+          // บล็อกซ้ำเฉพาะ target เดียวกัน — สวัสดิการกับศูนย์ให้คำปรึกษาเปิดพร้อมกันได้
+          const openReferral = await tx.caseReferral.findFirst({
+            where: {
+              studentId: student.id,
+              target: parsedBody.data.target,
+              status: { in: ACTIVE_REFERRAL_STATUSES },
+            },
+            select: {
+              id: true,
+              status: true,
+              target: true,
+            },
+            orderBy: { createdAt: "desc" },
+          });
+
+          if (openReferral && isActiveReferralStatus(openReferral.status)) {
+            const error = new Error(
+              activeReferralConflictMessage(openReferral.status, openReferral.target)
+            );
+            (error as Error & { code?: string }).code = "ACTIVE_REFERRAL";
+            throw error;
+          }
+
+          return tx.caseReferral.create({
+            data: {
+              studentId: student.id,
+              advisorId,
+              target: parsedBody.data.target,
+              reason,
+              isUrgent,
+            },
+            select: {
+              id: true,
+              target: true,
+              reason: true,
+              isUrgent: true,
+              status: true,
+              createdAt: true,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ((error as Error & { code?: string }).code === "ACTIVE_REFERRAL" ||
+          /มีเคสที่กำลังดูแล|มีเคสส่งต่อที่รอรับ/.test(error.message))
+      ) {
+        res.status(409).json({ message: error.message });
+        return;
+      }
+      throw error;
+    }
 
     const recipientRole =
       parsedBody.data.target === ReferralTarget.COUNSELING_CENTER
@@ -1010,8 +1321,7 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
 
     const recipientUsers = await prisma.user.findMany({
       where: {
-        role: recipientRole,
-        isActive: true,
+        AND: [buildUserHasRoleWhere(recipientRole), { isActive: true }],
       },
       select: {
         id: true,
@@ -1025,9 +1335,9 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
           actorUserId: advisorId,
           studentId: student.id,
           type: AlertType.REFERRAL_RECEIVED,
-          priority: parsedBody.data.isUrgent ? AlertPriority.HIGH : AlertPriority.MEDIUM,
+          priority: isUrgent ? AlertPriority.HIGH : AlertPriority.MEDIUM,
           title: "มีเคสส่งต่อใหม่",
-          message: parsedBody.data.reason.trim(),
+          message: reason,
           sourceType: "CaseReferral",
           sourceId: referral.id,
         })),
@@ -1056,5 +1366,120 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
     }
 
     res.status(500).json({ message: "Failed to create referral" });
+  }
+};
+
+const createObservationSchema = z.object({
+  studentId: z.string().trim().min(1),
+  observedAt: z.string().trim().min(1),
+  category: z.string().trim().min(1).max(120),
+  details: z.string().trim().min(1).max(4000),
+  severity: z.nativeEnum(BehaviorSeverity),
+});
+
+/** ค้นหานิสิตสำหรับแจ้งข้อสังเกต — ไม่รวมนิสิตในสังกัดผู้แจ้ง */
+export const searchObservationStudents = async (req: Request, res: Response): Promise<void> => {
+  const advisorId = req.user?.userId;
+  if (!advisorId || !isAdvisorRole(req.user?.roles ?? req.user?.role)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = listStudentsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid query", errors: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const students = await searchStudentsForObservation(parsed.data.search, advisorId);
+    res.status(200).json({ students });
+  } catch (error) {
+    console.error("Search observation students error:", error);
+    res.status(500).json({ message: "Failed to search students" });
+  }
+};
+
+/** ประวัติข้อสังเกตที่ที่ปรึกษาคนนี้เป็นผู้แจ้ง */
+export const listObservationRecords = async (req: Request, res: Response): Promise<void> => {
+  const advisorId = req.user?.userId;
+  if (!advisorId || !isAdvisorRole(req.user?.roles ?? req.user?.role)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const records = await listReporterObservations(advisorId);
+    res.status(200).json({ records });
+  } catch (error) {
+    console.error("List observation records error:", error);
+    res.status(500).json({ message: "Failed to list observation records" });
+  }
+};
+
+/** แจ้งข้อสังเกตนิสิตของอาจารย์ท่านอื่น — สัญญาณเข้าที่ปรึกษาของนิสิตคนนั้น */
+export const createObservationRecord = async (req: Request, res: Response): Promise<void> => {
+  const advisorId = req.user?.userId;
+  if (!advisorId || !isAdvisorRole(req.user?.roles ?? req.user?.role)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = createObservationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid payload", errors: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const target = await assertObservationReportTarget(advisorId, parsed.data.studentId);
+    if (!target.ok) {
+      res.status(target.status).json({ message: target.message, code: target.code });
+      return;
+    }
+
+    const observedAt = new Date(parsed.data.observedAt);
+    if (Number.isNaN(observedAt.getTime())) {
+      res.status(400).json({ message: "รูปแบบวันที่ไม่ถูกต้อง" });
+      return;
+    }
+
+    const { behaviorRecord, notifiedAdvisorCount } = await createStudentObservation({
+      reporterUserId: advisorId,
+      studentId: parsed.data.studentId,
+      observedAt,
+      category: parsed.data.category,
+      details: parsed.data.details,
+      severity: parsed.data.severity,
+    });
+
+    await writeAuditLog({
+      actorUserId: advisorId,
+      action: "advisor.observation.create",
+      entityType: "BehaviorRecord",
+      entityId: behaviorRecord.id,
+      description: "อาจารย์แจ้งข้อสังเกตแนวโน้มไปยังที่ปรึกษาของนิสิต (นอกสังกัดผู้แจ้ง)",
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(201).json({
+      message:
+        notifiedAdvisorCount > 0
+          ? "บันทึกข้อสังเกตแล้ว — ส่งสัญญาณถึงที่ปรึกษาของนิสิตแล้ว"
+          : "บันทึกข้อสังเกตแล้ว แต่ยังไม่พบที่ปรึกษาที่รับผิดชอบนิสิตคนนี้",
+      behaviorRecord,
+      notifiedAdvisorCount,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "OWN_ADVISEE_NOT_ALLOWED") {
+      res.status(400).json({
+        message:
+          "ไม่สามารถแจ้งข้อสังเกตนิสิตในสังกัดตัวเองได้ — ใช้เมนูนี้สำหรับแจ้งนิสิตของอาจารย์ท่านอื่น",
+        code: "OWN_ADVISEE_NOT_ALLOWED",
+      });
+      return;
+    }
+    console.error("Create observation record error:", error);
+    res.status(500).json({ message: "Failed to create observation record" });
   }
 };

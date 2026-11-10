@@ -1,0 +1,32 @@
+% TC13 — ยุบบทบาทผู้สอนเข้าที่ปรึกษา + กฎแจ้งข้อสังเกตนอกสังกัด
+\begin{testscenario}{13}{4}
+  \tcmeta{TC13}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 8 พฤศจิกายน พ.ศ.\ 2569}{1.1}
+  \tcname{การยุบบทบาทผู้สอนและการแจ้งข้อสังเกตเฉพาะนิสิตนอกสังกัด}
+  \tcpre{มีบัญชี ADVISOR และนิสิตในระบบ; unit test roles/access-control และ \tccode{behavior-observation.test.ts} ผ่าน}
+  \tcdesc{ตรวจว่า INSTRUCTOR ถูกยุบเป็น ADVISOR · แจ้งข้อสังเกตได้เฉพาะนิสิตที่ไม่ใช่ในสังกัดผู้แจ้ง · สัญญาณเข้าที่ปรึกษาของนิสิต}
+
+  \tccase{1}{ยุบบทบาทใน getAssignedRoles}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{getAssignedRoles} ด้วย role = INSTRUCTOR
+      \item ตรวจ \tccode{hasAssignedRole(INSTRUCTOR, ADVISOR)}
+    \end{tcsteps}}{ได้บทบาท ADVISOR และผ่านการตรวจสิทธิ์ที่ปรึกษา}{unit RL-08 ผ่าน}{Pass}
+
+  \tccase{2}{ที่ปรึกษาไม่มีนิสิตในดูแล}{%
+    \begin{tcsteps}
+      \item เข้าสู่ระบบด้วย \tccode{advisor.peer@nucare.local} (ก่อน walkthrough seed)
+      \item ตรวจเมนูด้านซ้าย
+    \end{tcsteps}}{ไม่แสดงเมนู ``นักศึกษาในที่ปรึกษา'' แต่มี ``แจ้งข้อสังเกต''}{UI ซ่อนเมื่อ students.length = 0}{Pass}
+
+  \tccase{3}{แจ้งข้อสังเกตนอกสังกัดแล้วเข้าสัญญาณ}{%
+    \begin{tcsteps}
+      \item เปิดเมนูแจ้งข้อสังเกต
+      \item ค้นหา — รายชื่อไม่รวมนิสิตในสังกัดตัวเอง
+      \item เลือกนิสิตของอาจารย์ท่านอื่นแล้วส่ง
+    \end{tcsteps}}{สร้าง BehaviorRecord และ Alert ชนิด BEHAVIOR\_REPORTED ถึงที่ปรึกษาของนิสิต (เมนูสัญญาณเข้า)}{API \tccode{POST /api/advisor/observation-records} ปฏิเสธ own advisee}{Pass}
+
+  \tccase{4}{ห้ามแจ้งนิสิตในสังกัดตัวเอง}{%
+    \begin{tcsteps}
+      \item รัน \tccode{behavior-observation.test.ts} เคส BO-01
+      \item POST observation ด้วย studentId ที่เป็น advisee ของผู้แจ้ง
+    \end{tcsteps}}{\tccode{canReportObservationAboutStudent(true)=false} · API ได้ 400 \tccode{OWN\_ADVISEE\_NOT\_ALLOWED}}{ผ่าน}{Pass}
+\end{testscenario}

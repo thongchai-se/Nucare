@@ -2,12 +2,10 @@ import {
   AlertPriority,
   AlertType,
   AssessmentInstrument,
-  EmergencyCaseStatus,
   RiskLevel,
-  Role,
 } from "@prisma/client";
+import { notifyHighRiskScreening } from "./high-risk-screening-notify";
 import { prisma } from "./prisma";
-import { buildUserHasRoleWhere } from "./roles";
 
 export const getRiskLevelForAssessment = (
   instrument: AssessmentInstrument,
@@ -53,7 +51,11 @@ export const shouldEscalateToAdvancedAssessment = (
   return false;
 };
 
-export const createScreeningAlerts = async (studentId: string, totalScore: number, instrument: AssessmentInstrument) => {
+export const createScreeningAlerts = async (
+  studentId: string,
+  totalScore: number,
+  instrument: AssessmentInstrument
+) => {
   if (instrument === AssessmentInstrument.Q9 && totalScore >= 5 && totalScore <= 9) {
     const assignments = await prisma.studentAdvisorAssignment.findMany({
       where: {
@@ -85,49 +87,60 @@ export const createScreeningAlerts = async (studentId: string, totalScore: numbe
     (instrument === AssessmentInstrument.Q9 && totalScore >= 10) ||
     (instrument === AssessmentInstrument.Q8 && totalScore >= 1)
   ) {
-    const mentalHealthUsers = await prisma.user.findMany({
+    // แจ้งที่ปรึกษา (อีเมล+ในแอป) — ไม่สร้างคิว MH อัตโนมัติ
+    await notifyHighRiskScreening({
+      studentId,
+      sourceLabel: instrument,
+      sourceType: "StudentAssessment",
+    });
+  }
+};
+
+/**
+ * สร้างแจ้งเตือนทีมจากผลแบบสอบถาม (GHQ/custom) — ข้อความกลาง ๆ ไม่ระบุเหตุผลคัดเลือกกลุ่ม
+ */
+export const createSurveyScreeningAlerts = async (input: {
+  studentId: string;
+  responseId: string;
+  riskLevel: RiskLevel;
+  instrumentLabel?: string | null;
+}): Promise<void> => {
+  const { studentId, responseId, riskLevel } = input;
+
+  if (riskLevel === RiskLevel.MEDIUM) {
+    const assignments = await prisma.studentAdvisorAssignment.findMany({
       where: {
-        ...buildUserHasRoleWhere(Role.MENTAL_HEALTH),
+        studentId,
         isActive: true,
       },
       select: {
-        id: true,
+        advisorId: true,
       },
     });
 
-    if (mentalHealthUsers.length > 0) {
+    if (assignments.length > 0) {
       await prisma.alert.createMany({
-        data: mentalHealthUsers.map((user) => ({
-          recipientUserId: user.id,
+        data: assignments.map((assignment) => ({
+          recipientUserId: assignment.advisorId,
           studentId,
-          type: AlertType.HIGH_RISK_SCREENING,
-          priority: AlertPriority.CRITICAL,
-          title: "เคสคัดกรองความเสี่ยงสูง",
-          message: "พบผลคัดกรองเข้าข่ายดูแลพิเศษ กรุณารับเคสทันที",
-          sourceType: "StudentAssessment",
+          type: AlertType.ADVISOR_FOLLOW_UP,
+          priority: AlertPriority.MEDIUM,
+          title: "ติดตามนักศึกษาหลังแบบประเมิน",
+          message: "มีผลแบบประเมินที่ควรติดตาม กรุณานัดพูดคุยภายใน 1 สัปดาห์",
+          dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          sourceType: "SurveyResponse",
+          sourceId: responseId,
         })),
       });
     }
+  }
 
-    const existingOpenCase = await prisma.emergencyCase.findFirst({
-      where: {
-        studentId,
-        status: {
-          in: [EmergencyCaseStatus.OPEN, EmergencyCaseStatus.IN_PROGRESS],
-        },
-      },
-      select: {
-        id: true,
-      },
+  if (riskLevel === RiskLevel.HIGH) {
+    await notifyHighRiskScreening({
+      studentId,
+      sourceLabel: input.instrumentLabel?.trim() || "แบบประเมิน",
+      sourceType: "SurveyResponse",
+      sourceId: responseId,
     });
-
-    if (!existingOpenCase) {
-      await prisma.emergencyCase.create({
-        data: {
-          studentId,
-          summary: "Auto-open case จากผลคัดกรองความเสี่ยงสูง",
-        },
-      });
-    }
   }
 };

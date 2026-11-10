@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { facultyFullName } from "@/lib/brand";
 import {
   ArrowRight,
@@ -11,9 +12,7 @@ import {
   ClipboardEdit,
   Headphones,
   HeartHandshake,
-  HeartPulse,
   LayoutDashboard,
-  Lock,
   LogOut,
   LogIn,
   Menu,
@@ -21,15 +20,25 @@ import {
   Phone,
   PhoneCall,
   ShieldCheck,
-  Sparkles,
   User,
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import AuthPopup, { type AuthPopupView } from "@/components/auth-popup";
+import { AppBrand } from "@/components/app-brand";
+import { HomeHeroBanner } from "@/components/home-hero-banner";
+import { HomeMediaSection } from "@/components/home-media-section";
 import LegalFooter from "@/components/legal-footer";
 import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-config";
 import { getNameInitials } from "@/lib/name-prefix";
+import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
+
+const HEAL_RESOURCE_LINKS = {
+  podcast: "https://dmh-elibrary.org/items/show/945",
+  article: "https://dmh-elibrary.org/items/show/2130",
+  playlist: "https://www.youtube.com/results?search_query=%E0%B9%80%E0%B8%AA%E0%B8%B5%E0%B8%A2%E0%B8%87%E0%B8%98%E0%B8%A3%E0%B8%A3%E0%B8%A1%E0%B8%8A%E0%B8%B2%E0%B8%95%E0%B8%B4%E0%B8%9C%E0%B9%88%E0%B8%AD%E0%B8%99",
+  all: "https://dmh-elibrary.org/",
+} as const;
 
 const getUserInitials = (name: string): string => getNameInitials(name, "NU");
 
@@ -67,9 +76,15 @@ const formatUserIdentifier = (studentId?: string | null, employeeId?: string | n
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const { logout, user, isAuthenticated, loading } = useAuth();
   const showAuthenticatedActions = isAuthenticated;
   const showGuestActions = !isAuthenticated;
+  const roleHomePath = useMemo(() => {
+    const role = getDefaultRole(user);
+    return role ? getRoleHomePath(role) : getRoleHomePath("STUDENT");
+  }, [user]);
+  const isStudentUser = Boolean(user?.roles?.includes("STUDENT") || user?.role === "STUDENT");
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAuthPopupOpen, setIsAuthPopupOpen] = useState(false);
@@ -98,6 +113,20 @@ export default function HomePage() {
     setIsAuthPopupOpen(true);
     setMobileMenuOpen(false);
     syncAuthPopupQuery(view);
+  };
+
+  const handleFacultyEmergencyClick = () => {
+    if (isAuthenticated && isStudentUser) {
+      router.push("/student/advisor#emergency-help");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("auth", "login");
+      url.searchParams.set("next", "/student/advisor");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    openAuthPopup("login");
   };
 
   const closeAuthPopup = () => {
@@ -205,15 +234,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
           <div className="flex h-16 items-center justify-between sm:h-20">
             <div className="flex items-center gap-2.5 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
-                <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
-                  Nucare<span className="text-cyan-500">.</span>
-                </span>
-                <span className="block text-[10px] font-medium leading-none text-slate-500 sm:text-[11px]">{facultyFullName}</span>
-              </div>
+              <AppBrand markPriority />
             </div>
 
             <div className="hidden items-center gap-5 lg:flex xl:gap-8">
@@ -279,7 +300,7 @@ export default function HomePage() {
                       role="menu"
                     >
                       <Link
-                        href="/dashboard"
+                        href={roleHomePath}
                         className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
                         onClick={() => setProfileMenuOpen(false)}
                       >
@@ -288,18 +309,6 @@ export default function HomePage() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-slate-800">{PUBLIC_NAV_LABELS.dashboard}</p>
-                        </div>
-                      </Link>
-                      <Link
-                        href="/dashboard/change-password"
-                        className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
-                        onClick={() => setProfileMenuOpen(false)}
-                      >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                          <Lock className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800">{PUBLIC_NAV_LABELS.changePassword}</p>
                         </div>
                       </Link>
                       <button
@@ -380,27 +389,19 @@ export default function HomePage() {
                     <p className="truncate text-xs font-medium text-slate-500">{userMenuSubtitle}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <Link
-                    href="/dashboard"
+                    href={roleHomePath}
                     onClick={() => setMobileMenuOpen(false)}
                     className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
                   >
                     <LayoutDashboard className="h-4.5 w-4.5 text-blue-700" />
                     แดชบอร์ด
                   </Link>
-                  <Link
-                    href="/dashboard/change-password"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                  >
-                    <Lock className="h-4.5 w-4.5 text-slate-700" />
-                    {PUBLIC_NAV_LABELS.changePassword}
-                  </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="col-span-2 flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4" />
                     ออกจากระบบ
@@ -412,50 +413,10 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <main className="relative flex min-h-screen flex-col justify-center">
-        <section className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 pb-12 pt-24 sm:px-6 sm:pb-16 sm:pt-32 lg:px-8">
-          <div className="relative z-40 mb-8 text-center sm:mb-10">
-            <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-semibold text-blue-800 shadow-sm backdrop-blur-md sm:mb-6 sm:px-4 sm:py-1.5 sm:text-sm">
-              <Sparkles className="h-3 w-3 text-amber-500 sm:h-4 sm:w-4" />
-              ระบบดูแลสุขภาพใจสำหรับมหาวิทยาลัย
-            </div>
-            <h1 className="mb-4 text-4xl font-bold leading-tight tracking-tight text-slate-900 sm:mb-6 sm:text-5xl md:text-6xl">
-              ดูแลนักศึกษา
-              <br className="sm:hidden" />
-              <span className="text-blue-700">อย่างปลอดภัยและเป็นระบบ</span>
-            </h1>
-            <p className="mx-auto max-w-2xl px-2 text-base leading-relaxed text-slate-600 sm:text-xl">
-              เข้าสู่ระบบเพื่อทำแบบประเมิน ขอรับคำปรึกษา และติดตามการดูแลผ่านสิทธิ์ที่เหมาะสมกับบทบาทของคุณ
-              <br className="hidden sm:block" />
-              ข้อมูลสำคัญถูกจำกัดการเข้าถึงและบันทึก audit trail สำหรับการใช้งานจริง
-            </p>
-          </div>
+      <main className="relative flex min-h-screen flex-col">
+        <HomeHeroBanner />
 
-          <div className="relative z-40 mx-auto flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:justify-center">
-            {showGuestActions ? (
-              <button
-                type="button"
-                onClick={() => openAuthPopup("login")}
-                className="flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-800"
-              >
-                <LogIn className="h-4 w-4" /> เข้าสู่ระบบ
-              </button>
-            ) : (
-              <Link
-                href="/dashboard"
-                className="flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-800"
-              >
-                <LayoutDashboard className="h-4 w-4" /> ไปที่แดชบอร์ด
-              </Link>
-            )}
-            <a
-              href="#support"
-              className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white/80 px-6 py-3.5 text-sm font-bold text-blue-700 shadow-sm transition-colors hover:bg-white"
-            >
-              <ShieldCheck className="h-4 w-4" /> แนวทางดูแลข้อมูล
-            </a>
-          </div>
-        </section>
+        <HomeMediaSection />
 
         <section id="support" className="relative z-0 border-y border-slate-100 bg-white py-16 sm:py-20">
           <div className="mx-auto max-w-[102rem] px-4 sm:px-6 lg:px-8">
@@ -514,7 +475,7 @@ export default function HomePage() {
                   </button>
                 ) : (
                   <Link
-                    href="/dashboard"
+                    href={roleHomePath}
                     className="relative z-10 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-bold text-blue-900 transition-colors hover:bg-slate-50 sm:py-4 sm:text-[15px]"
                   >
                     <ClipboardEdit className="h-4 w-4 sm:h-5 sm:w-5" /> ไปที่แดชบอร์ด
@@ -534,7 +495,9 @@ export default function HomePage() {
 
             <div className="mx-auto grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 md:grid-cols-3">
               <a
-                href="#"
+                href={HEAL_RESOURCE_LINKS.podcast}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md sm:p-6"
               >
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 sm:mb-5 sm:h-12 sm:w-12">
@@ -542,7 +505,7 @@ export default function HomePage() {
                 </div>
                 <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-[11px]">Podcast</span>
                 <h3 className="mb-2 text-base font-bold leading-tight text-slate-800 group-hover:text-blue-700 sm:mb-3 sm:text-lg">
-                  จัดการความกดดันเมื่อต้องขึ้นวอร์ดครั้งแรก
+                  คลิปเสียงฝึกหายใจคลายเครียด
                 </h3>
                 <p className="mt-auto flex items-center gap-1 pt-3 text-xs font-medium text-slate-500 sm:pt-4 sm:text-sm">
                   ฟังตอนนี้ <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -550,7 +513,9 @@ export default function HomePage() {
               </a>
 
               <a
-                href="#"
+                href={HEAL_RESOURCE_LINKS.article}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md sm:p-6"
               >
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:mb-5 sm:h-12 sm:w-12">
@@ -566,7 +531,9 @@ export default function HomePage() {
               </a>
 
               <a
-                href="#"
+                href={HEAL_RESOURCE_LINKS.playlist}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group hidden h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md md:flex sm:p-6"
               >
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 sm:mb-5 sm:h-12 sm:w-12">
@@ -583,9 +550,14 @@ export default function HomePage() {
             </div>
 
             <div className="mt-8 text-center sm:mt-10">
-              <button type="button" className="p-2 text-sm font-bold text-blue-600 underline transition-colors hover:text-blue-800">
+              <a
+                href={HEAL_RESOURCE_LINKS.all}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block p-2 text-sm font-bold text-blue-600 underline transition-colors hover:text-blue-800"
+              >
                 ดูเนื้อหาฮีลใจทั้งหมด
-              </button>
+              </a>
             </div>
           </div>
         </section>
@@ -610,6 +582,7 @@ export default function HomePage() {
               </a>
               <button
                 type="button"
+                onClick={handleFacultyEmergencyClick}
                 className="w-full rounded-lg bg-red-800 px-6 py-3 text-center text-sm font-bold text-white shadow-md transition-colors hover:bg-red-900 sm:w-auto sm:px-8 sm:py-3.5 sm:text-[15px]"
               >
                 แจ้งเหตุฉุกเฉิน (คณะฯ)

@@ -290,3 +290,36 @@ export const enrichSurveyResponseScores = (
     distressLabel: distress?.labelTh ?? null,
   };
 };
+
+/** สรุปผลแบบประเมินที่ส่งกลับให้นิสิตดูเอง — ไม่รวมข้อมูลผู้อื่น */
+export function buildStudentFacingSurveyResult(input: {
+  id: string;
+  submittedAt: Date | string;
+  totalScore: number | null;
+  maxScore: number;
+  surveyTitle: string;
+}): {
+  id: string;
+  submittedAt: string;
+  totalScore: number | null;
+  maxScore: number;
+  distressLevel: Ghq28DistressLevel | null;
+  distressLabel: string | null;
+} {
+  const distress =
+    input.totalScore != null && isGhq28SurveyTitle(input.surveyTitle)
+      ? getGhq28DistressLevel(input.totalScore)
+      : null;
+
+  return {
+    id: input.id,
+    submittedAt:
+      typeof input.submittedAt === "string"
+        ? input.submittedAt
+        : input.submittedAt.toISOString(),
+    totalScore: input.totalScore,
+    maxScore: input.maxScore,
+    distressLevel: distress?.level ?? null,
+    distressLabel: distress?.labelTh ?? null,
+  };
+}

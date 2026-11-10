@@ -1,0 +1,24 @@
+% TC19 — KKU Gen AI chat provider allowlist
+\begin{testscenario}{19}{19}
+  \tcmeta{TC19}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 2 พฤศจิกายน พ.ศ.\ 2569}{1.0}
+  \tcname{การเชื่อมแชทเพื่อน AI ผ่าน KKU Gen AI โดยจำกัดโมเดล Gemini/GPT/Claude}
+  \tcpre{รัน unit test ของ \tccode{kku-gen-models} และ \tccode{kku-gen-provider}}
+  \tcdesc{ทดสอบ allowlist โมเดล การเรียก chat completions แบบ OpenAI-compatible และการกันการบ้านโดยไม่ยิง API}
+
+  \tccase{1}{ปฏิเสธโมเดลนอก allowlist}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveKkuChatModel} ด้วย \tccode{qwen3.7-plus}
+    \end{tcsteps}}{ถอยไปโมเดลเริ่มต้นในกลุ่มที่อนุญาต}{unit ผ่าน}{Pass}
+
+  \tccase{2}{บล็อกการบ้านโดยไม่เรียก KKU Gen}{%
+    \begin{tcsteps}
+      \item สร้าง provider ด้วย fetch จำลอง
+      \item ส่งข้อความขอทำการบ้าน
+    \end{tcsteps}}{\tccode{blockedReason=homework} และไม่เรียก fetch}{unit ผ่าน}{Pass}
+
+  \tccase{3}{เรียก chat completions เมื่อข้อความปกติ}{%
+    \begin{tcsteps}
+      \item ส่งข้อความเครียดด้วย persona พี่เมย์
+      \item ตรวจ URL Authorization และ system prompt ภาษาไทยเท่านั้น
+    \end{tcsteps}}{ได้คำตอบจาก API จำลอง และยิง \tccode{/chat/completions}}{unit ผ่าน}{Pass}
+\end{testscenario}

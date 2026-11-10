@@ -1,21 +1,16 @@
 import Link from "next/link";
-import { ChevronRight, HeartPulse } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { AppBrand } from "@/components/app-brand";
 import { facultyEnglishFullName, facultyFullName } from "@/lib/brand";
 
 export default function LegalFooter() {
   return (
-    <footer className="mt-auto border-t-4 border-cyan-500 bg-blue-900 pb-8 pt-16 text-white">
+    <footer className="mt-auto border-t-4 border-[#278ACA] bg-blue-900 pb-8 pt-16 text-white">
       <div className="mx-auto max-w-[102rem] px-3 sm:px-4 lg:px-5">
         <div className="mb-12 grid grid-cols-1 gap-10 md:grid-cols-3">
           <div className="col-span-1">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white">
-                <HeartPulse className="h-6 w-6" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <span className="mb-1 block text-xl font-bold leading-none">Nucare Sys.</span>
-                <span className="block text-[11px] leading-none text-blue-200">{facultyEnglishFullName}</span>
-              </div>
+            <div className="mb-5">
+              <AppBrand size="compact" tone="onDark" />
             </div>
             <p className="text-sm leading-relaxed text-blue-100">
               พื้นที่ปลอดภัยสำหรับนักศึกษา {facultyFullName}

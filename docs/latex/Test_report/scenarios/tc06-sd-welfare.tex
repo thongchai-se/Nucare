@@ -1,0 +1,31 @@
+% TC06 — สวัสดิการพัฒนานิสิต
+\begin{testscenario}{6}{3}
+  \tcmeta{TC06}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 6 พฤศจิกายน พ.ศ.\ 2569}{1.1}
+  \tcname{การอัปเดตสถานะ referral ของงานพัฒนานิสิต}
+  \tcpre{มี CaseReferral ที่ target = STUDENT\_DEVELOPMENT สถานะ PENDING และบัญชี STUDENT\_DEVELOPMENT พร้อมใช้งาน}
+  \tcdesc{ทดสอบการรับงาน ปิดงาน ตามลำดับสถานะ พร้อม ownership และแจ้งอาจารย์ที่ส่งต่อ}
+
+  \tccase{1}{รับงาน referral จากหน้าสวัสดิการ}{%
+    \begin{tcsteps}
+      \item เข้าสู่ระบบด้วย STUDENT\_DEVELOPMENT
+      \item เปิดมุมมองสวัสดิการ
+      \item กด ``รับงาน'' บนเคส PENDING แล้วยืนยัน
+    \end{tcsteps}}{%
+    สถานะเป็น ACCEPTED / กำลังประสานงาน บันทึก acceptedByUserId และแจ้งอาจารย์}{%
+    อัปเดตสถานะ referral เป็น ACCEPTED สำเร็จ พร้อม toast รับงานสำเร็จ}{Pass}
+
+  \tccase{2}{ปิดงานโดยผู้รับเคส}{%
+    \begin{tcsteps}
+      \item จากเคส ACCEPTED ที่ตนรับไว้
+      \item กด ``ปิดงาน'' แล้วยืนยัน
+    \end{tcsteps}}{%
+    สถานะเป็น CLOSED / ปิดงานแล้ว และแจ้งอาจารย์}{%
+    ปิดงานสำเร็จ สถานะ CLOSED}{Pass}
+
+  \tccase{3}{ปฏิเสธการเปลี่ยนสถานะผิดลำดับ}{%
+    \begin{tcsteps}
+      \item พยายามอัปเดตเคส CLOSED กลับเป็น ACCEPTED ผ่าน API
+    \end{tcsteps}}{%
+    API ตอบ 400 พร้อมข้อความว่าเปลี่ยนสถานะไม่ได้}{%
+    ได้ 400 ตาม transition guard}{Pass}
+\end{testscenario}

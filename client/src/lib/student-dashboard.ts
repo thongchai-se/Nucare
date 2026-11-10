@@ -1,4 +1,5 @@
-import type { ActiveStudentSurveyResult, Survey } from "@/types/survey";
+import { getNameInitials } from "@/lib/name-prefix";
+import type { ActiveStudentSurveyResult, StudentFacingSurvey, Survey } from "@/types/survey";
 
 export type StudentAssessmentSummary = {
   id: string;
@@ -12,6 +13,7 @@ export type StudentCareTeamMember = {
   id: string;
   name: string;
   employeeId: string | null;
+  image: string | null;
   initials: string;
   roleLabels: string[];
   isAssignedAdvisor: boolean;
@@ -23,7 +25,26 @@ export type ConsultationTeachersResponse = {
   preferredChannels: Record<string, string>;
 };
 
-export type ConsultationRequestStatus = "PENDING" | "ACCEPTED" | "SCHEDULED" | "CLOSED";
+export type ConsultationRequestStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "SCHEDULED"
+  | "CANCEL_REQUESTED"
+  | "CLOSED"
+  | "CANCELLED";
+
+export type ConsultationScheduleOfferItem = {
+  id: string;
+  proposedAt: string;
+  location: string;
+  note: string | null;
+  status: "PENDING" | "ACCEPTED" | "SUPERSEDED" | "CANCELLED";
+  createdAt: string;
+  proposedById: string;
+  proposedByName: string;
+  proposedByRole: "ADVISOR" | "STUDENT";
+  waitingOn: "ADVISOR" | "STUDENT" | null;
+};
 
 export type StudentConsultationRequest = {
   id: string;
@@ -34,16 +55,20 @@ export type StudentConsultationRequest = {
   status: ConsultationRequestStatus;
   advisorNote: string | null;
   scheduledAt: string | null;
+  scheduleLocation?: string | null;
   acceptedAt: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
   alertId: string | null;
   teacher: StudentCareTeamMember;
+  latestPendingOffer?: ConsultationScheduleOfferItem | null;
+  scheduleOffers?: ConsultationScheduleOfferItem[];
 };
 
 export type ActiveStudentSurveyResponse = {
-  survey: Survey | null;
+  survey: (Survey | StudentFacingSurvey) | null;
+  surveys?: Array<Survey | StudentFacingSurvey>;
   response: ActiveStudentSurveyResult | null;
   hasSubmitted: boolean;
 };
@@ -60,12 +85,24 @@ export const defaultConsultationTopics = [
   "อื่น ๆ",
 ];
 
+/** ช่องทางที่นิสิตเลือกตอนส่งคำขอ — แค่ออนไลน์หรือพบตัว */
 export const defaultPreferredChannels: Record<string, string> = {
-  IN_PERSON: "พบที่คณะ/ห้องพักอาจารย์",
   ONLINE: "ออนไลน์",
-  PHONE: "โทรศัพท์",
-  MESSAGE: "ข้อความในระบบ",
+  IN_PERSON: "พบตัว / ที่คณะ",
 };
+
+/** คำใบ้ช่องกรอกสถานที่ตอนเสนอนัด (ฝั่งอาจารย์) */
+export function scheduleLocationPlaceholder(channel: string): string {
+  if (channel === "ONLINE") {
+    return "เช่น Microsoft Teams / Zoom พร้อมลิงก์";
+  }
+  return "เช่น ห้องที่ปรึกษาชั้น 2";
+}
+
+/** นิสิตขอยกเลิกได้เมื่อยังไม่ยืนยันนัด */
+export function canStudentCancelConsultation(status: ConsultationRequestStatus): boolean {
+  return status === "PENDING" || status === "ACCEPTED";
+}
 
 export const consultationStatusMeta: Record<
   ConsultationRequestStatus,
@@ -86,9 +123,17 @@ export const consultationStatusMeta: Record<
     label: "นัดหมายแล้ว",
     className: "border-cyan-200 bg-cyan-50 text-cyan-700",
   },
+  CANCEL_REQUESTED: {
+    label: "นศขอยกเลิก",
+    className: "border-amber-200 bg-amber-50 text-amber-800",
+  },
   CLOSED: {
-    label: "ปิดคำขอแล้ว",
+    label: "ปิดเคสแล้ว",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  CANCELLED: {
+    label: "ยกเลิก",
+    className: "border-amber-200 bg-amber-100 text-amber-800",
   },
 };
 
@@ -189,28 +234,7 @@ export const formatThaiDate = (value: string | null): string => {
   }).format(date);
 };
 
-export const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
-  if (!studentId) {
-    return "-";
-  }
+export { formatStudentIdDisplay } from "@/lib/student-id";
 
-  if (/^\d{9}-\d$/.test(studentId)) {
-    return studentId;
-  }
-
-  if (/^\d{10}$/.test(studentId)) {
-    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
-  }
-
-  return studentId;
-};
-
-export const getUserInitials = (name: string): string =>
-  name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase() || "NU";
+/** ย่อชื่อโดยตัดคำนำหน้าออกก่อน — ใช้เฉพาะตัวอักษรแรกของชื่อและนามสกุล */
+export const getUserInitials = (name: string): string => getNameInitials(name, "NU");

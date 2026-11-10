@@ -1,8 +1,9 @@
-import { AlertPriority, AlertStatus, AlertType, BehaviorSeverity, Role } from "@prisma/client";
+import { AlertPriority, AlertType, BehaviorSeverity, Role } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere } from "../lib/access-control";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { listReporterObservations } from "../lib/behavior-observation";
 import { prisma } from "../lib/prisma";
 import { formatStudentIdForResponse } from "../lib/user-format";
 
@@ -11,7 +12,6 @@ const listStudentsQuerySchema = z.object({
 });
 
 const INSTRUCTOR_STUDENT_LIST_MAX_RESULTS = 1000;
-const INSTRUCTOR_BEHAVIOR_RECORD_MAX_RESULTS = 300;
 
 const createBehaviorRecordSchema = z.object({
   studentId: z.string().trim().min(1),
@@ -20,20 +20,6 @@ const createBehaviorRecordSchema = z.object({
   details: z.string().trim().min(1).max(4000),
   severity: z.nativeEnum(BehaviorSeverity),
 });
-
-const getBehaviorRecordFollowUpStatus = (
-  statuses: AlertStatus[]
-): "PENDING" | "ACKNOWLEDGED" | "COMPLETED" => {
-  if (statuses.includes(AlertStatus.CLOSED)) {
-    return "COMPLETED";
-  }
-
-  if (statuses.includes(AlertStatus.ACKNOWLEDGED)) {
-    return "ACKNOWLEDGED";
-  }
-
-  return "PENDING";
-};
 
 export const listInstructorStudents = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
@@ -89,6 +75,7 @@ export const listInstructorStudents = async (req: Request, res: Response): Promi
   }
 };
 
+/** ประวัติข้อสังเกตที่ผู้สอนเป็นผู้แจ้ง — รวมเส้นทางรับเรื่อง/ปิด/ส่งต่อให้ผู้แจ้งติดตามได้ */
 export const listBehaviorRecords = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
   const roles = req.user?.roles ?? (req.user?.role ? [req.user.role] : []);
@@ -98,96 +85,8 @@ export const listBehaviorRecords = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const behaviorRecords = await prisma.behaviorRecord.findMany({
-      where: {
-        instructorId: userId,
-      },
-      select: {
-        id: true,
-        category: true,
-        details: true,
-        severity: true,
-        observedAt: true,
-        createdAt: true,
-        student: {
-          select: {
-            id: true,
-            name: true,
-            studentId: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: INSTRUCTOR_BEHAVIOR_RECORD_MAX_RESULTS,
-    });
-
-    const sourceIds = behaviorRecords.map((record) => record.id);
-    const alerts =
-      sourceIds.length > 0
-        ? await prisma.alert.findMany({
-            where: {
-              sourceType: "BehaviorRecord",
-              sourceId: {
-                in: sourceIds,
-              },
-            },
-            select: {
-              sourceId: true,
-              status: true,
-              recipient: {
-                select: {
-                  name: true,
-                },
-              },
-            },
-          })
-        : [];
-
-    const alertsBySourceId = new Map<
-      string,
-      Array<{
-        status: AlertStatus;
-        recipientName: string;
-      }>
-    >();
-
-    alerts.forEach((alert) => {
-      const sourceId = alert.sourceId;
-      if (!sourceId) {
-        return;
-      }
-
-      const current = alertsBySourceId.get(sourceId) || [];
-      current.push({
-        status: alert.status,
-        recipientName: alert.recipient.name,
-      });
-      alertsBySourceId.set(sourceId, current);
-    });
-
-    res.status(200).json({
-      records: behaviorRecords.map((record) => {
-        const relatedAlerts = alertsBySourceId.get(record.id) || [];
-
-        return {
-          id: record.id,
-          category: record.category,
-          details: record.details,
-          severity: record.severity,
-          observedAt: record.observedAt,
-          createdAt: record.createdAt,
-          status: getBehaviorRecordFollowUpStatus(relatedAlerts.map((alert) => alert.status)),
-          advisorRecipients: Array.from(new Set(relatedAlerts.map((alert) => alert.recipientName))).filter(Boolean),
-          student: {
-            id: record.student.id,
-            name: record.student.name,
-            studentId: formatStudentIdForResponse(record.student.studentId),
-          },
-        };
-      }),
-    });
+    const records = await listReporterObservations(userId);
+    res.status(200).json({ records });
   } catch (error) {
     console.error("List instructor behavior records error:", error);
     res.status(500).json({ message: "Failed to list instructor behavior records" });
@@ -251,7 +150,7 @@ export const createBehaviorRecord = async (req: Request, res: Response): Promise
           type: AlertType.BEHAVIOR_REPORTED,
           priority:
             parsed.data.severity === BehaviorSeverity.HIGH ? AlertPriority.HIGH : AlertPriority.MEDIUM,
-          title: "มีการบันทึกพฤติกรรมผิดปกติจากอาจารย์ผู้สอน",
+          title: "ผู้สอนแจ้งข้อสังเกตแนวโน้มของนิสิต",
           message: `${parsed.data.category}: ${parsed.data.details}`,
           sourceType: "BehaviorRecord",
           sourceId: behaviorRecord.id,
@@ -264,12 +163,12 @@ export const createBehaviorRecord = async (req: Request, res: Response): Promise
       action: "instructor.behavior-record.create",
       entityType: "BehaviorRecord",
       entityId: behaviorRecord.id,
-      description: "อาจารย์ผู้สอนบันทึกพฤติกรรมผิดปกติ",
+      description: "อาจารย์ผู้สอนแจ้งข้อสังเกตแนวโน้มไปยังที่ปรึกษา",
       ipAddress: getRequestIpAddress(req),
     });
 
     res.status(201).json({
-      message: "บันทึกพฤติกรรมและแจ้งอาจารย์ที่ปรึกษาแล้ว",
+      message: "บันทึกข้อสังเกตและแจ้งอาจารย์ที่ปรึกษาแล้ว",
       behaviorRecord,
     });
   } catch (error) {

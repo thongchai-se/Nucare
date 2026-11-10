@@ -1,0 +1,31 @@
+\begin{testscenario}{29}{4}
+  \tcmeta{TC29}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 5 พฤศจิกายน พ.ศ.\ 2568}{1.0}
+  \tcname{Dossier นิสิตผู้บริหารและความกว้างเลย์เอาต์}
+  \tcpre{มีบัญชี EXECUTIVE และนิสิตที่มีคำขอปรึกษา/ส่งต่อ/ประเมิน}
+  \tcdesc{ขยายรายละเอียดนิสิตเป็น dossier ระดับผู้บริหาร และจัดความกว้างเนื้อหาให้เท่า Advisor}
+
+  \tccase{1}{รวมจำนวนปรึกษาต่ออาจารย์}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{aggregateConsultationsByTeacher} ด้วยหลายอาจารย์
+      \item ตรวจ \tccode{totalCount}/\tccode{openCount}/\tccode{closedCount}
+    \end{tcsteps}}{จัดกลุ่มตามอาจารย์และเรียงจำนวนมากก่อน}{เคส \tccode{ESD-01} ใน \tccode{executive-student-dossier.test.ts} ผ่าน}{Pass}
+
+  \tccase{2}{สรุปส่งต่อและ SOS}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{summarizeReferrals} และ \tccode{summarizeEmergencies}
+      \item ตรวจนับเปิด/ปิด/เร่งด่วน
+    \end{tcsteps}}{ตัวเลขและ recent ถูกต้อง}{เคส \tccode{ESD-02}/\tccode{ESD-03} ผ่าน}{Pass}
+
+  \tccase{3}{API detail คืน dossier}{%
+    \begin{tcsteps}
+      \item เปิด \tccode{/executive?view=students} แล้วเลือกนิสิต
+      \item เรียก \tccode{GET /api/executive/students/:studentUserId}
+      \item ตรวจแผงปรึกษาต่ออาจารย์ แนวโน้มคะแนน ส่งต่อ SOS และไทม์ไลน์
+    \end{tcsteps}}{แสดง dossier ครบโดยไม่มีข้อความแชท}{controller ใช้ \tccode{getExecutiveStudentDossier} และ UI \tccode{ExecutiveStudentLookup} แสดงครบ}{Pass}
+
+  \tccase{4}{ความกว้างเนื้อหาเท่า Advisor}{%
+    \begin{tcsteps}
+      \item ตรวจ wrapper หลักของหน้าผู้บริหาร
+      \item เทียบกับ Advisor ที่ใช้ \tccode{max-w-7xl}
+    \end{tcsteps}}{Executive ใช้ \tccode{max-w-7xl} เช่นเดียวกับ Advisor}{แก้จาก \tccode{max-w-6xl} เป็น \tccode{max-w-7xl} ใน \tccode{executive/page.tsx}}{Pass}
+\end{testscenario}

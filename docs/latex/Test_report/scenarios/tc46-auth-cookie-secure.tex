@@ -1,0 +1,35 @@
+% TC46 — AUTH_COOKIE_SECURE สำหรับ faculty HTTP staging
+\begin{testscenario}{46}{4}
+  \tcmeta{TC46}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 10 พฤศจิกายน พ.ศ.\ 2569}{1.0}
+  \tcname{การตั้งค่า Secure flag ของ cookie ยืนยันตัวตน}
+  \tcpre{รัน \tccode{src/lib/auth-cookie.test.ts} · ไม่ต้องมี Docker}
+  \tcdesc{ตรวจว่า production ค่าเริ่มต้นใช้ Secure และ faculty HTTP staging ปิด Secure ผ่าน env ได้}
+
+  \tccase{1}{production ไม่ตั้ง env}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveAuthCookieSecure} ด้วย \tccode{NODE\_ENV=production}
+    \end{tcsteps}}{%
+    คืนค่า \tccode{true}}{%
+    ผ่านตาม unit test}{Pass}
+
+  \tccase{2}{development ไม่ตั้ง env}{%
+    \begin{tcsteps}
+      \item เรียกด้วย \tccode{NODE\_ENV=development}
+    \end{tcsteps}}{%
+    คืนค่า \tccode{false}}{%
+    ผ่านตาม unit test}{Pass}
+
+  \tccase{3}{faculty HTTP staging}{%
+    \begin{tcsteps}
+      \item ตั้ง \tccode{NODE\_ENV=production} และ \tccode{AUTH\_COOKIE\_SECURE=false}
+    \end{tcsteps}}{%
+    คืนค่า \tccode{false} เพื่อให้ login บน \tccode{http://ip:89} ได้}{%
+    ผ่านตาม unit test}{Pass}
+
+  \tccase{4}{บังคับ Secure นอก production}{%
+    \begin{tcsteps}
+      \item ตั้ง \tccode{AUTH\_COOKIE\_SECURE=true} ใน development
+    \end{tcsteps}}{%
+    คืนค่า \tccode{true}}{%
+    ผ่านตาม unit test}{Pass}
+\end{testscenario}

@@ -35,6 +35,13 @@ enum ReferralTarget {
   COUNSELING_CENTER
 }
 
+/// ช่องแสดงสื่อที่แอดมินจัดการได้ (หน้าแรก / หน้านิสิต)
+enum SiteMediaSlot {
+  HOME_HERO
+  HOME_GALLERY
+  STUDENT_ACTIVITY
+}
+
 enum ReferralStatus {
   PENDING
   ACCEPTED
@@ -45,7 +52,9 @@ enum ConsultationRequestStatus {
   PENDING
   ACCEPTED
   SCHEDULED
+  CANCEL_REQUESTED
   CLOSED
+  CANCELLED
 }
 
 enum ConsultationPreferredChannel {
@@ -53,6 +62,13 @@ enum ConsultationPreferredChannel {
   ONLINE
   PHONE
   MESSAGE
+}
+
+enum ConsultationOfferStatus {
+  PENDING
+  ACCEPTED
+  SUPERSEDED
+  CANCELLED
 }
 
 enum AlertType {
@@ -88,6 +104,13 @@ enum EmergencyCaseStatus {
   RESOLVED
 }
 
+enum MentalHealthAppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 enum SurveyStatus {
   DRAFT
   PUBLISHED
@@ -104,6 +127,53 @@ enum SurveyQuestionType {
   DATE
 }
 
+/// ความถี่การเปิดคลื่นแบบประเมิน
+enum SurveyFrequency {
+  ONE_SHOT
+  WEEKLY
+  ACADEMIC_TERM
+  CUSTOM_INTERVAL
+}
+
+/// หน่วยช่วงเวลาสำหรับความถี่แบบกำหนดเอง
+enum SurveyScheduleUnit {
+  DAYS
+  WEEKS
+  MONTHS
+}
+
+/// กลุ่มเป้าหมายของแบบประเมิน
+enum SurveyAudienceType {
+  ALL_STUDENTS
+  RULE_BASED
+}
+
+/// สถานะคลื่น (รอบเปิด) ของแบบประเมิน
+enum SurveyWaveStatus {
+  SCHEDULED
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+/// รหัสเครื่องมือแบบประเมิน (เลิกพึ่งชื่อเรื่องเป็นหลัก)
+enum SurveyInstrumentCode {
+  GHQ28
+  CUSTOM
+}
+
+/// รหัสสัญญาณแนวโน้มสุขภาวะจากแชท (เก็บเฉพาะรหัส ไม่เก็บข้อความ)
+enum WellnessTrendSignalCode {
+  DEPRESSIVE_THEME
+  ANXIETY_THEME
+  ACADEMIC_STRESS
+  SLEEP_DISTURBANCE
+  LONELINESS_ISOLATION
+  RELATIONSHIP_STRESS
+  BURNOUT_FATIGUE
+  SELF_HARM_CRISIS
+}
+
 model User {
   id                 String              @id @default(cuid())
   name               String
@@ -113,6 +183,8 @@ model User {
   studyYear          Int?
   section            String?
   password           String
+  /// บังคับเปลี่ยนรหัสผ่านหลังสร้าง/นำเข้าด้วยรหัสชั่วคราว
+  mustChangePassword Boolean             @default(false)
   isActive           Boolean             @default(true)
   role               Role
   additionalRoles    Role[]              @default([])
@@ -126,10 +198,15 @@ model User {
   studentCareRecords CareRecord[]        @relation("CareRecordStudent")
   advisorReferrals   CaseReferral[]      @relation("CaseReferralAdvisor")
   studentReferrals   CaseReferral[]      @relation("CaseReferralStudent")
+  acceptedReferrals  CaseReferral[]      @relation("CaseReferralAcceptedBy")
   studentConsultationRequests ConsultationRequest[] @relation("ConsultationRequestStudent")
   teacherConsultationRequests ConsultationRequest[] @relation("ConsultationRequestTeacher")
+  consultationScheduleOffers ConsultationScheduleOffer[] @relation("ConsultationScheduleOfferProposer")
   advisorAssignments StudentAdvisorAssignment[] @relation("AdvisorAssignments")
   studentAssignments StudentAdvisorAssignment[] @relation("StudentAssignments")
+  instructorStudentAssignments StudentInstructorAssignment[] @relation("InstructorStudentAssignments")
+  studentInstructorAssignments StudentInstructorAssignment[] @relation("StudentInstructorAssignments")
+  consentRecords ConsentRecord[]
   instructorBehaviorRecords BehaviorRecord[] @relation("BehaviorRecordInstructor")
   studentBehaviorRecords    BehaviorRecord[] @relation("BehaviorRecordStudent")
   receivedAlerts Alert[] @relation("AlertRecipient")
@@ -138,9 +215,34 @@ model User {
   studentEmergencyCases  EmergencyCase[] @relation("EmergencyCaseStudent")
   mentalHealthCareRecords SpecializedCareRecord[] @relation("SpecializedCareRecordProvider")
   studentSpecializedCareRecords SpecializedCareRecord[] @relation("SpecializedCareRecordStudent")
+  mentalHealthAppointmentsProvided MentalHealthAppointment[] @relation("MentalHealthAppointmentProvider")
+  mentalHealthAppointmentsAsStudent MentalHealthAppointment[] @relation("MentalHealthAppointmentStudent")
   auditLogs AuditLog[] @relation("AuditLogActor")
   createdSurveys Survey[] @relation("SurveyCreator")
   surveyResponses SurveyResponse[] @relation("SurveyResponseStudent")
+  surveyAssignments SurveyAssignment[] @relation("SurveyAssignmentStudent")
+  wellnessTrendSummaries StudentWellnessTrendSummary[] @relation("WellnessTrendSummaryStudent")
+  wellnessTrendHits StudentWellnessTrendHit[] @relation("WellnessTrendHitStudent")
+  studentChatMemories StudentChatMemory[] @relation("StudentChatMemoryStudent")
+}
+
+/// บันทึกสั้นต่อนิสิต+persona สำหรับคุยต่อเนื่อง — ไม่เก็บแชทเต็ม (ประหยัดพื้นที่)
+model StudentChatMemory {
+  id        String   @id @default(cuid())
+  studentId String
+  personaId String
+  /// สรุป bullet สั้น ๆ สิ่งที่นิสิตเล่า
+  summary   String   @default("")
+  /// หัวข้อล่าสุดสำหรับทักทายต่อ
+  lastTopic String?
+  turnCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student User @relation("StudentChatMemoryStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, personaId])
+  @@index([studentId, updatedAt])
 }
 
 model RefreshToken {
@@ -236,6 +338,40 @@ model StudentAdvisorAssignment {
   @@index([studentId, isActive])
 }
 
+model StudentInstructorAssignment {
+  id           String   @id @default(cuid())
+  studentId    String
+  instructorId String
+  assignedAt   DateTime @default(now())
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student    User @relation("StudentInstructorAssignments", fields: [studentId], references: [id], onDelete: Cascade)
+  instructor User @relation("InstructorStudentAssignments", fields: [instructorId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, instructorId])
+  @@index([instructorId, isActive])
+  @@index([studentId, isActive])
+}
+
+model ConsentRecord {
+  id            String   @id @default(cuid())
+  userId        String?
+  anonymousId   String
+  status        String
+  analytics     Boolean
+  policyVersion String
+  userAgent     String?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([anonymousId, createdAt])
+  @@index([userId, createdAt])
+}
+
 model BehaviorRecord {
   id           String   @id @default(cuid())
   studentId     String
@@ -255,23 +391,31 @@ model BehaviorRecord {
 }
 
 model CaseReferral {
-  id        String         @id @default(cuid())
-  studentId String
-  advisorId String
-  target    ReferralTarget
-  reason    String
-  isUrgent  Boolean        @default(false)
-  status    ReferralStatus @default(PENDING)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  studentId        String
+  advisorId        String
+  acceptedByUserId String?
+  target           ReferralTarget
+  reason           String
+  isUrgent         Boolean        @default(false)
+  status           ReferralStatus @default(PENDING)
+  /// บันทึกความคืบหน้าฝั่งผู้รับเคส (เช่น งานพัฒนานิสิต)
+  staffNote        String?
+  /// เหตุผลเมื่อปิด/ปฏิเสธคิว
+  closedReason     String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  student User @relation("CaseReferralStudent", fields: [studentId], references: [id], onDelete: Cascade)
-  advisor User @relation("CaseReferralAdvisor", fields: [advisorId], references: [id], onDelete: Restrict)
+  student    User  @relation("CaseReferralStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  advisor    User  @relation("CaseReferralAdvisor", fields: [advisorId], references: [id], onDelete: Restrict)
+  acceptedBy User? @relation("CaseReferralAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
   specializedCareRecords SpecializedCareRecord[]
+  mentalHealthAppointments MentalHealthAppointment[]
 
   @@index([studentId, createdAt])
   @@index([advisorId, createdAt])
   @@index([status, createdAt])
+  @@index([acceptedByUserId, status])
 }
 
 model Alert {
@@ -287,6 +431,9 @@ model Alert {
   dueAt           DateTime?
   sourceType      String?
   sourceId        String?
+  acknowledgedAt  DateTime?
+  closedAt        DateTime?
+  resolutionNote  String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -309,6 +456,7 @@ model ConsultationRequest {
   status           ConsultationRequestStatus  @default(PENDING)
   advisorNote      String?
   scheduledAt      DateTime?
+  scheduleLocation String?
   acceptedAt       DateTime?
   closedAt         DateTime?
   createdAt        DateTime                   @default(now())
@@ -317,10 +465,30 @@ model ConsultationRequest {
   student User @relation("ConsultationRequestStudent", fields: [studentId], references: [id], onDelete: Cascade)
   teacher User @relation("ConsultationRequestTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
   alert   Alert? @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  scheduleOffers ConsultationScheduleOffer[]
 
   @@index([studentId, createdAt])
   @@index([teacherId, status, createdAt])
   @@index([status, createdAt])
+}
+
+/** ข้อเสนอนัดหมาย — ส่งกลับไปมาระหว่างอาจารย์กับนิสิตจนกว่าจะยอมรับทั้งสองฝ่าย */
+model ConsultationScheduleOffer {
+  id           String                  @id @default(cuid())
+  requestId    String
+  proposedById String
+  proposedAt   DateTime
+  location     String
+  note         String?
+  status       ConsultationOfferStatus @default(PENDING)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  request    ConsultationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  proposedBy User                @relation("ConsultationScheduleOfferProposer", fields: [proposedById], references: [id], onDelete: Restrict)
+
+  @@index([requestId, status, createdAt])
+  @@index([proposedById, createdAt])
 }
 
 model EmergencyCase {
@@ -361,6 +529,29 @@ model SpecializedCareRecord {
   @@index([mentalHealthUserId, createdAt])
 }
 
+model MentalHealthAppointment {
+  id                 String                         @id @default(cuid())
+  studentId          String
+  mentalHealthUserId String
+  referralId         String?
+  scheduledAt        DateTime
+  location           String
+  note               String?
+  status             MentalHealthAppointmentStatus  @default(SCHEDULED)
+  cancelledAt        DateTime?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  student          User          @relation("MentalHealthAppointmentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  mentalHealthUser User          @relation("MentalHealthAppointmentProvider", fields: [mentalHealthUserId], references: [id], onDelete: Restrict)
+  referral         CaseReferral? @relation(fields: [referralId], references: [id], onDelete: SetNull)
+
+  @@index([studentId, scheduledAt])
+  @@index([mentalHealthUserId, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([referralId])
+}
+
 model AuditLog {
   id          String   @id @default(cuid())
   actorUserId String?
@@ -378,23 +569,85 @@ model AuditLog {
 }
 
 model Survey {
-  id          String       @id @default(cuid())
-  title       String
-  description String?
-  status      SurveyStatus @default(DRAFT)
-  isActive    Boolean      @default(false)
-  startsAt    DateTime?
-  endsAt      DateTime?
-  createdById String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id             String               @id @default(cuid())
+  title          String
+  description    String?
+  status         SurveyStatus         @default(DRAFT)
+  isActive       Boolean              @default(false)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  frequency      SurveyFrequency      @default(ONE_SHOT)
+  scheduleEvery  Int?
+  scheduleUnit   SurveyScheduleUnit?
+  audienceType   SurveyAudienceType   @default(ALL_STUDENTS)
+  instrumentCode SurveyInstrumentCode @default(CUSTOM)
+  createdById    String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  createdBy User? @relation("SurveyCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  questions SurveyQuestion[]
-  responses SurveyResponse[]
+  createdBy       User?                   @relation("SurveyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  questions       SurveyQuestion[]
+  responses       SurveyResponse[]
+  eligibilityRule SurveyEligibilityRule?
+  waves           SurveyWave[]
 
   @@index([status, isActive])
   @@index([startsAt, endsAt])
+  @@index([audienceType, frequency])
+}
+
+/// กฎคัดเลือกกลุ่มเป้าหมาย — ใช้เฉพาะฝั่งแอดมิน/เซิร์ฟเวอร์ ไม่ส่งให้นักศึกษา
+model SurveyEligibilityRule {
+  id                  String                    @id @default(cuid())
+  surveyId            String                    @unique
+  priorRiskLevels     RiskLevel[]               @default([])
+  wellnessSignalCodes WellnessTrendSignalCode[] @default([])
+  studyYears          Int[]                     @default([])
+  sections            String[]                  @default([])
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+}
+
+/// คลื่น/รอบเปิดของแบบประเมิน (รายครั้ง รายสัปดาห์ หรือรายเทอม)
+model SurveyWave {
+  id        String           @id @default(cuid())
+  surveyId  String
+  label     String
+  termKey   String?
+  weekStart DateTime?
+  opensAt   DateTime
+  closesAt  DateTime?
+  status    SurveyWaveStatus @default(SCHEDULED)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  survey      Survey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  assignments SurveyAssignment[]
+  responses   SurveyResponse[]
+
+  @@index([surveyId, status])
+  @@index([opensAt, closesAt])
+  @@index([status, opensAt])
+}
+
+/// สิทธิ์เข้าทำแบบในคลื่นหนึ่ง — สร้างฝั่งเซิร์ฟเวอร์เท่านั้น
+model SurveyAssignment {
+  id          String    @id @default(cuid())
+  waveId      String
+  studentId   String
+  eligibleAt  DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  wave    SurveyWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  student User       @relation("SurveyAssignmentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([waveId, studentId])
+  @@index([studentId, completedAt])
+  @@index([waveId, completedAt])
 }
 
 model SurveyQuestion {
@@ -418,25 +671,28 @@ model SurveyQuestion {
 }
 
 model SurveyResponse {
-  id          String   @id @default(cuid())
-  surveyId    String
-  studentId   String
-  totalScore  Int?
-  maxScore    Int      @default(0)
+  id           String    @id @default(cuid())
+  surveyId     String
+  waveId       String
+  studentId    String
+  totalScore   Int?
+  maxScore     Int       @default(0)
   scorePercent Int?
-  riskLevel   RiskLevel @default(NORMAL)
-  instrument  String?
-  scoredAt    DateTime?
-  submittedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  riskLevel    RiskLevel @default(NORMAL)
+  instrument   String?
+  scoredAt     DateTime?
+  submittedAt  DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  survey  Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  student User   @relation("SurveyResponseStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  survey  Survey     @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  wave    SurveyWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  student User       @relation("SurveyResponseStudent", fields: [studentId], references: [id], onDelete: Cascade)
   answers SurveyAnswer[]
 
-  @@unique([surveyId, studentId])
+  @@unique([waveId, studentId])
   @@index([surveyId, submittedAt])
+  @@index([waveId, submittedAt])
   @@index([studentId, submittedAt])
 }
 
@@ -452,4 +708,59 @@ model SurveyAnswer {
 
   @@unique([responseId, questionId])
   @@index([questionId])
+}
+
+/// ?????????????????????????????????????? (???????????????)
+model StudentWellnessTrendSummary {
+  id               String                  @id @default(cuid())
+  studentId        String
+  signalCode       WellnessTrendSignalCode
+  occurrenceCount  Int                     @default(0)
+  firstDetectedAt  DateTime
+  lastDetectedAt   DateTime
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  student User @relation("WellnessTrendSummaryStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, signalCode])
+  @@index([studentId, lastDetectedAt])
+  @@index([signalCode, lastDetectedAt])
+}
+
+/// ???????????????????? (?????????????/????/????? ??????????????)
+model StudentWellnessTrendHit {
+  id          String                  @id @default(cuid())
+  studentId   String
+  signalCode  WellnessTrendSignalCode
+  source      String
+  detectedAt  DateTime                @default(now())
+
+  student User @relation("WellnessTrendHitStudent", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, signalCode, detectedAt])
+  @@index([studentId, detectedAt])
+  @@index([source, detectedAt])
+}
+
+/// สื่อประชาสัมพันธ์ที่แอดมินเพิ่ม/ลบได้ — แสดงหน้าแรกและหน้านิสิต
+model SiteMediaItem {
+  id              String        @id @default(cuid())
+  slot            SiteMediaSlot
+  title           String
+  altText         String        @default("")
+  /// ชื่อไฟล์ภายใต้ uploads/site-media (ไม่เก็บ path ออกนอก)
+  imagePath       String
+  href            String?
+  ctaLabel        String?
+  tag             String?
+  summary         String?
+  sortOrder       Int           @default(0)
+  isActive        Boolean       @default(true)
+  createdByUserId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([slot, isActive, sortOrder])
+  @@index([createdByUserId])
 }

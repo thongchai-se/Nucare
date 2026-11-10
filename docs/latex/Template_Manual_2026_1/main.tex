@@ -1,0 +1,116 @@
+% =====================================================================
+%  เล่มคู่มือการใช้งาน (User Manual) — โครงงานคอมพิวเตอร์ วิทยาลัยการคอมพิวเตอร์ มข.
+%  Compile: XeLaTeX  (Overleaf: Menu > Settings > Compiler > XeLaTeX)
+%
+%  วิธีใช้: กรอกข้อมูลส่วนที่ 1 แล้วเขียนเนื้อหาในโฟลเดอร์ chapters/
+%  ตัวอย่างในเล่มนี้ใช้ระบบ "CS KKU Project Manager" — ลบแล้วแทนด้วยระบบของตนเอง
+%  อ่าน "แนวทางการเขียนเล่มคู่มือการใช้งาน" ในส่วนต้นของ PDF และกล่องแนวทางในแต่ละบทก่อนเริ่มเขียน
+% =====================================================================
+\documentclass[guides]{cskkumanual}
+% guides  แสดงหน้าแนวทางการเขียนและกล่อง "แนวทางการเขียน" ทุกบท
+%         *** ลบคำว่า guides ออกก่อนส่งเล่ม: \documentclass{cskkumanual} ***
+% ตัวเลือกอื่น เช่น \documentclass[guides,plainnumbering]{cskkumanual}
+%   plainnumbering    เลขหัวข้อแบบ 1. / 1.1 / 1.1.1 (ตัวอย่างหน้า 24 ของคู่มือการจัดทำเอกสาร)
+%   boldheadings      หัวข้อย่อยตัวหนา   chapterfloats  เลขภาพ/ตารางแยกตามบท
+%   titleasis         ไม่แปลงชื่อภาษาอังกฤษบนปกเป็นตัวพิมพ์ใหญ่
+
+% ---------------------------------------------------------------------
+% 1) ข้อมูลเล่ม
+% ---------------------------------------------------------------------
+\projectCode{CS 2568/01}                 % CS/IT พ.ศ./กลุ่ม ตามที่สาขากำหนด
+\titleTH{ระบบจัดการเอกสารโครงงานคอมพิวเตอร์แบบออนไลน์}
+\titleEN{Online Document Management System for Computer Projects}
+
+\firstStudentID{653450001-1}
+\firstStudentPrefixTH{นาย}
+\firstStudentNameTH{สมชาย ใจดี}
+\firstStudentPrefixEN{Mr.}
+\firstStudentNameEN{Somchai Jaidee}
+
+\secondStudentID{653450002-9}            % เว้นว่างทั้ง 5 บรรทัดถ้าทำคนเดียว
+\secondStudentPrefixTH{นางสาว}
+\secondStudentNameTH{สมหญิง รักเรียน}
+\secondStudentPrefixEN{Miss}
+\secondStudentNameEN{Somying Rakrian}
+
+\advisorTH{ผศ.ดร.ประสิทธิ์ สร้างสรรค์}  % คำนำหน้าติดกับชื่อ ไม่เว้นวรรค
+\advisorEN{Asst. Prof. Prasit Sangsan, Ph.D.}
+
+\courseCode{CP354 772}                   % ตรวจสอบรหัสวิชาตามหลักสูตรของรุ่น
+\courseName{โครงงานคอมพิวเตอร์ 2}
+\semester{2}
+\academicYearTH{2568}
+\submitMonthTH{มีนาคม}
+\submitYearTH{2569}
+
+\systemVersion{2.0}
+\systemURL{http://localhost:5173}
+
+\addbibresource{references.bib}
+
+\begin{document}
+
+% ---------------------------------------------------------------------
+% 2) ปกและส่วนต้น (เลขหน้า ก ข ค ...)
+% ---------------------------------------------------------------------
+\makecover
+\frontmatter
+
+\begin{preface}
+\input{chapters/preface}
+\end{preface}
+
+\input{chapters/revision-history}
+
+\makecontents        % สารบัญ -> สารบัญตาราง -> สารบัญภาพ -> สารบัญสมการ (ข้ามรายการที่ว่าง)
+
+\writingguide{chapters/writing-guide}   % แสดงเฉพาะเมื่อใช้ตัวเลือก guides
+
+% ---------------------------------------------------------------------
+% 3) เนื้อหา (เลขหน้า 1 2 3 ...)
+% ---------------------------------------------------------------------
+\mainmatter
+
+% ผู้อ่านทุกกลุ่ม
+\chapter{ภาพรวมของระบบ}
+\input{chapters/ch1-overview}
+
+% ผู้ดูแลระบบ / นักพัฒนา: ความต้องการของระบบในการติดตั้ง
+\chapter{ความต้องการของระบบและการติดตั้ง}
+\input{chapters/ch2-requirements}
+
+% คู่มือผู้ใช้งานทั่วไป (หนึ่งบทต่อหนึ่งบทบาท)
+\chapter{การเริ่มต้นใช้งาน}
+\input{chapters/ch3-getting-started}
+
+\chapter{การใช้งานสำหรับนักศึกษา}
+\input{chapters/ch4-student}
+
+\chapter{การใช้งานสำหรับอาจารย์ที่ปรึกษาและผู้ดูแลรายวิชา}
+\input{chapters/ch5-advisor}
+
+% คู่มือผู้ดูแลระบบ
+\chapter{การดูแลระบบ}
+\input{chapters/ch6-administration}
+
+% คู่มือสำหรับนักพัฒนา
+\chapter{คู่มือสำหรับนักพัฒนา}
+\input{chapters/ch7-developer}
+
+% ผู้อ่านทุกกลุ่ม
+\chapter{การแก้ไขปัญหาเบื้องต้น}
+\input{chapters/ch8-troubleshooting}
+
+% ---------------------------------------------------------------------
+% 4) ส่วนท้าย
+% ---------------------------------------------------------------------
+\printreferences     % ลบบรรทัดนี้ได้ถ้าคู่มือไม่มีการอ้างอิง
+
+\appendix            % หน้าคั่น "ภาคผนวก" แล้วเริ่มภาคผนวก ก
+\chapter{อภิธานศัพท์}
+\input{chapters/appendix-a-glossary}
+
+\chapter{รายการ API ของระบบ}
+\input{chapters/appendix-b-api}
+
+\end{document}

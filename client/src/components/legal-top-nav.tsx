@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, ClipboardCheck, HeartPulse, LogIn, Menu, User, X } from "lucide-react";
+import { ChevronDown, ClipboardCheck, LogIn, Menu, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AppBrand } from "@/components/app-brand";
 import { useAuth } from "@/context/auth.context";
 import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-config";
-import { facultyFullName } from "@/lib/brand";
 import { getNameInitials } from "@/lib/name-prefix";
+import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
 
 type LegalPageKey = "terms" | "privacy" | "cookies";
 
@@ -21,6 +22,10 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const roleHomePath = (() => {
+    const role = getDefaultRole(user);
+    return role ? getRoleHomePath(role) : getRoleHomePath("STUDENT");
+  })();
 
   void active;
 
@@ -65,15 +70,7 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
       <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
         <div className="flex h-16 items-center justify-between sm:h-20">
           <Link href="/" className="flex items-center gap-2.5 sm:gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
-              <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-            </div>
-            <div className="flex flex-col justify-center">
-              <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
-                Nucare<span className="text-cyan-500">.</span>
-              </span>
-              <span className="block text-[10px] font-medium leading-none text-slate-500 sm:text-[11px]">{facultyFullName}</span>
-            </div>
+            <AppBrand markPriority />
           </Link>
 
           <div className="hidden items-center gap-5 lg:flex xl:gap-8">
@@ -134,7 +131,7 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
                   role="menu"
                 >
                   <Link
-                    href="/dashboard"
+                    href={roleHomePath}
                     className="block rounded-md px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 hover:text-blue-700"
                     onClick={() => setProfileMenuOpen(false)}
                   >
@@ -204,7 +201,7 @@ export default function LegalTopNav({ active }: LegalTopNavProps) {
           {isAuthenticated && (
             <div className="flex flex-col gap-3 pt-3">
               <Link
-                href="/dashboard"
+                href={roleHomePath}
                 onClick={() => setMobileMenuOpen(false)}
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-3 font-semibold text-[15px] text-white"
               >

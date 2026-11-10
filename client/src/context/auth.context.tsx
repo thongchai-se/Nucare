@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { AxiosError } from "axios";
@@ -19,7 +20,7 @@ type AuthContextValue = {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
 };
@@ -31,6 +32,15 @@ const getErrorMessage = (error: unknown): string => {
   return axiosError.response?.data?.message || "เกิดข้อผิดพลาดในการยืนยันตัวตน";
 };
 
+const isTransientSessionError = (error: unknown): boolean => {
+  const axiosError = error as AxiosError | undefined;
+  if (!axiosError?.response) {
+    return true;
+  }
+
+  return axiosError.response.status >= 500;
+};
+
 const getSessionUser = async (): Promise<User | null> => {
   const response = await api.get<{ user: User | null }>("/api/auth/session");
   return response.data.user;
@@ -39,12 +49,40 @@ const getSessionUser = async (): Promise<User | null> => {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const refreshAuth = useCallback(async () => {
     try {
       const currentUser = await getSessionUser();
-      setUser(currentUser);
-    } catch {
+      // คง reference เดิมถ้าข้อมูลสำคัญไม่เปลี่ยน — กันหน้าอื่นรีเฟรชข้อมูลซ้ำทุกครั้งที่เช็ค session
+      setUser((previous) => {
+        if (!currentUser) {
+          return null;
+        }
+        if (
+          previous &&
+          previous.id === currentUser.id &&
+          previous.role === currentUser.role &&
+          previous.name === currentUser.name &&
+          previous.email === currentUser.email &&
+          previous.mustChangePassword === currentUser.mustChangePassword &&
+          previous.roles.join("|") === currentUser.roles.join("|")
+        ) {
+          return previous;
+        }
+        return currentUser;
+      });
+    } catch (error) {
+      // Keep the existing session on transient Vercel/proxy failures so we do not
+      // bounce /dashboard <-> login while cookies are still present.
+      if (isTransientSessionError(error) && userRef.current) {
+        return;
+      }
+
       setUser(null);
     }
   }, []);
@@ -103,6 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
       setUser(response.data.user);
+      return response.data.user;
     } catch (error) {
       throw new Error(getErrorMessage(error));
     }

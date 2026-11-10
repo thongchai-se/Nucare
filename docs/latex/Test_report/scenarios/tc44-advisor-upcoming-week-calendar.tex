@@ -1,0 +1,24 @@
+\begin{testscenario}{44}{3}
+  \tcmeta{TC44}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 10 พฤศจิกายน พ.ศ.\ 2568}{1.2}
+  \tcname{ปฏิทินนัดใกล้ถึง 7 วันบนหน้าแรกที่ปรึกษา}
+  \tcpre{มีบัญชีอาจารย์ที่ปรึกษา และมีนัด SCHEDULED ในช่วง 7 วัน (อย่างน้อย 1 รายการ)}
+  \tcdesc{ปฏิทินแนว week timeline คอลัมน์วัน × แกนชั่วโมง วางการ์ดนัดตามเวลา}
+
+  \tccase{1}{จัดกลุ่มนัดและโมเดล timeline}{%
+    \begin{tcsteps}
+      \item รัน unit \tccode{client/src/components/advisor/upcoming-week-calendar.test.ts}
+      \item ตรวจคีย์วันที่ จัดกลุ่มรายวัน และตำแหน่งชั่วโมงของนัด
+    \end{tcsteps}}{เทส UWC-01 ถึง UWC-04 ผ่าน}{รัน \tccode{npx tsx --test src/components/advisor/upcoming-week-calendar.test.ts} ผ่าน 4/4}{Pass}
+
+  \tccase{2}{UI week view บนงานวันนี้}{%
+    \begin{tcsteps}
+      \item เปิด \tccode{/advisor} หน้างานวันนี้
+      \item เห็นหัวสัปดาห์ คอลัมน์ 7 วัน แกนชั่วโมง และการ์ดนัดบนตาราง
+    \end{tcsteps}}{เห็นหลายวันพร้อมกันบน timeline ไม่ต้องกดทีละวัน}{\tccode{UpcomingWeekTimeline} แสดง week grid + event cards}{Pass}
+
+  \tccase{3}{ว่างและลิงก์ดูทั้งหมด}{%
+    \begin{tcsteps}
+      \item เมื่อไม่มีนัดใน 7 วัน แสดง empty
+      \item กด ``ดูทั้งหมด'' ไปแท็บนัดแล้ว
+    \end{tcsteps}}{empty เมื่อไม่มีนัด และนำทางไป consultations/scheduled ได้}{empty state; ปุ่มดูทั้งหมดเรียก \tccode{onOpenAll}}{Pass}
+\end{testscenario}

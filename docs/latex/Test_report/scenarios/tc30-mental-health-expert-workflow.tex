@@ -1,0 +1,47 @@
+\begin{testscenario}{30}{6}
+  \tcmeta{TC30}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 6 พฤศจิกายน พ.ศ.\ 2568}{1.1}
+  \tcname{เวิร์กโฟลว์ผู้เชี่ยวชาญสุขภาพจิต (รับคิว นัด บันทึกผล ประวัติ)}
+  \tcpre{มีบัญชี \tccode{MENTAL_HEALTH} และ referral เป้าหมาย \tccode{COUNSELING_CENTER}}
+  \tcdesc{ตรวจลำดับสถานะคิว นัดหมาย บันทึกผล และประวัตินิสิตแบบ master--detail}
+
+  \tccase{1}{ลำดับสถานะ referral}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{canTransitionMentalHealthReferralStatus}
+      \item ตรวจ PENDING$\to$ACCEPTED, PENDING$\to$CLOSED, ACCEPTED$\to$CLOSED
+      \item ตรวจห้าม CLOSED$\to$ACCEPTED
+    \end{tcsteps}}{เปลี่ยนสถานะได้ตามลำดับคิวเท่านั้น}{เคส \tccode{MHR-01}--\tccode{MHR-04} ผ่าน}{Pass}
+
+  \tccase{2}{สถานะนัดหมาย}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{canUpdateMentalHealthAppointmentStatus}
+      \item ตรวจ SCHEDULED$\to$COMPLETED/NO\_SHOW/CANCELLED
+    \end{tcsteps}}{อัปเดตได้เฉพาะนัดที่ยังเปิด}{เคส \tccode{MHA-S01}/\tccode{MHA-S02} ผ่าน}{Pass}
+
+  \tccase{3}{รับคิวและแจ้งที่ปรึกษา}{%
+    \begin{tcsteps}
+      \item ผู้เชี่ยวชาญ \tccode{PATCH /api/mental-health/referrals/:id/status} เป็น ACCEPTED
+      \item ตรวจว่าที่ปรึกษาได้รับแจ้งเตือนติดตาม
+    \end{tcsteps}}{รับเคสสำเร็จและแจ้งผู้ส่งต่อ}{controller เรียก \tccode{notifyUser} ถึง advisor}{Pass}
+
+  \tccase{4}{นัดหมายและบันทึกผล}{%
+    \begin{tcsteps}
+      \item สร้างนัดจากเคสที่รับแล้ว
+      \item อัปเดตสถานะนัดผ่าน \tccode{PATCH .../appointments/:id/status}
+      \item บันทึกผลการปรึกษาเฉพาะ referral สถานะ ACCEPTED
+    \end{tcsteps}}{ครบวงจรนัด$\to$พบ/ไม่มา/ยกเลิก และบันทึกผลได้}{UI ปฏิทินนัดหมาย + care-records บังคับ ACCEPTED}{Pass}
+
+  \tccase{5}{รับทราบแจ้งเตือนคิว (SOS ฝั่งสตาฟพักไว้)}{%
+    \begin{tcsteps}
+      \item ตรวจว่าพอร์ทัล MH ไม่แสดงรายการ SOS / ไม่มี route เริ่ม--ปิดเคสฉุกเฉิน
+      \item กดรับทราบ alert ประเภทส่งต่อผ่าน \tccode{/api/alerts/:id/acknowledge}
+      \item ตรวจว่าปุ่ม SOS ฝั่งนิสิตยังบันทึก \tccode{EmergencyCase} ได้
+    \end{tcsteps}}{สตาฟไม่จัดการ SOS ชั่วคราว แต่นิสิตกด SOS ได้}{ถอด emergency handlers จาก MH · นิสิตสร้างเคสโดยไม่แจ้งทีม}{Pass}
+
+  \tccase{6}{ประวัติก่อนรับเคสและการแข่งกดรับ}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{GET /api/mental-health/referrals/:id/history} ขณะสถานะ PENDING
+      \item ตรวจว่าไม่ส่ง \tccode{confidentialNotes} ของรอบก่อน
+      \item ผู้เชี่ยวชาญสองคนแข่ง \tccode{PATCH} รับเคสพร้อมกัน
+      \item ตรวจว่า UI ไม่แสดงรหัสระบบดิบ และ error ใช้ข้อความภาษาคน
+    \end{tcsteps}}{ดูประวัติประเมินได้ก่อนรับโดยไม่เปิดบันทึกลับ คนแรกชนะ คนหลังได้ 409 และรีเฟรช}{history ตาม referral + ตัดบันทึกลับตอน PENDING + \tccode{updateMany} กันแข่ง + \tccode{getApiErrorMessage}}{Pass}
+\end{testscenario}

@@ -1,0 +1,29 @@
+% TC34 — คัดกรอง HIGH แจ้งที่ปรึกษา (ไม่สร้างคิว MH อัตโนมัติ)
+\begin{testscenario}{34}{3}
+  \tcmeta{TC34}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 7 พฤศจิกายน พ.ศ.\ 2569}{1.2}
+  \tcname{ผลคัดกรองความเสี่ยงสูงแจ้งที่ปรึกษาทางแอปและอีเมล}
+  \tcpre{นิสิตมีที่ปรึกษาหรือไม่มีก็ได้ · รัน unit HRS-N · EMAIL\_PROVIDER พร้อมหรือ console}
+  \tcdesc{เมื่อผลแบบประเมินเป็น HIGH ระบบแจ้งที่ปรึกษา (หรือ SD/ADMIN ถ้ายังไม่มอบหมาย) ไม่สร้าง CaseReferral ไป MH อัตโนมัติ}
+
+  \tccase{1}{วางแผนแจ้งที่ปรึกษา}{%
+    \begin{tcsteps}
+      \item รัน \tccode{high-risk-screening-notify.test.ts}
+    \end{tcsteps}}{%
+    มีที่ปรึกษา → notify\_advisors · ไม่มี → notify\_staff\_unassigned}{%
+    HRS-N01..02 ผ่าน}{Pass}
+
+  \tccase{2}{หลังส่งแบบ HIGH ไม่โผล่คิว MH อัตโนมัติ}{%
+    \begin{tcsteps}
+      \item นิสิตส่งแบบประเมินได้ผล HIGH
+      \item เข้าพอร์ทัล MH ดูคิวรอรับ
+    \end{tcsteps}}{%
+    ไม่มี referral จากระบบ · ที่ปรึกษาได้รับ alert/อีเมล}{%
+    \tccode{notifyHighRiskScreening} ไม่เรียกสร้าง CaseReferral}{Pass}
+
+  \tccase{3}{ไม่สร้าง EmergencyCase จากคัดกรอง}{%
+    \begin{tcsteps}
+      \item ตรวจคิวช่วยเหลือด่วน (SOS) หลังผล HIGH
+    \end{tcsteps}}{%
+    ไม่โผล่เป็น SOS ของนิสิต}{%
+    screening ไม่สร้าง EmergencyCase}{Pass}
+\end{testscenario}

@@ -1,0 +1,71 @@
+% =====================================================================
+% ภาคผนวก ข รายการ API — ส่วนอ้างอิงของคู่มือสำหรับนักพัฒนา (บทที่ 7)
+% ใช้ longtable เมื่อรายการยาวเกิน 1 หน้า (ชื่อตารางพิมพ์ซ้ำพร้อม "(ต่อ)" ให้อัตโนมัติ)
+% ทุกเส้นทางขึ้นต้นด้วย /api ยกเว้นที่ระบุไว้ สิทธิ์ "ผู้ใช้" = ผู้ที่เข้าสู่ระบบแล้วทุกบทบาท
+% =====================================================================
+\label{app:api}
+
+\begin{guide}
+ภาคผนวกเก็บข้อมูลอ้างอิงที่ยาวเกินจะใส่ในบท เช่น รายการ API ทั้งหมด พจนานุกรมข้อมูล (ทุกตาราง ทุกฟิลด์)
+หรือรหัสข้อผิดพลาด จัดเป็นตารางเรียงตามกลุ่ม และปรับทุกครั้งที่ระบบเปลี่ยน
+\end{guide}
+
+ระบบรุ่น \systemversion{} มี REST API 37 รายการ แบ่งตามกลุ่มดังตารางที่~\ref{tab:api}
+สิทธิ์ ``ผู้ใช้'' หมายถึงผู้ที่เข้าสู่ระบบแล้วทุกบทบาท
+
+\begin{longtable}{|C{1.7cm}|L{5.4cm}|L{2.9cm}|L{\dimexpr\linewidth-10cm-8\tabcolsep-5\arrayrulewidth\relax}|}
+\caption{รายการ API ของระบบ}\label{tab:api}\\
+\hline
+\textbf{Method} & \textbf{เส้นทาง} & \textbf{สิทธิ์} & \textbf{การทำงาน} \\ \hline
+\endfirsthead
+\caption[]{รายการ API ของระบบ~\cskkuContinued}\\
+\hline
+\textbf{Method} & \textbf{เส้นทาง} & \textbf{สิทธิ์} & \textbf{การทำงาน} \\ \hline
+\endhead
+\multicolumn{4}{|l|}{\textbf{การยืนยันตัวตน} (\cmd{/api/auth})} \\ \hline
+POST & \cmd{/register} & ทุกคน & สมัครสมาชิก \\ \hline
+POST & \cmd{/login} & ทุกคน & เข้าสู่ระบบ รับ token \\ \hline
+GET & \cmd{/me} & ผู้ใช้ & ข้อมูลผู้ใช้ปัจจุบัน \\ \hline
+PUT & \cmd{/me} & ผู้ใช้ & แก้ไขข้อมูลส่วนตัว \\ \hline
+PUT & \cmd{/password} & ผู้ใช้ & เปลี่ยนรหัสผ่าน \\ \hline
+GET & \cmd{/advisors} & ผู้ใช้ & รายชื่ออาจารย์ \\ \hline
+GET & \cmd{/students} & ผู้ใช้ & รายชื่อนักศึกษา \\ \hline
+\multicolumn{4}{|l|}{\textbf{ข้อเสนอโครงงาน} (\cmd{/api/proposals})} \\ \hline
+GET & \cmd{/} & ผู้ใช้ & รายการข้อเสนอ \\ \hline
+POST & \cmd{/} & นักศึกษา & สร้างข้อเสนอ \\ \hline
+GET & \cmd{/:id} & ผู้ใช้ & รายละเอียดข้อเสนอ \\ \hline
+PUT & \cmd{/:id} & นักศึกษา & แก้ไขข้อเสนอ (ฉบับร่างหรือส่งกลับ) \\ \hline
+PUT & \cmd{/:id/submit} & นักศึกษา & ส่งข้อเสนอ \\ \hline
+PUT & \cmd{/:id/review} & อาจารย์ที่ปรึกษา & อนุมัติหรือส่งกลับแก้ไข \\ \hline
+GET & \cmd{/:id/logs} & ผู้ใช้ & ประวัติการเปลี่ยนสถานะ \\ \hline
+\multicolumn{4}{|l|}{\textbf{โครงงานและไฟล์} (\cmd{/api/projects})} \\ \hline
+POST & \cmd{/} & นักศึกษา & สร้างโครงงาน \\ \hline
+GET & \cmd{/:id/files} & ผู้ใช้ & รายการไฟล์ \\ \hline
+PUT & \cmd{/:id/files/:fid} & นักศึกษา อาจารย์ที่ปรึกษา & บันทึกไฟล์ \\ \hline
+POST & \cmd{/:id/files/new} & นักศึกษา อาจารย์ที่ปรึกษา & สร้างไฟล์ใหม่ \\ \hline
+POST & \cmd{/:id/files} & นักศึกษา อาจารย์ที่ปรึกษา & อัปโหลดไฟล์ \\ \hline
+DELETE & \cmd{/:id/files/:fid} & นักศึกษา อาจารย์ที่ปรึกษา & ลบไฟล์ \\ \hline
+POST & \cmd{/:id/compile} & นักศึกษา อาจารย์ที่ปรึกษา & Compile เป็น PDF \\ \hline
+GET & \cmd{/:id/pdf} & ผู้ใช้ & ดาวน์โหลด PDF \\ \hline
+\multicolumn{4}{|l|}{\textbf{ความเห็น} (\cmd{/api})} \\ \hline
+GET & \cmd{/projects/:id/comments} & ผู้ใช้ & รายการความเห็นของโครงงาน \\ \hline
+POST & \cmd{/projects/:id/comments} & ผู้ใช้ & เพิ่มความเห็น \\ \hline
+POST & \cmd{/comments/:id/reply} & ผู้ใช้ & ตอบกลับความเห็น \\ \hline
+PUT & \cmd{/comments/:id/resolve} & ผู้ใช้ & ปิดความเห็น (แก้ไขแล้ว) \\ \hline
+\multicolumn{4}{|l|}{\textbf{การส่งงาน} (\cmd{/api/submissions})} \\ \hline
+POST & \cmd{/} & ผู้ใช้ & ส่งงาน \\ \hline
+GET & \cmd{/} & ผู้ใช้ & รายการการส่งงาน \\ \hline
+PUT & \cmd{/:id} & ผู้ใช้ & ตรวจงาน \\ \hline
+\multicolumn{4}{|l|}{\textbf{การแจ้งเตือน} (\cmd{/api/notifications})} \\ \hline
+GET & \cmd{/} & ผู้ใช้ & รายการแจ้งเตือน \\ \hline
+PUT & \cmd{/:id/read} & ผู้ใช้ & อ่านแล้ว \\ \hline
+PUT & \cmd{/read-all} & ผู้ใช้ & อ่านแล้วทั้งหมด \\ \hline
+\multicolumn{4}{|l|}{\textbf{แดชบอร์ดและกำหนดส่ง} (\cmd{/api/dashboard}, \cmd{/api/deadlines})} \\ \hline
+GET & \cmd{/dashboard/summary} & ผู้ดูแลรายวิชา อาจารย์ที่ปรึกษา & สรุปจำนวนโครงงานและการส่งงาน \\ \hline
+GET & \cmd{/dashboard/export} & ผู้ดูแลรายวิชา อาจารย์ที่ปรึกษา & ส่งออกไฟล์ CSV \\ \hline
+GET & \cmd{/deadlines} & ผู้ใช้ & รายการกำหนดส่ง \\ \hline
+POST & \cmd{/deadlines} & ผู้ดูแลรายวิชา อาจารย์ที่ปรึกษา & สร้างกำหนดส่ง \\ \hline
+\multicolumn{4}{|l|}{\textbf{อื่น ๆ}} \\ \hline
+GET & \cmd{/api/health} & ทุกคน & ตรวจสถานะส่วนหลัง \\ \hline
+WS & \cmd{/collab?room=...&token=...} & ผู้ใช้ & แก้ไขไฟล์ร่วมกัน (Yjs) \\ \hline
+\end{longtable}

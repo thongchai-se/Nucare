@@ -51,7 +51,8 @@ api.interceptors.response.use(
     const requestUrl = originalRequest?.url || "";
     const isAuthRequest =
       requestUrl.includes("/api/auth/login") ||
-      requestUrl.includes("/api/auth/refresh");
+      requestUrl.includes("/api/auth/refresh") ||
+      requestUrl.includes("/api/auth/session");
 
     if (
       error.response?.status === 401 &&
@@ -64,9 +65,13 @@ api.interceptors.response.use(
       try {
         await refreshAccessToken();
         return api(originalRequest);
-      } catch {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      } catch (refreshError) {
+        const refreshStatus = (refreshError as AxiosError | undefined)?.response?.status;
+        // Only force logout on definitive auth failure, not proxy/network blips.
+        if (refreshStatus === 401 || refreshStatus === 403 || refreshStatus === 404) {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+          }
         }
         return Promise.reject(error);
       }

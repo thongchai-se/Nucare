@@ -1,0 +1,23 @@
+% TC17 — สัญญาณแชท AI และการมองเห็นผลละเอียดอ่อนตามบทบาท
+\begin{testscenario}{17}{17}
+  \tcmeta{TC17}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 29 ตุลาคม พ.ศ.\ 2569}{1.0}
+  \tcname{สัญญาณจากแชท AI ในประวัตินิสิตและสิทธิ์มองเห็นผลละเอียดอ่อน}
+  \tcpre{รัน unit test ของ \tccode{access-control}, \tccode{notify-advisors-of-wellness}, \tccode{student-wellness-summary}}
+  \tcdesc{ทดสอบว่าผู้บริหารเข้าถึงนิสิตได้ทั้งหมด สัญญาณแชทไม่สร้างแจ้งเตือนในกล่องกระดิ่ง และไม่รั่วเนื้อหาแชท}
+
+  \tccase{1}{EXECUTIVE เข้าถึงนิสิตรายคนได้}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{canAccessStudent} ด้วยบทบาท EXECUTIVE
+    \end{tcsteps}}{\tccode{true}}{unit ผ่าน}{Pass}
+
+  \tccase{2}{สัญญาณแชทไม่สร้าง Alert ในกล่องแจ้งเตือน}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{notifyAdvisorsOfWellnessSignals} ด้วย \tccode{SELF\_HARM\_CRISIS}
+      \item ตรวจว่าไม่เรียก \tccode{alert.createMany}
+    \end{tcsteps}}{คืน 0 และไม่สร้าง Alert — สัญญาณแสดงในหน้ารายละเอียดนิสิตเท่านั้น}{unit ผ่าน}{Pass}
+
+  \tccase{3}{STUDENT\_DEVELOPMENT ไม่ได้ scope นิสิตรายคนผ่าน access-control}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{getStudentScopeWhere} ด้วย STUDENT\_DEVELOPMENT
+    \end{tcsteps}}{ได้ sentinel \tccode{\_\_no\_student\_scope\_\_}}{unit ผ่าน}{Pass}
+\end{testscenario}

@@ -1,0 +1,23 @@
+% TC18 — ปิดแจ้งเตือนสัญญาณโดยไม่ถือว่ารับเรื่อง / บังคับรับเรื่องก่อนปิดเคส
+\begin{testscenario}{18}{18}
+  \tcmeta{TC18}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 8 พฤศจิกายน พ.ศ.\ 2569}{1.1}
+  \tcname{นโยบายปิดแจ้งเตือน: dismiss ไม่ถือว่ารับเรื่อง และ follow\_up ต้องรับเรื่องก่อน}
+  \tcpre{รัน unit test ของ \tccode{alert-close-policy}}
+  \tcdesc{แยกโหมดปิดกระดิ่ง/สัญญาณ ออกจากการปิดเรื่องหลังรับติดตาม และบังคับลำดับรับเรื่องก่อนบันทึกและปิดเคส}
+
+  \tccase{1}{dismiss\_signal ไม่ตั้ง acknowledgedAt}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveAlertCloseData} ด้วย \tccode{mode=dismiss\_signal} และยังไม่เคยรับเรื่อง
+      \item ตรวจฟิลด์ที่คืน
+    \end{tcsteps}}{allowed พร้อม \tccode{closedAt} แต่ไม่มี \tccode{acknowledgedAt} และ audit เป็น \tccode{alerts.dismiss}}{unit ผ่าน}{Pass}
+
+  \tccase{2}{follow\_up ปฏิเสธเมื่อยังไม่รับเรื่อง}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveAlertCloseData} ด้วย \tccode{mode=follow\_up} และ \tccode{alreadyAcknowledged=false}
+    \end{tcsteps}}{allowed=false รหัส \tccode{MUST\_ACKNOWLEDGE} ข้อความให้กดรับเรื่องก่อน}{unit ผ่าน}{Pass}
+
+  \tccase{3}{follow\_up ปิดได้หลังรับเรื่องแล้ว}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveAlertCloseData} ด้วย \tccode{alreadyAcknowledged=true} และเหตุผลปิดเรื่อง
+    \end{tcsteps}}{allowed พร้อม \tccode{closedAt} ไม่ทับ \tccode{acknowledgedAt} และ audit เป็น \tccode{alerts.close}}{unit ผ่าน}{Pass}
+\end{testscenario}

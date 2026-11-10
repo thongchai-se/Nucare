@@ -8,15 +8,18 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
-  HeartPulse,
   Lock,
   Mail,
   User,
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
+import { AppBrand } from "@/components/app-brand";
 import api from "@/lib/axios";
+import { getSafeNextPath } from "@/lib/auth-routes";
+import { acquireBodyScrollLock } from "@/lib/body-scroll-lock";
 import { facultyFullName } from "@/lib/brand";
+import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
 
 export type AuthPopupView = "login" | "forgot";
 
@@ -94,8 +97,7 @@ export default function AuthPopup({
       return;
     }
 
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -106,7 +108,7 @@ export default function AuthPopup({
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      document.body.style.overflow = originalOverflow;
+      releaseScrollLock();
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen, onClose]);
@@ -164,9 +166,16 @@ export default function AuthPopup({
     setIsLoginLoading(true);
 
     try {
-      await login(loginIdentifier, normalizedPassword);
+      const loggedInUser = await login(loginIdentifier, normalizedPassword);
       onClose();
-      router.push("/dashboard");
+      if (loggedInUser.mustChangePassword) {
+        router.push("/change-password");
+        return;
+      }
+      const nextParam =
+        typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
+      const defaultRole = getDefaultRole(loggedInUser);
+      router.push(getSafeNextPath(nextParam) || (defaultRole ? getRoleHomePath(defaultRole) : getRoleHomePath("STUDENT")));
     } catch {
       setLoginError(LOGIN_FAILED_MESSAGE);
     } finally {
@@ -218,10 +227,10 @@ export default function AuthPopup({
   }
 
   return (
-    <div className="fixed inset-0 z-[220] grid place-items-center overflow-y-auto overscroll-contain p-3 [-ms-overflow-style:none] [scrollbar-width:none] sm:p-4 [&::-webkit-scrollbar]:hidden">
+    <div className="fixed inset-0 z-[220] flex items-center justify-center overflow-hidden p-3 sm:p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px]"
+        className="absolute inset-0 bg-slate-900/60"
         onClick={onClose}
         aria-label="close auth popup backdrop"
       />
@@ -242,9 +251,8 @@ export default function AuthPopup({
           <div className="absolute bottom-[-10%] left-[-10%] h-80 w-80 rounded-full bg-white opacity-10" />
 
           <div className="relative z-10">
-            <div className="mb-8 flex items-center gap-2 text-white">
-              <HeartPulse size={32} />
-              <span className="text-2xl font-bold tracking-wider">NURSE CARE</span>
+            <div className="mb-8">
+              <AppBrand markPriority tone="onDark" />
             </div>
             <h2 className="mb-4 text-3xl font-bold leading-tight text-white">
               ระบบดูแลและติดตาม
@@ -264,16 +272,15 @@ export default function AuthPopup({
         </div>
 
         <div className="relative flex w-full flex-col justify-center p-6 sm:p-8 md:w-1/2 md:justify-start md:p-12">
-          <div className="mb-8 flex items-center justify-center gap-2 text-blue-600 md:hidden">
-            <HeartPulse size={28} />
-            <span className="text-xl font-bold tracking-wider">NURSE CARE</span>
+          <div className="mb-8 flex justify-center md:hidden">
+            <AppBrand size="compact" />
           </div>
 
           {view === "login" ? (
             <>
               <div className="mb-8 text-center md:text-left">
                 <h3 className="mb-2 text-3xl font-bold text-slate-800">เข้าสู่ระบบ</h3>
-                <p className="text-sm text-slate-500">Nucare Management System</p>
+                <p className="text-sm text-slate-500">ระบบดูแลสุขภาพนักศึกษา {facultyFullName}</p>
               </div>
 
               <form className="space-y-5" onSubmit={handleLoginSubmit}>

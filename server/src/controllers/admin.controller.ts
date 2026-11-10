@@ -1,19 +1,22 @@
 import { Prisma, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { randomBytes } from "crypto";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { buildExecutiveDashboardStats } from "../lib/executive-analytics";
 import { normalizePersonNameForRole } from "../lib/name-prefix";
 import { prisma } from "../lib/prisma";
 import {
   buildUserHasRoleWhere,
   getAssignedRoles,
+  hasAssignedRole,
   managedStaffRoleValues,
   ManagedStaffRole,
   splitPrimaryAndAdditionalStaffRoles,
 } from "../lib/roles";
 import { MAX_STUDY_YEAR, MIN_STUDY_YEAR, normalizeStudyYear } from "../lib/study-year";
+import { createTemporaryPassword } from "../lib/temporary-password";
+import { formatStudentIdForResponse } from "../lib/user-format";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
@@ -108,6 +111,8 @@ const studentStatusSchema = z.enum(["active", "inactive"]);
 const managedRoleSchema = z.nativeEnum(Role);
 const managedStaffRoleSchema = z.enum(managedStaffRoleValues);
 
+const instructorIdsSchema = z.array(z.string().trim().min(1)).max(20);
+
 const createStudentSchema = z.object({
   studentId: z.string().trim().min(1),
   name: z.string().trim().min(2).max(120),
@@ -124,6 +129,7 @@ const managedUserSchema = z
     studentId: z.string().trim().optional(),
     employeeId: z.string().trim().optional(),
     advisorId: z.union([z.string().trim(), z.literal(""), z.null(), z.undefined()]).optional(),
+    instructorIds: instructorIdsSchema.optional(),
     studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR).nullable().optional(),
     section: z.union([z.string().trim().max(50), z.literal(""), z.null(), z.undefined()]).optional(),
     name: z.string().trim().min(2).max(120),
@@ -292,22 +298,6 @@ const normalizeStudentId = (raw: string): string => {
   return normalized;
 };
 
-const formatStudentIdForResponse = (studentId: string | null): string | null => {
-  if (!studentId) {
-    return null;
-  }
-
-  if (STUDENT_ID_PATTERN.test(studentId)) {
-    return studentId;
-  }
-
-  if (/^\d{10}$/.test(studentId)) {
-    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
-  }
-
-  return studentId;
-};
-
 const normalizeEmail = (raw?: string | null): string | null => {
   if (!raw) {
     return null;
@@ -331,10 +321,6 @@ const normalizeSection = (raw?: string | null): string => {
 };
 
 const normalizeComparableSection = (raw?: string | null): string => (raw?.trim() || "").toLowerCase();
-
-const createTemporaryPassword = (): string => randomBytes(18).toString("base64url");
-
-const createImportedStudentPassword = (studentId: string): string => `Nu${studentId.replace(/\D/g, "")}`;
 
 const staffEmployeeIdPrefixMap: Record<ManagedStaffRole, string> = {
   ADMIN: "ADM",
@@ -363,12 +349,27 @@ const getAdminUserAuditMetadata = (role: Role) => {
   } as const;
 };
 
-const createManagedUserPassword = (email: string): string => `Nu${email.toLowerCase()}`;
-
 const normalizeAdvisorId = (raw?: string | null): string | null => {
   const trimmed = raw?.trim() || "";
   return trimmed.length > 0 ? trimmed : null;
 };
+
+const normalizeInstructorIds = (raw?: string[] | null): string[] =>
+  Array.from(new Set((raw || []).map((value) => value.trim()).filter(Boolean)));
+
+const activeInstructorAssignmentSelect = {
+  where: {
+    isActive: true,
+  },
+  select: {
+    instructor: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+  },
+} as const;
 
 const syncStudentAdvisorAssignment = async (
   tx: Prisma.TransactionClient,
@@ -420,6 +421,76 @@ const syncStudentAdvisorAssignment = async (
     advisorId: advisor.id,
     advisorName: advisor.name,
   };
+};
+
+const syncStudentInstructorAssignments = async (
+  tx: Prisma.TransactionClient,
+  studentId: string,
+  instructorIds: string[]
+): Promise<Array<{ id: string; name: string }>> => {
+  const uniqueIds = normalizeInstructorIds(instructorIds);
+  const instructors =
+    uniqueIds.length === 0
+      ? []
+      : await tx.user.findMany({
+          where: {
+            id: {
+              in: uniqueIds,
+            },
+            ...buildUserHasRoleWhere(Role.INSTRUCTOR),
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+  if (instructors.length !== uniqueIds.length) {
+    throw new Error("Instructor not found");
+  }
+
+  await tx.studentInstructorAssignment.updateMany({
+    where: {
+      studentId,
+      isActive: true,
+      ...(uniqueIds.length > 0
+        ? {
+            instructorId: {
+              notIn: uniqueIds,
+            },
+          }
+        : {}),
+    },
+    data: {
+      isActive: false,
+    },
+  });
+
+  for (const instructor of instructors) {
+    await tx.studentInstructorAssignment.upsert({
+      where: {
+        studentId_instructorId: {
+          studentId,
+          instructorId: instructor.id,
+        },
+      },
+      update: {
+        isActive: true,
+        assignedAt: new Date(),
+      },
+      create: {
+        studentId,
+        instructorId: instructor.id,
+        isActive: true,
+      },
+    });
+  }
+
+  return instructors.map((instructor) => ({
+    id: instructor.id,
+    name: instructor.name,
+  }));
 };
 
 const hasStudentProfileChanges = (
@@ -517,6 +588,12 @@ const mapManagedUser = (user: {
       name: string;
     };
   }>;
+  studentInstructorAssignments?: Array<{
+    instructor: {
+      id: string;
+      name: string;
+    };
+  }>;
 }) => ({
   id: user.id,
   name: user.name,
@@ -532,6 +609,8 @@ const mapManagedUser = (user: {
   }),
   advisorId: user.studentAssignments?.[0]?.advisor.id ?? null,
   advisorName: user.studentAssignments?.[0]?.advisor.name ?? null,
+  instructorIds: (user.studentInstructorAssignments || []).map((assignment) => assignment.instructor.id),
+  instructorNames: (user.studentInstructorAssignments || []).map((assignment) => assignment.instructor.name),
   status: user.isActive ? "active" : "inactive",
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
@@ -594,6 +673,7 @@ const parseManagedUserPayload = (
   const email = normalizeEmail(input.email);
   const employeeId = normalizeEmployeeId(input.employeeId);
   const advisorId = normalizeAdvisorId(input.advisorId);
+  const instructorIds = normalizeInstructorIds(input.instructorIds);
   let studentId: string | null = null;
   let studyYear: number | null = null;
   let section: string | null = null;
@@ -633,6 +713,7 @@ const parseManagedUserPayload = (
     studentId,
     employeeId: role === Role.STUDENT ? null : employeeId,
     advisorId: role === Role.STUDENT ? advisorId : null,
+    instructorIds: role === Role.STUDENT ? instructorIds : [],
     studyYear: role === Role.STUDENT ? studyYear : null,
     section: role === Role.STUDENT ? section : null,
     name: normalizePersonNameForRole(input.name, role),
@@ -822,6 +903,7 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
             },
           },
         },
+        studentInstructorAssignments: activeInstructorAssignmentSelect,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
       take: ADMIN_LIST_MAX_RESULTS,
@@ -890,6 +972,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
         section,
         role: Role.STUDENT,
         password: passwordHash,
+        mustChangePassword: true,
         isActive: parsed.data.status === "active",
       },
       select: {
@@ -920,7 +1003,8 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       message: "Student created successfully",
       student: mapStudent(created),
       temporaryPassword,
-      onboardingHint: "Use the temporary password once or reset the password via the forgot-password flow.",
+      onboardingHint:
+        "ส่งรหัสผ่านชั่วคราวให้นิสิตครั้งเดียว — ระบบจะบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก",
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -976,8 +1060,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const temporaryPassword =
-      payload.role === Role.STUDENT ? createTemporaryPassword() : createManagedUserPassword(payload.email as string);
+    const temporaryPassword = createTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
     const shouldAutoGenerateEmployeeId = payload.role !== Role.STUDENT && !payload.employeeId;
     let created: Parameters<typeof mapManagedUser>[0] | null = null;
@@ -1002,6 +1085,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
               section: payload.section,
               isActive: payload.isActive,
               password: passwordHash,
+              mustChangePassword: true,
             },
             select: {
               id: true,
@@ -1010,6 +1094,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
           if (payload.role === Role.STUDENT) {
             await syncStudentAdvisorAssignment(tx, createdUser.id, payload.advisorId);
+            await syncStudentInstructorAssignments(tx, createdUser.id, payload.instructorIds);
           }
 
           return tx.user.findUniqueOrThrow({
@@ -1043,6 +1128,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
                   },
                 },
               },
+              studentInstructorAssignments: activeInstructorAssignmentSelect,
             },
           });
         });
@@ -1083,13 +1169,11 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       user: mapManagedUser(created),
       temporaryPassword,
       onboardingHint:
-        payload.role === Role.STUDENT
-          ? "Use the temporary password once or reset the password via the forgot-password flow."
-          : "Default password uses the format Nu + lowercase email.",
+        "ส่งรหัสผ่านชั่วคราวให้ผู้ใช้ครั้งเดียว — ระบบจะบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก",
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Advisor not found") {
-      res.status(404).json({ message: "Advisor not found" });
+    if (error instanceof Error && (error.message === "Advisor not found" || error.message === "Instructor not found")) {
+      res.status(404).json({ message: error.message });
       return;
     }
 
@@ -1310,6 +1394,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
       if (payload.role === Role.STUDENT) {
         await syncStudentAdvisorAssignment(tx, userId, payload.advisorId);
+        await syncStudentInstructorAssignments(tx, userId, payload.instructorIds);
       }
 
       return tx.user.findUniqueOrThrow({
@@ -1343,6 +1428,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
               },
             },
           },
+          studentInstructorAssignments: activeInstructorAssignmentSelect,
         },
       });
     });
@@ -1363,8 +1449,8 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       user: mapManagedUser(updated),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Advisor not found") {
-      res.status(404).json({ message: "Advisor not found" });
+    if (error instanceof Error && (error.message === "Advisor not found" || error.message === "Instructor not found")) {
+      res.status(404).json({ message: error.message });
       return;
     }
 
@@ -1765,7 +1851,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
           return;
         }
 
-        const temporaryPassword = createImportedStudentPassword(row.studentId);
+        const temporaryPassword = createTemporaryPassword();
         const passwordHash = await bcrypt.hash(temporaryPassword, IMPORT_BCRYPT_ROUNDS);
 
         await prisma.user.create({
@@ -1777,6 +1863,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
             section: row.section,
             role: Role.STUDENT,
             password: passwordHash,
+            mustChangePassword: true,
             isActive: true,
           },
         });
@@ -1834,7 +1921,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
       skippedStudents,
       createdCredentials,
       onboardingHint:
-        "New imported student accounts use the default password format Nu + studentId without a dash.",
+        "บัญชีที่สร้างใหม่ได้รหัสผ่านชั่วคราวแบบสุ่มใน createdCredentials — บังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก",
     });
   } catch (error) {
     console.error("Import students error:", error);
@@ -2067,7 +2154,13 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
     const failures: Array<{ email: string; reason: string }> = [];
     const updatedUsers: Array<{ email: string; reason: string }> = [];
     const skippedUsers: Array<{ email: string; reason: string }> = [];
-    const createdUsers: Array<{ email: string; employeeId: string; role: ManagedStaffRole; roles: ManagedStaffRole[] }> = [];
+    const createdUsers: Array<{
+      email: string;
+      employeeId: string;
+      role: ManagedStaffRole;
+      roles: ManagedStaffRole[];
+      temporaryPassword: string;
+    }> = [];
 
     for (const row of normalizedRows) {
       const existing = existingUsersByEmail.get(row.email);
@@ -2141,7 +2234,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
           continue;
         }
 
-        const temporaryPassword = createManagedUserPassword(row.email);
+        const temporaryPassword = createTemporaryPassword();
         const passwordHash = await bcrypt.hash(temporaryPassword, 12);
         const createdUser = await prisma.$transaction(async (tx) => {
           const nextRoles = splitPrimaryAndAdditionalStaffRoles(row.roles);
@@ -2155,6 +2248,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
               additionalRoles: nextRoles.additionalRoles,
               employeeId,
               password: passwordHash,
+              mustChangePassword: true,
               isActive: true,
             },
             select: {
@@ -2175,6 +2269,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
           employeeId: createdUser.employeeId || "-",
           role: createdUser.role as ManagedStaffRole,
           roles: getAssignedRoles(createdUser) as ManagedStaffRole[],
+          temporaryPassword,
         });
         if (createdUser.email) {
           existingUsersByEmail.set(normalizeEmail(createdUser.email) as string, createdUser);
@@ -2226,7 +2321,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
       skippedUsers,
       createdUsers,
       onboardingHint:
-        "New imported staff accounts use the default password format Nu + lowercase email.",
+        "บัญชีบุคลากรใหม่ได้รหัสผ่านชั่วคราวแบบสุ่มใน createdUsers — บังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก",
     });
   } catch (error) {
     console.error("Import staff users error:", error);
@@ -2419,5 +2514,21 @@ export const listAuditLogs = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error("List audit logs error:", error);
     res.status(500).json({ message: "Failed to list audit logs" });
+  }
+};
+
+/** สรุปสถิติคัดกรอง/ปฏิบัติการแบบไม่ระบุตัวตนสำหรับหน้ารายงานแอดมิน */
+export const getAdminReportsSummary = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user?.userId || !hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const payload = await buildExecutiveDashboardStats();
+    res.status(200).json(payload);
+  } catch (error) {
+    console.error("Get admin reports summary error:", error);
+    res.status(500).json({ message: "Failed to fetch admin reports summary" });
   }
 };

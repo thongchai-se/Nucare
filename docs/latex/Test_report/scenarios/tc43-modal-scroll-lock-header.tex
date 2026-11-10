@@ -1,0 +1,28 @@
+\begin{testscenario}{43}{3}
+  \tcmeta{TC43}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 9 พฤศจิกายน พ.ศ.\ 2568}{1.1}
+  \tcname{เปิดโมดัลแล้วแถบบนไม่หาย และล็อกสกอลล์พื้นหลังอย่างปลอดภัย}
+  \tcpre{มีบัญชีอาจารย์ที่ปรึกษา และมีสัญญาณเข้าที่ปิดเคสได้}
+  \tcdesc{กันบั๊ก Chrome ที่ backdrop-blur ของโมดัลทับ sticky header ที่มี blur แล้วทำให้แถบบนหาย พร้อมรวมการล็อกสกอลล์เป็น utility เดียว และกันสกอลล์บาร์ซ้อนดันเนื้อหาซ้าย}
+
+  \tccase{1}{ล็อกสกอลล์แบบนับจำนวน}{%
+    \begin{tcsteps}
+      \item รัน unit \tccode{client/src/lib/body-scroll-lock.test.ts}
+      \item ตรวจล็อกครั้งแรกตั้ง \tccode{position: fixed} และคง \tccode{scrollY}
+      \item ตรวจล็อกซ้อนกันและปลดซ้ำไม่ทำให้สถานะพัง
+      \item ตรวจว่าไม่ใส่ \tccode{paddingRight} ทับ \tccode{scrollbar-gutter: stable}
+    \end{tcsteps}}{เทส BSL-01 ถึง BSL-04 ผ่านทั้งหมด}{รัน \tccode{npx tsx --test src/lib/body-scroll-lock.test.ts} ผ่าน 4/4}{Pass}
+
+  \tccase{2}{แถบบนยังเห็นตอนเปิดป๊อปอัป}{%
+    \begin{tcsteps}
+      \item เปิด \tccode{/advisor?view=academic}
+      \item กด ``บันทึกและปิดเคส'' ให้ขึ้น \tccode{PromptDialog}
+      \item สังเกตแถบ sticky ด้านบน (ชื่อ/เมนู) ยังอยู่ใต้ overlay
+    \end{tcsteps}}{แถบบนไม่หาย ไม่เลื่อนหลุด และหน้าหลังไม่กระตุก}{เอา backdrop-blur ออกจาก overlay; header staff ใช้พื้นขาวทึบ; PromptDialog ใช้ \tccode{useBodyScrollLock}}{Pass}
+
+  \tccase{3}{จุดโมดัลอื่นใช้ล็อกเดียวกัน และไม่ดันเลย์เอาต์}{%
+    \begin{tcsteps}
+      \item ตรวจ \tccode{ConfirmDialog}/\tccode{StaffModalOverlay}/\tccode{DeleteSurveyDialog}/\tccode{AuthPopup} เรียก utility กลาง
+      \item ค้น client ว่าไม่เหลือการตั้ง \tccode{document.body.style.overflow = "hidden"} นอก utility
+      \item เปิดรายละเอียดข้อสังเกตแล้วดูว่าข้อความใต้หัวข้อไม่ขยับซ้าย
+    \end{tcsteps}}{ล็อกสกอลล์รวมศูนย์ ไม่มีสกอลล์บาร์ซ้อนดันพื้นหลัง}{overlay ใช้ \tccode{overflow-hidden}; lock ไม่ใส่ paddingRight; เหลือ overflow lock เฉพาะ utility}{Pass}
+\end{testscenario}

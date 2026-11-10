@@ -1,12 +1,12 @@
 import { Prisma, Role } from "@prisma/client";
 
+/** บทบาทเจ้าหน้าที่ที่มอบหมายได้ — ยุบผู้สอนเข้าที่ปรึกษาแล้ว */
 export const managedStaffRoleValues = [
   Role.ADMIN,
   Role.EXECUTIVE,
   Role.STUDENT_DEVELOPMENT,
   Role.MENTAL_HEALTH,
   Role.ADVISOR,
-  Role.INSTRUCTOR,
 ] as const;
 
 export type ManagedStaffRole = (typeof managedStaffRoleValues)[number];
@@ -14,6 +14,10 @@ export type ManagedStaffRole = (typeof managedStaffRoleValues)[number];
 const managedStaffRolePriority = new Map<ManagedStaffRole, number>(
   managedStaffRoleValues.map((role, index) => [role, index])
 );
+
+/** ยุบบทบาทผู้สอน (legacy) ให้เทียบเท่าที่ปรึกษา */
+export const collapseLegacyStaffRole = (role: Role): Role =>
+  role === Role.INSTRUCTOR ? Role.ADVISOR : role;
 
 const toRoleArray = (
   value:
@@ -30,14 +34,14 @@ const toRoleArray = (
   }
 
   if (Array.isArray(value)) {
-    return [...value];
+    return value.map((role) => collapseLegacyStaffRole(role));
   }
 
   if (typeof value === "object" && "role" in value) {
-    return [value.role, ...(value.roles || [])];
+    return [collapseLegacyStaffRole(value.role), ...(value.roles || []).map(collapseLegacyStaffRole)];
   }
 
-  return [value as Role];
+  return [collapseLegacyStaffRole(value as Role)];
 };
 
 export const isManagedStaffRole = (role: Role): role is ManagedStaffRole =>
@@ -72,17 +76,23 @@ export const splitPrimaryAndAdditionalStaffRoles = (roles: Iterable<Role>) => {
   };
 };
 
+/** รวมบทบาททั้งหมดของผู้ใช้ (บทบาทหลัก + บทบาทเพิ่มเติม) */
 export const getAssignedRoles = (input: {
   role: Role;
   additionalRoles?: readonly Role[] | null;
 }): Role[] => {
-  if (input.role === Role.STUDENT) {
+  const primaryRole = collapseLegacyStaffRole(input.role);
+  if (primaryRole === Role.STUDENT) {
     return [Role.STUDENT];
   }
 
-  return splitPrimaryAndAdditionalStaffRoles([input.role, ...(input.additionalRoles || [])]).assignedRoles;
+  return splitPrimaryAndAdditionalStaffRoles([
+    primaryRole,
+    ...(input.additionalRoles || []).map(collapseLegacyStaffRole),
+  ]).assignedRoles;
 };
 
+/** ตรวจว่าผู้ใช้มีบทบาทที่ต้องการเป็นหลัก เป็นเพิ่มเติม หรืออยู่ในรายการ roles */
 export const hasAssignedRole = (
   input:
     | Role
@@ -95,18 +105,20 @@ export const hasAssignedRole = (
   expectedRole: Role
 ): boolean => {
   const roles = toRoleArray(input);
+  const expected = collapseLegacyStaffRole(expectedRole);
 
   if (roles.length === 0) {
     return false;
   }
 
-  if (expectedRole === Role.STUDENT) {
+  if (expected === Role.STUDENT) {
     return roles.includes(Role.STUDENT);
   }
 
-  return normalizeManagedStaffRoles(roles).includes(expectedRole as ManagedStaffRole);
+  return normalizeManagedStaffRoles(roles).includes(expected as ManagedStaffRole);
 };
 
+/** เงื่อนไข Prisma หาผู้ใช้ที่มีบทบาท — รวม INSTRUCTOR เก่าเมื่อถาม ADVISOR */
 export const buildUserHasRoleWhere = (role: Role): Prisma.UserWhereInput => {
   if (role === Role.STUDENT) {
     return {
@@ -114,16 +126,15 @@ export const buildUserHasRoleWhere = (role: Role): Prisma.UserWhereInput => {
     };
   }
 
+  const matchedRoles =
+    role === Role.ADVISOR || role === Role.INSTRUCTOR
+      ? [Role.ADVISOR, Role.INSTRUCTOR]
+      : [role];
+
   return {
-    OR: [
-      {
-        role,
-      },
-      {
-        additionalRoles: {
-          has: role,
-        },
-      },
-    ],
+    OR: matchedRoles.flatMap((matchedRole) => [
+      { role: matchedRole },
+      { additionalRoles: { has: matchedRole } },
+    ]),
   };
 };

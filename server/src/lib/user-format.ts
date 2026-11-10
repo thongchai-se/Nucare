@@ -1,5 +1,5 @@
 import { RiskLevel } from "@prisma/client";
-import { stripKnownNamePrefix } from "./name-prefix";
+import { getNameInitials } from "./name-prefix";
 import { clampStudyYear } from "./study-year";
 
 const STUDENT_ID_PATTERN = /^\d{9}-\d$/;
@@ -35,22 +35,7 @@ export const inferStudyYear = (
   return "-";
 };
 
-export const getUserInitials = (name: string, fallback = "NU"): string => {
-  const parts = stripKnownNamePrefix(name)
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.replace(/[^A-Za-zก-๙]/g, ""))
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return fallback;
-  }
-
-  const first = parts[0]?.[0] ?? "";
-  const second = parts[1]?.[0] ?? parts[0]?.[1] ?? "";
-
-  return `${first}${second}`.toUpperCase();
-};
+export const getUserInitials = (name: string, fallback = "NU"): string => getNameInitials(name, fallback);
 
 export const normalizeRiskLevel = (riskLevel: RiskLevel): "high" | "medium" | "normal" => {
   if (riskLevel === RiskLevel.HIGH) {

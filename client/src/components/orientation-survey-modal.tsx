@@ -3,21 +3,26 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClipboardList, Loader2, Send, X } from "lucide-react";
+import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import api from "@/lib/axios";
 import type {
   ActiveStudentSurveyResult,
+  StudentFacingSurvey,
   Survey,
   SurveyAnswerValue,
   SurveyQuestion,
 } from "@/types/survey";
+
+type StudentSurveyLike = Survey | StudentFacingSurvey;
 
 type OrientationSurveyModalProps = {
   hasSubmitted: boolean;
   onClose: () => void;
   onSubmitted: (response: ActiveStudentSurveyResult) => void;
   open: boolean;
+  result?: ActiveStudentSurveyResult | null;
   submittedAt: string | null;
-  survey: Survey | null;
+  survey: StudentSurveyLike | null;
 };
 
 type SubmitSurveyResponse = {
@@ -61,7 +66,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return error instanceof Error ? error.message : fallback;
 };
 
-const buildInitialAnswers = (survey: Survey | null): AnswerState => {
+const buildInitialAnswers = (survey: StudentSurveyLike | null): AnswerState => {
   if (!survey) {
     return {};
   }
@@ -91,6 +96,7 @@ export function OrientationSurveyModal({
   onClose,
   onSubmitted,
   open,
+  result = null,
   submittedAt,
   survey,
 }: OrientationSurveyModalProps) {
@@ -99,12 +105,19 @@ export function OrientationSurveyModal({
   const [errorMessage, setErrorMessage] = useState("");
   const [missingQuestionId, setMissingQuestionId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const questionNodeRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const requiredQuestionIds = useMemo(
     () => new Set((survey?.questions || []).filter((question) => question.isRequired).map((question) => question.id)),
     [survey?.questions]
   );
+  const answeredCount = useMemo(
+    () => (survey?.questions || []).filter((question) => !isBlank(answers[question.id])).length,
+    [answers, survey?.questions]
+  );
+  const totalQuestionCount = survey?.questions.length ?? 0;
+  const hasDraftAnswers = answeredCount > 0 && !hasSubmitted;
   const missingRequiredCount = useMemo(
     () =>
       (survey?.questions || []).filter(
@@ -119,25 +132,33 @@ export function OrientationSurveyModal({
       setAnswers(buildInitialAnswers(survey));
       setErrorMessage("");
       setMissingQuestionId(null);
+      setConfirmCloseOpen(false);
     }
   }, [open, survey]);
+
+  const requestClose = () => {
+    if (submitting) {
+      return;
+    }
+
+    if (hasDraftAnswers) {
+      setConfirmCloseOpen(true);
+      return;
+    }
+
+    onClose();
+  };
+
+  const confirmDiscardAndClose = () => {
+    setConfirmCloseOpen(false);
+    onClose();
+  };
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open]);
+  useBodyScrollLock(open);
 
   if (!mounted || !open) {
     return null;
@@ -215,7 +236,9 @@ export function OrientationSurveyModal({
     setErrorMessage("");
 
     try {
+      const waveId = "waveId" in survey ? survey.waveId : undefined;
       const payload = {
+        ...(waveId ? { waveId } : {}),
         answers: Object.entries(answers)
           .filter(([, value]) => !isBlank(value))
           .map(([questionId, value]) => ({
@@ -313,6 +336,8 @@ export function OrientationSurveyModal({
               <button
                 key={value}
                 type="button"
+                aria-label={`คะแนน ${value}${answer === value ? " (เลือกแล้ว)" : ""}`}
+                aria-pressed={answer === value}
                 onClick={() => updateAnswer(question.id, value)}
                 className={`flex h-11 min-w-11 items-center justify-center rounded-xl border px-4 text-sm font-black transition-colors ${
                   answer === value
@@ -357,14 +382,14 @@ export function OrientationSurveyModal({
     <div className="fixed inset-0" style={{ inset: 0, position: "fixed", zIndex: 10000 }}>
       <button
         type="button"
-        aria-label="close orientation survey"
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+        aria-label="ปิดแบบสอบถาม"
+        className="fixed inset-0 bg-slate-900/60"
         style={{ inset: 0, position: "fixed" }}
-        onClick={onClose}
+        onClick={requestClose}
       />
 
       <div
-        className="fixed inset-0 grid place-items-center overflow-y-auto overscroll-contain p-3 sm:p-4"
+        className="fixed inset-0 flex items-center justify-center overflow-hidden p-3 sm:p-4"
         style={{ inset: 0, position: "fixed", zIndex: 1 }}
       >
         <form
@@ -382,15 +407,31 @@ export function OrientationSurveyModal({
                   {survey.description}
                 </p>
               ) : null}
+              {survey && !hasSubmitted && totalQuestionCount > 0 ? (
+                <p className="mt-2 text-xs font-semibold text-blue-100" aria-live="polite">
+                  ความคืบหน้า {answeredCount}/{totalQuestionCount} ข้อ
+                  {missingRequiredCount > 0 ? ` · เหลือบังคับอีก ${missingRequiredCount}` : ""}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
+              aria-label="ปิดแบบสอบถาม"
               className="shrink-0 rounded-md p-1 text-blue-200 transition-colors hover:bg-blue-600 hover:text-white"
             >
               <X className="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
           </div>
+
+          {survey && !hasSubmitted && totalQuestionCount > 0 ? (
+            <div className="h-1.5 shrink-0 bg-blue-900/30" aria-hidden="true">
+              <div
+                className="h-full bg-cyan-300 transition-[width] duration-300 ease-out"
+                style={{ width: `${Math.round((answeredCount / totalQuestionCount) * 100)}%` }}
+              />
+            </div>
+          ) : null}
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-50 p-4 sm:space-y-5 sm:p-6">
             {!survey ? (
@@ -398,9 +439,27 @@ export function OrientationSurveyModal({
                 ยังไม่มีแบบสอบถามที่เปิดใช้งานในขณะนี้
               </div>
             ) : hasSubmitted ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">
-                <p className="text-sm font-black">ส่งแบบสอบถามแล้ว</p>
-                <p className="mt-1 text-sm">เวลาส่ง: {formatThaiDateTime(submittedAt)}</p>
+              <div className="space-y-4">
+                {survey.description ? (
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600">
+                    <p className="font-bold text-slate-800">เกณฑ์ของแบบประเมินนี้</p>
+                    <p className="mt-2 whitespace-pre-line">{survey.description}</p>
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
+                  <p className="text-sm font-black">ส่งแบบสอบถามแล้ว</p>
+                  <p className="mt-1 text-sm">เวลาส่ง: {formatThaiDateTime(submittedAt)}</p>
+                  {result?.totalScore != null ? (
+                    <p className="mt-3 text-sm font-bold">
+                      คะแนนรวม {result.totalScore}
+                      {result.maxScore != null ? ` / ${result.maxScore}` : ""}
+                      {result.distressLabel ? ` · ${result.distressLabel}` : ""}
+                    </p>
+                  ) : null}
+                  <p className="mt-3 text-sm leading-6">
+                    ขอบคุณที่สละเวลา หากต้องการพูดคุยเพิ่มเติม สามารถขอคำปรึกษาจากทีมดูแลได้ทุกเมื่อ
+                  </p>
+                </div>
               </div>
             ) : (
               survey.questions.map((question, index) => {
@@ -443,7 +502,7 @@ export function OrientationSurveyModal({
           <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white p-4 sm:flex-row sm:p-5">
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 sm:w-1/3"
             >
               ปิด
@@ -468,6 +527,41 @@ export function OrientationSurveyModal({
           </div>
         </form>
       </div>
+
+      {confirmCloseOpen ? (
+        <div
+          className="fixed inset-0 z-[1] grid place-items-center bg-slate-950/40 p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="survey-discard-title"
+          aria-describedby="survey-discard-desc"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+            <h4 id="survey-discard-title" className="text-base font-bold text-slate-950">
+              ทิ้งคำตอบที่กรอกไว้?
+            </h4>
+            <p id="survey-discard-desc" className="mt-2 text-sm leading-6 text-slate-600">
+              คุณตอบไปแล้ว {answeredCount} ข้อ หากปิดตอนนี้คำตอบจะไม่ถูกบันทึก
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setConfirmCloseOpen(false)}
+                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200"
+              >
+                กลับไปทำต่อ
+              </button>
+              <button
+                type="button"
+                onClick={confirmDiscardAndClose}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700"
+              >
+                ทิ้งคำตอบแล้วปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>,
     document.body
   );

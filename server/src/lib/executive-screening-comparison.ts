@@ -1,4 +1,4 @@
-import { SurveyStatus, SurveyQuestionType, Prisma } from "@prisma/client";
+import { SurveyInstrumentCode, SurveyStatus, SurveyQuestionType, Prisma } from "@prisma/client";
 import {
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
@@ -159,16 +159,16 @@ export const buildScreeningComparisonRows = (input: {
   return rows.sort((left, right) => left.studentCode.localeCompare(right.studentCode, "th"));
 };
 
-const serializeRoundInfo = (survey: {
+const serializeRoundInfo = (round: {
   id: string;
   title: string;
   startsAt: Date | null;
-  _count: { responses: number };
+  responseCount: number;
 }): ScreeningRoundInfo => ({
-  id: survey.id,
-  title: survey.title,
-  startsAt: survey.startsAt?.toISOString() ?? null,
-  responseCount: survey._count.responses,
+  id: round.id,
+  title: round.title,
+  startsAt: round.startsAt?.toISOString() ?? null,
+  responseCount: round.responseCount,
 });
 
 const resolveResponseScore = (
@@ -222,14 +222,20 @@ export const buildScreeningRoundComparison = async (input?: {
 }): Promise<ScreeningComparisonPayload> => {
   const studyYearFilter = input?.studyYear ?? "ALL";
 
-  const surveys = await prisma.survey.findMany({
+  const waves = await prisma.surveyWave.findMany({
     where: {
-      status: SurveyStatus.PUBLISHED,
+      survey: {
+        status: SurveyStatus.PUBLISHED,
+      },
     },
-    orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ opensAt: "asc" }, { createdAt: "asc" }],
     include: {
-      questions: {
-        orderBy: { order: "asc" },
+      survey: {
+        include: {
+          questions: {
+            orderBy: { order: "asc" },
+          },
+        },
       },
       _count: {
         select: {
@@ -239,15 +245,43 @@ export const buildScreeningRoundComparison = async (input?: {
     },
   });
 
-  const ghqSurveys = surveys.filter((survey) => isGhq28SurveyTitle(survey.title));
-  const availableRounds = ghqSurveys.map(serializeRoundInfo);
+  const ghqWaves = waves.filter(
+    (wave) =>
+      wave.survey.instrumentCode === SurveyInstrumentCode.GHQ28 ||
+      isGhq28SurveyTitle(wave.survey.title)
+  );
+
+  const availableRounds = ghqWaves.map((wave) =>
+    serializeRoundInfo({
+      id: wave.id,
+      title: `${wave.survey.title} — ${wave.label}`,
+      startsAt: wave.opensAt,
+      responseCount: wave._count.responses,
+    })
+  );
+
+  // รองรับ client เก่าที่ส่ง surveyId — map เป็นคลื่นล่าสุดของแบบนั้น
+  const resolveRoundId = (requestedId: string | undefined): string | undefined => {
+    if (!requestedId) {
+      return undefined;
+    }
+    if (availableRounds.some((round) => round.id === requestedId)) {
+      return requestedId;
+    }
+    const legacyWave = ghqWaves
+      .filter((wave) => wave.surveyId === requestedId)
+      .sort((a, b) => b.opensAt.getTime() - a.opensAt.getTime())[0];
+    return legacyWave?.id;
+  };
 
   let round1Info: ScreeningRoundInfo | null = null;
   let round2Info: ScreeningRoundInfo | null = null;
 
   if (input?.fromSurveyId && input?.toSurveyId) {
-    round1Info = availableRounds.find((round) => round.id === input.fromSurveyId) ?? null;
-    round2Info = availableRounds.find((round) => round.id === input.toSurveyId) ?? null;
+    const fromId = resolveRoundId(input.fromSurveyId);
+    const toId = resolveRoundId(input.toSurveyId);
+    round1Info = availableRounds.find((round) => round.id === fromId) ?? null;
+    round2Info = availableRounds.find((round) => round.id === toId) ?? null;
   } else {
     const defaults = pickDefaultRounds(availableRounds);
     round1Info = defaults.round1;
@@ -265,10 +299,10 @@ export const buildScreeningRoundComparison = async (input?: {
     };
   }
 
-  const round1Survey = ghqSurveys.find((survey) => survey.id === round1Info.id);
-  const round2Survey = ghqSurveys.find((survey) => survey.id === round2Info.id);
+  const round1Wave = ghqWaves.find((wave) => wave.id === round1Info.id);
+  const round2Wave = ghqWaves.find((wave) => wave.id === round2Info.id);
 
-  if (!round1Survey || !round2Survey) {
+  if (!round1Wave || !round2Wave) {
     return {
       generatedAt: new Date().toISOString(),
       availableRounds,
@@ -281,7 +315,7 @@ export const buildScreeningRoundComparison = async (input?: {
 
   const [round1Responses, round2Responses] = await Promise.all([
     prisma.surveyResponse.findMany({
-      where: { surveyId: round1Survey.id },
+      where: { waveId: round1Wave.id },
       include: {
         answers: true,
         student: {
@@ -295,7 +329,7 @@ export const buildScreeningRoundComparison = async (input?: {
       },
     }),
     prisma.surveyResponse.findMany({
-      where: { surveyId: round2Survey.id },
+      where: { waveId: round2Wave.id },
       include: {
         answers: true,
         student: {
@@ -316,7 +350,7 @@ export const buildScreeningRoundComparison = async (input?: {
   round1Responses.forEach((response) => {
     round1ByStudentId.set(
       response.studentId,
-      resolveResponseScore(round1Survey, response)
+      resolveResponseScore(round1Wave.survey, response)
     );
     students.set(response.studentId, {
       studentCode: formatStudentIdForResponse(response.student.studentId) ?? response.studentId,
@@ -329,7 +363,7 @@ export const buildScreeningRoundComparison = async (input?: {
   round2Responses.forEach((response) => {
     round2ByStudentId.set(
       response.studentId,
-      resolveResponseScore(round2Survey, response)
+      resolveResponseScore(round2Wave.survey, response)
     );
     if (!students.has(response.studentId)) {
       students.set(response.studentId, {

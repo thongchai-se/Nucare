@@ -1,0 +1,43 @@
+% TC37 — toast แบบ action feedback + helper คัด alerts (ไม่โชว์ toast จาก poll)
+\begin{testscenario}{37}{5}
+  \tcmeta{TC37}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 8 พฤศจิกายน พ.ศ.\ 2569}{1.3}
+  \tcname{Toast หลังกดปุ่ม แยกข้อความตามการกระทำ และ helper คัด alerts}
+  \tcpre{รัน \tccode{npx tsx --test src/lib/dashboard-alert-ingest.test.ts src/lib/expandable-toast.test.ts} ที่ \tccode{client/}}
+  \tcdesc{Toast กลางใช้เฉพาะ feedback หลังกดปุ่ม/บันทึก — หัวข้อเป็นข้อความการกระทำจริง ไม่ห่อด้วย ``อัปเดตข้อมูลแล้ว'' · ไม่ดึง alerts มาโชว์ popup · Expandable ปิดขยายเป็นค่าเริ่มต้น}
+
+  \tccase{1}{hydrate วิกฤตก่อน (helper)}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{selectOpenAlertsForFirstHydrate} ด้วยรายการรวม SOS
+    \end{tcsteps}}{%
+    SOS อยู่ลำดับแรก และไม่เกิน max}{%
+    DAI-01 ผ่าน}{Pass}
+
+  \tccase{2}{เกิน max เก็บวิกฤต (helper)}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{prioritizeAndCapAlerts} ด้วย 5 รายการรวม SOS/HIGH
+    \end{tcsteps}}{%
+    คืน sos, high และรายการทั่วไปหนึ่ง}{%
+    DAI-03 ผ่าน}{Pass}
+
+  \tccase{3}{นับถอยหลังและแถบเวลา}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{formatToastCountdownSeconds} / \tccode{computeToastElapsedProgress}
+    \end{tcsteps}}{%
+    ปัดวินาทีถูกต้อง · progress ตามเวลาที่ผ่าน}{%
+    ET-01/ET-02 ผ่าน}{Pass}
+
+  \tccase{4}{ไม่เติม body และปิดขยายเป็นค่าเริ่มต้น}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveExpandableToastContent} โดยไม่มี description และกรณีมีรายละเอียด
+    \end{tcsteps}}{%
+    ไม่เติมข้อความสำรอง · \tccode{expandByDefault=false} · มี body เมื่อส่ง description ที่ไม่ซ้ำหัวข้อ}{%
+    ET-04 ผ่าน}{Pass}
+
+  \tccase{5}{หัวข้อ toast ตามการกระทำ ไม่ใช้คำอัปเดตรวม}{%
+    \begin{tcsteps}
+      \item เรียก \tccode{resolveActionToastPresentation} ด้วยข้อความรับเรื่อง / error
+      \item เรียก \tccode{consultationStatusToastMessage} สำหรับ ACCEPTED / CANCELLED / CLOSED
+    \end{tcsteps}}{%
+    หัวข้อเป็น ``รับเรื่องแล้ว'' โดยตรง · error ใช้หัวข้อดำเนินการไม่สำเร็จ · สถานะปรึกษาแยกข้อความชัด}{%
+    ET-05 ผ่าน}{Pass}
+\end{testscenario}

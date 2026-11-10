@@ -2,16 +2,23 @@ import "./lib/env";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import express, { NextFunction, Request, Response } from "express";
+import path from "node:path";
 import { readEnv, requireEnv } from "./lib/env";
+import { assertEmailReadyForEnvironment } from "./lib/email";
 import { seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
+import { SITE_MEDIA_UPLOAD_DIR } from "./lib/site-media";
+import { purgeStaleStudentChatMemories } from "./lib/student-chat/memory";
+import { assertChatReadyForEnvironment } from "./lib/student-chat/provider";
 import adminRoutes from "./routes/admin.routes";
 import alertsRoutes from "./routes/alerts.routes";
 import authRoutes from "./routes/auth.routes";
+import consentRoutes from "./routes/consent.routes";
 import advisorRoutes from "./routes/advisor.routes";
 import executiveRoutes from "./routes/executive.routes";
 import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
+import siteMediaRoutes from "./routes/site-media.routes";
 import studentRoutes from "./routes/student.routes";
 import studentDevelopmentRoutes from "./routes/student-development.routes";
 import { apiRateLimit, apiWriteRateLimit } from "./middleware/rate-limit.middleware";
@@ -37,7 +44,8 @@ const trustProxyHops = Math.max(
   0,
   parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), defaultTrustProxyHops)
 );
-const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "1mb";
+/** รองรับอัปโหลดรูปสื่อแบบ data URL จากแอดมิน (สูงสุด ~2MB ไฟล์) */
+const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "4mb";
 const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
   .split(",")
   .map((origin) => origin.trim())
@@ -69,6 +77,9 @@ const assertRequiredConfiguration = (): void => {
         `Production JWT secrets must be at least 32 characters: ${weakSecretNames.join(", ")}`
       );
     }
+
+    assertEmailReadyForEnvironment();
+    assertChatReadyForEnvironment();
   }
 };
 
@@ -193,6 +204,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 app.use("/api", apiRateLimit, apiWriteRateLimit);
 
 app.use("/api/auth", authRoutes);
+app.use("/api/consent", consentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/advisor", advisorRoutes);
 app.use("/api/student", studentRoutes);
@@ -201,14 +213,49 @@ app.use("/api/instructor", instructorRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
 app.use("/api/executive", executiveRoutes);
 app.use("/api/alerts", alertsRoutes);
+app.use("/api/site-media", siteMediaRoutes);
+
+/** เสิร์ฟรูปสื่อที่แอดมินอัปโหลด — อนุญาตเฉพาะชื่อไฟล์ปลอดภัย */
+app.get("/api/uploads/site-media/:fileName", (req: Request, res: Response) => {
+  const raw = typeof req.params.fileName === "string" ? req.params.fileName : "";
+  const fileName = path.basename(raw);
+  if (!fileName || fileName !== raw || !/^[a-zA-Z0-9._-]+$/.test(fileName)) {
+    res.status(400).json({ message: "ชื่อไฟล์ไม่ถูกต้อง" });
+    return;
+  }
+
+  res.sendFile(path.join(SITE_MEDIA_UPLOAD_DIR, fileName), (error) => {
+    if (error && !res.headersSent) {
+      res.status(404).json({ message: "ไม่พบไฟล์" });
+    }
+  });
+});
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ message: "Internal server error" });
 });
 
+const CHAT_MEMORY_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+const runChatMemoryMaintenance = async (): Promise<void> => {
+  try {
+    const deleted = await purgeStaleStudentChatMemories(prisma);
+    if (deleted > 0) {
+      console.log(`[chat-memory] purged ${deleted} stale memories (>90 days)`);
+    }
+  } catch (error) {
+    console.error("[chat-memory] purge failed:", error);
+  }
+};
+
 const startServer = async (): Promise<void> => {
   await ensureAppReady(5);
+  await runChatMemoryMaintenance();
+  setInterval(() => {
+    void runChatMemoryMaintenance();
+  }, CHAT_MEMORY_PURGE_INTERVAL_MS);
+
   app.listen(port, () => {
     console.log(`NuCare server listening on http://localhost:${port}`);
   });

@@ -3,12 +3,14 @@ import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import { CookieOptions, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import nodemailer from "nodemailer";
 import { z } from "zod";
+import { resolveAuthCookieSecure } from "../lib/auth-cookie";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { sendAppEmail } from "../lib/email";
 import { readEnv, requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
 import { getAssignedRoles } from "../lib/roles";
+import { formatStudentIdForResponse } from "../lib/user-format";
 import { AuthTokenPayload } from "../middleware/auth.middleware";
 
 const ACCESS_TOKEN_COOKIE = "accessToken";
@@ -95,31 +97,9 @@ const getPasswordResetExpiryMinutes = (): number => {
   return 30;
 };
 
-const getSmtpTransport = () => {
-  const host = readEnv("SMTP_HOST") || "smtp.gmail.com";
-  const port = Number(readEnv("SMTP_PORT") || "465");
-  const secure = `${readEnv("SMTP_SECURE") || "true"}`.toLowerCase() !== "false";
-  const user = readEnv("SMTP_USER");
-  const pass = readEnv("SMTP_PASS");
-
-  if (!user || !pass) {
-    throw new Error("SMTP_USER or SMTP_PASS is not set");
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user, pass },
-  });
-};
-
+/** ส่งลิงก์ตั้งรหัสผ่านใหม่ผ่าน EmailProvider (console / smtp / http API มหาวิทยาลัย) */
 const sendPasswordResetEmail = async (email: string, resetLink: string): Promise<void> => {
-  const transporter = getSmtpTransport();
-  const from = readEnv("SMTP_FROM") || readEnv("SMTP_USER");
-
-  await transporter.sendMail({
-    from,
+  const result = await sendAppEmail({
     to: email,
     subject: "ลิงก์สำหรับตั้งรหัสผ่านใหม่ - NuCare",
     text: `คุณได้ส่งคำขอตั้งรหัสผ่านใหม่สำหรับบัญชี NuCare\n\nกรุณาเปิดลิงก์นี้เพื่อตั้งรหัสผ่านใหม่:\n${resetLink}\n\nหากคุณไม่ได้เป็นผู้ร้องขอ สามารถละเว้นอีเมลฉบับนี้ได้อย่างปลอดภัย`,
@@ -139,11 +119,15 @@ const sendPasswordResetEmail = async (email: string, resetLink: string): Promise
       </div>
     `,
   });
+
+  if (!result.ok) {
+    throw new Error(result.error || "Failed to send password reset email");
+  }
 };
 
 const buildCookieOptions = (maxAge: number): CookieOptions => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: resolveAuthCookieSecure(),
   sameSite: "lax",
   maxAge,
   path: "/",
@@ -151,7 +135,7 @@ const buildCookieOptions = (maxAge: number): CookieOptions => ({
 
 const clearCookieOptions: CookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: resolveAuthCookieSecure(),
   sameSite: "lax",
   path: "/",
 };
@@ -192,22 +176,6 @@ const writeAuthAuditLog = async (input: {
   }
 };
 
-const formatStudentIdForResponse = (studentId: string | null): string | null => {
-  if (!studentId) {
-    return null;
-  }
-
-  if (STUDENT_ID_PATTERN.test(studentId)) {
-    return studentId;
-  }
-
-  if (/^\d{10}$/.test(studentId)) {
-    return `${studentId.slice(0, 9)}-${studentId.slice(9)}`;
-  }
-
-  return studentId;
-};
-
 const sanitizeUser = (user: {
   id: string;
   name: string;
@@ -219,6 +187,7 @@ const sanitizeUser = (user: {
   role: Role;
   additionalRoles?: Role[] | null;
   image: string | null;
+  mustChangePassword?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }) => ({
@@ -235,6 +204,7 @@ const sanitizeUser = (user: {
     additionalRoles: user.additionalRoles || [],
   }),
   image: user.image,
+  mustChangePassword: Boolean(user.mustChangePassword),
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
@@ -253,6 +223,7 @@ const findActiveUserForSession = async (userId: string) =>
       role: true,
       additionalRoles: true,
       image: true,
+      mustChangePassword: true,
       isActive: true,
       createdAt: true,
       updatedAt: true,
@@ -514,7 +485,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     await prisma.user.update({
       where: { id: resetToken.userId },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, mustChangePassword: false },
     });
 
     await prisma.refreshToken.deleteMany({
@@ -603,7 +574,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: user.id },
-        data: { password: hashedPassword },
+        data: { password: hashedPassword, mustChangePassword: false },
       });
 
       await tx.refreshToken.deleteMany({
@@ -728,20 +699,10 @@ export const session = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    await prisma.refreshToken.deleteMany({ where: { token: hashedRefreshToken } });
-
+    // Renew access only. Do not rotate refresh here — concurrent dashboard API
+    // calls may also hit /api/auth/refresh and racing token rotation logs users out.
     const newAccessToken = createAccessToken(user);
-    const newRefreshToken = createRefreshToken(user);
-
-    await prisma.refreshToken.create({
-      data: {
-        token: hashToken(newRefreshToken),
-        userId: user.id,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
-      },
-    });
-
-    setAuthCookies(res, newAccessToken, newRefreshToken);
+    res.cookie(ACCESS_TOKEN_COOKIE, newAccessToken, buildCookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
     res.status(200).json({ user: sanitizeUser(user) });
   } catch (error) {
     console.error("Session error:", error);

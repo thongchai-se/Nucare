@@ -1,0 +1,36 @@
+% TC33 — SOS มีผู้รับฝั่งสตาฟ
+\begin{testscenario}{33}{4}
+  \tcmeta{TC33}{CS 2568/01}{ระบบเว็บแอปพลิเคชัน ``NUCARE''}{นายสมชาย ใจดี}{วันที่ 7 พฤศจิกายน พ.ศ.\ 2569}{1.0}
+  \tcname{การแจ้งช่วยเหลือด่วน (SOS) มีผู้รับและดำเนินการได้}
+  \tcpre{บัญชีนิสิต มีที่ปรึกษา · บัญชี MENTAL\_HEALTH · รัน unit emergency/SOS}
+  \tcdesc{ตรวจว่าเมื่อนิสิตกด SOS ระบบแจ้งทีมสุขภาพจิตและที่ปรึกษา และผู้เชี่ยวชาญรับ/ปิดเคสได้}
+
+  \tccase{1}{ลำดับสถานะ SOS}{%
+    \begin{tcsteps}
+      \item รัน \tccode{emergency-case-status.test.ts}
+    \end{tcsteps}}{%
+    OPEN$\to$IN\_PROGRESS/RESOLVED ได้ · ปิดแล้วเปลี่ยนต่อไม่ได้}{%
+    ECS-01..04 ผ่าน}{Pass}
+
+  \tccase{2}{รวมผู้รับแจ้งเตือน}{%
+    \begin{tcsteps}
+      \item รัน \tccode{notify-sos-recipients.test.ts}
+    \end{tcsteps}}{%
+    รวม MH + ที่ปรึกษา และตัดซ้ำ}{%
+    SOS-R01 ผ่าน}{Pass}
+
+  \tccase{3}{นิสิตกด SOS แล้วทีมเห็นคิว}{%
+    \begin{tcsteps}
+      \item เข้าสู่ระบบนิสิตแล้วกด SOS
+      \item เข้า \tccode{mh.test} ดูหน้าหลัก
+    \end{tcsteps}}{%
+    มีแจ้งเตือน SOS\_OPENED และรายการคำขอช่วยเหลือด่วน}{%
+    API สร้าง EmergencyCase + alerts และแดชบอร์ดโหลด emergencyCases}{Pass}
+
+  \tccase{4}{รับดำเนินการแล้วปิดเคส}{%
+    \begin{tcsteps}
+      \item กดรับดำเนินการแล้วปิดเคสจากหน้าหลัก MH
+    \end{tcsteps}}{%
+    สถานะ IN\_PROGRESS แล้ว RESOLVED · แจ้งนิสิต · ปิด alerts เมื่อปิดเคส}{%
+    PATCH emergency-cases/:id/status ทำงานตามลำดับ}{Pass}
+\end{testscenario}
