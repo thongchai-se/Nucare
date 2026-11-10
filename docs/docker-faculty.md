@@ -27,9 +27,28 @@ Host :89 → nucare-client:3000
 ```bash
 cp .env.faculty.example .env.faculty
 # ตรวจ NUCARE_PUBLIC_APP_ORIGIN=http://10.101.111.160:89
+# และ NUCARE_CLIENT_ORIGIN ให้รวม URL ที่จะเปิดในเบราว์เซอร์จริง
+# เช่น http://10.101.111.160:89,http://127.0.0.1:89,http://localhost:89
 ```
 
 อย่า commit `.env.faculty`
+
+### Login ได้ 403 Invalid request origin
+
+สาเหตุที่พบบ่อย: เปิดเว็บด้วย `http://127.0.0.1:89` หรือ `http://localhost:89` แต่ `CLIENT_ORIGIN` มีแค่ IP คณะ
+
+- ทางเร็ว: เปิด `http://10.101.111.160:89` (ต้องตรง `NUCARE_PUBLIC_APP_ORIGIN`)
+- หรือเพิ่ม origin ใน `.env.faculty` แล้ว recreate server (ไม่ต้อง rebuild):
+
+```bash
+# ใน .env.faculty
+NUCARE_CLIENT_ORIGIN=http://10.101.111.160:89,http://127.0.0.1:89,http://localhost:89
+
+docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml \
+  up -d --force-recreate server
+```
+
+รหัสผิดมักได้ **401** ไม่ใช่ 403 — ถ้ายัง 403 หลังแก้ origin ให้ดู response body / server log
 
 ## 2) สร้าง Secret บนเซิร์ฟเวอร์
 

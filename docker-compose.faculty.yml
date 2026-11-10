@@ -48,7 +48,8 @@ services:
       JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
       AI_API_KEY_FILE: /run/secrets/ai_api_key
       ADMIN_SEED_PASSWORD_FILE: /run/secrets/admin_seed_password
-      CLIENT_ORIGIN: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
+      # Browser Origin ต้องตรงรายการนี้ (คั่นด้วย comma ได้) — ไม่ใช่แค่ health check ผ่าน 127.0.0.1
+      CLIENT_ORIGIN: ${NUCARE_CLIENT_ORIGIN:-${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}}
       TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-0}
       AUTH_COOKIE_SECURE: ${NUCARE_AUTH_COOKIE_SECURE:-false}
       JSON_BODY_LIMIT: ${NUCARE_JSON_BODY_LIMIT:-1mb}
