@@ -47,6 +47,7 @@ services:
       JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
       JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
       AI_API_KEY_FILE: /run/secrets/ai_api_key
+      ADMIN_SEED_PASSWORD_FILE: /run/secrets/admin_seed_password
       CLIENT_ORIGIN: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
       TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-0}
       AUTH_COOKIE_SECURE: ${NUCARE_AUTH_COOKIE_SECURE:-false}
@@ -95,6 +96,7 @@ services:
       - jwt_access_secret
       - jwt_refresh_secret
       - ai_api_key
+      - admin_seed_password
 
   client:
     build:
@@ -135,6 +137,8 @@ secrets:
     file: ${NUCARE_JWT_REFRESH_SECRET_FILE:?NUCARE_JWT_REFRESH_SECRET_FILE is required}
   ai_api_key:
     file: ${NUCARE_AI_API_KEY_SECRET_FILE:?NUCARE_AI_API_KEY_SECRET_FILE is required}
+  admin_seed_password:
+    file: ./secrets/faculty/admin_seed_password.txt
 
 volumes:
   postgres_data:
