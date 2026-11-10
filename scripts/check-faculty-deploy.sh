@@ -81,6 +81,15 @@ for var_name in "${SECRET_VARS[@]}"; do
   ok "$var_name exists and is non-empty"
 done
 
+ADMIN_SEED_FILE="./secrets/faculty/admin_seed_password.txt"
+if [[ ! -f "$ADMIN_SEED_FILE" ]]; then
+  bad "missing $ADMIN_SEED_FILE (required by docker-compose.faculty.yml)"
+elif [[ ! -s "$ADMIN_SEED_FILE" ]] || ! grep -Eq '[[:graph:]]' "$ADMIN_SEED_FILE"; then
+  bad "$ADMIN_SEED_FILE is empty"
+else
+  ok "admin_seed_password.txt exists and is non-empty"
+fi
+
 echo "-- gitignore --"
 if [[ -f .gitignore ]]; then
   if grep -Eq '^\.env\.faculty$|^\.env\.\*$' .gitignore || grep -Eq '^\.env\.\*' .gitignore; then

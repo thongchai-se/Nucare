@@ -11,6 +11,7 @@
 - `jwt_access_secret.txt`
 - `jwt_refresh_secret.txt`
 - `ai_api_key.txt`
+- `admin_seed_password.txt` (รหัส adminnucare@gmail.com)
 
 ดูขั้นตอนใน `docs/docker-faculty.md`
 

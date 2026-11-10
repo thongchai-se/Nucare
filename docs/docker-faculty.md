@@ -46,6 +46,9 @@ openssl rand -base64 48 | tr -d '\n' > secrets/faculty/jwt_refresh_secret.txt
 
 # KKU Gen AI API key (วางค่าจริงหนึ่งบรรทัด ไม่มีช่องว่างหัวท้าย)
 nano secrets/faculty/ai_api_key.txt
+
+# รหัสผ่านบัญชี Admin (adminnucare@gmail.com) — หนึ่งบรรทัด ไม่มีช่องว่างหัวท้าย
+nano secrets/faculty/admin_seed_password.txt
 ```
 
 ### Database URL
@@ -72,6 +75,7 @@ chmod 600 secrets/faculty/*
 - `secrets/faculty/jwt_access_secret.txt`
 - `secrets/faculty/jwt_refresh_secret.txt`
 - `secrets/faculty/ai_api_key.txt`
+- `secrets/faculty/admin_seed_password.txt`
 
 ## 3) ตรวจก่อน Deploy
 
@@ -93,7 +97,34 @@ docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml b
 docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml up -d
 ```
 
-## 5) ตรวจสุขภาพ / logs / restart
+## 5) สร้าง Admin ครั้งแรก (explicit — ไม่รันตอน start)
+
+Seed **ไม่** รันอัตโนมัติเมื่อ container เริ่ม ต้องสั่งเองหลัง image มี `dist/seed/admin-seed.js`:
+
+```bash
+# สร้าง Admin ถ้ายังไม่มี (ถ้ามีแล้วจะไม่ทับรหัสผ่าน)
+docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml \
+  exec server npm run prisma:seed
+```
+
+ตรวจผลลัพธ์ใน log: ต้องเห็น `Created ADMIN adminnucare@gmail.com` หรือ `already exists`
+
+ล็อกอินด้วยอีเมล `adminnucare@gmail.com` + รหัสใน `secrets/faculty/admin_seed_password.txt`
+
+### เปลี่ยน / รีเซ็ตรหัส Admin โดยตั้งใจ
+
+```bash
+docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml \
+  exec -e FORCE_ADMIN_SEED_PASSWORD=true server npm run prisma:seed
+```
+
+ข้อควรระวัง:
+- ถ้าบัญชีมีอยู่แล้ว Seed จะ **ไม่เปลี่ยนรหัส** จนกว่าจะตั้ง `FORCE_ADMIN_SEED_PASSWORD=true`
+- อย่ารัน Seed ซ้ำโดยไม่จำเป็นบน production DB
+- Seed อ่าน `DATABASE_URL_FILE` + `ADMIN_SEED_PASSWORD_FILE` เอง ไม่ต้อง `export` ด้วยมือ
+- ไม่ต้องใช้ `npx` / `tsx` ใน production image
+
+## 6) ตรวจสุขภาพ / logs / restart
 
 ```bash
 docker compose -p nucare ps
@@ -118,7 +149,7 @@ docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml r
 docker ps --format '{{.Names}}\t{{.Ports}}'
 ```
 
-## 6) Backup ฐานข้อมูล
+## 7) Backup ฐานข้อมูล
 
 ```bash
 mkdir -p backups
@@ -133,7 +164,7 @@ docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml e
   pg_restore -U nucare -d nucare --clean --if-exists < backups/nucare-YYYYMMDD-HHMMSS.dump
 ```
 
-## 7) เมื่อได้โดเมน + HTTPS
+## 8) เมื่อได้โดเมน + HTTPS
 
 1. ตั้ง `NUCARE_PUBLIC_APP_ORIGIN=https://your-domain`
 2. ตั้ง `NUCARE_AUTH_COOKIE_SECURE=true`
@@ -144,7 +175,7 @@ docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml e
    docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml up -d --force-recreate server
    ```
 
-## 8) Rollback เฉพาะ NUCARE
+## 9) Rollback เฉพาะ NUCARE
 
 ```bash
 docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml stop
