@@ -19,10 +19,19 @@ data.md
 .impeccable/
 .cursor/
 
-# Not for official GitHub (keep locally)
+# Archive of non-delivery extras
 all/
-docs/
-secrets/
+
+# Docs: keep faculty deploy guide only
+docs/*
+!docs/docker-faculty.md
+
+# Secrets: ignore real files; keep examples + README
+secrets/*
+!secrets/README.md
+!secrets/examples/
+secrets/examples/*
+!secrets/examples/*.example.txt
 
 # App runtime / local artifacts
 server/backups/

@@ -322,7 +322,7 @@ const normalizeSection = (raw?: string | null): string => {
 
 const normalizeComparableSection = (raw?: string | null): string => (raw?.trim() || "").toLowerCase();
 
-const staffEmployeeIdPrefixMap: Record<ManagedStaffRole, string> = {
+const staffEmployeeIdPrefixMap: Record<ManagedStaffRole | typeof Role.INSTRUCTOR, string> = {
   ADMIN: "ADM",
   ADVISOR: "ADV",
   EXECUTIVE: "EXE",

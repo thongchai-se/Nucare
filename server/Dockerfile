@@ -5,6 +5,7 @@ COPY prisma ./prisma
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
+# prisma generate อยู่ใน npm run build; schema + migrations อยู่ใน prisma/
 RUN npm run build
 RUN npm prune --omit=dev
 
@@ -17,4 +18,5 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
 EXPOSE 5000
-CMD ["sh", "-c", "if [ -n \"$DATABASE_URL_FILE\" ] && [ -f \"$DATABASE_URL_FILE\" ]; then export DATABASE_URL=\"$(cat \"$DATABASE_URL_FILE\")\"; fi; npx prisma migrate deploy && node dist/index.js"]
+# อ่าน DATABASE_URL จาก Docker secret ก่อน migrate แล้วค่อยสตาร์ท API (ไม่ใช้ db push)
+CMD ["sh", "-c", "set -e; if [ -n \"$DATABASE_URL_FILE\" ]; then if [ ! -f \"$DATABASE_URL_FILE\" ]; then echo \"DATABASE_URL_FILE not found: $DATABASE_URL_FILE\" >&2; exit 1; fi; DATABASE_URL=\"$(tr -d '\\r' < \"$DATABASE_URL_FILE\" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')\"; if [ -z \"$DATABASE_URL\" ]; then echo \"DATABASE_URL_FILE is empty: $DATABASE_URL_FILE\" >&2; exit 1; fi; export DATABASE_URL; fi; if [ -z \"$DATABASE_URL\" ]; then echo \"DATABASE_URL is required\" >&2; exit 1; fi; npx prisma migrate deploy; exec node dist/index.js"]

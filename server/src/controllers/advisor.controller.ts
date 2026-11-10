@@ -645,7 +645,10 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
     }
 
     const now = new Date();
-    const nextStatus = parsedBody.data.status;
+    // Cast restores full schema union after early SCHEDULED reject (CFA otherwise drops it).
+    const nextStatus = parsedBody.data.status as z.infer<
+      typeof updateConsultationRequestStatusSchema
+    >["status"];
     const rawAdvisorNote = parsedBody.data.advisorNote?.trim();
 
     let cancelAdvisorNote: string | null = null;
@@ -984,6 +987,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           status: true,
           advisorNote: true,
           scheduledAt: true,
+          scheduleLocation: true,
           createdAt: true,
           teacher: {
             select: {

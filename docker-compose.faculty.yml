@@ -1,9 +1,11 @@
 # NUCARE — Faculty Ubuntu server (isolated Compose project)
 # Usage:
+#   ./scripts/check-faculty-deploy.sh
 #   docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml up -d --build
 #
 # Public surface: host port 89 → client:3000 only
 # Backend + PostgreSQL stay on internal Docker networks (not published)
+# Names use nucare_* prefix to avoid colliding with faculty train_nu_*/wp_*/nu_alumni_* services
 
 services:
   db:
@@ -23,7 +25,8 @@ services:
     networks:
       - backend
     restart: unless-stopped
-    mem_limit: 256m
+    # ~4 GiB host with other faculty containers: keep DB modest
+    mem_limit: 384m
     secrets:
       - postgres_password
     volumes:
@@ -45,7 +48,7 @@ services:
       JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
       AI_API_KEY_FILE: /run/secrets/ai_api_key
       CLIENT_ORIGIN: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
-      TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-1}
+      TRUST_PROXY_HOPS: ${NUCARE_TRUST_PROXY_HOPS:-0}
       AUTH_COOKIE_SECURE: ${NUCARE_AUTH_COOKIE_SECURE:-false}
       JSON_BODY_LIMIT: ${NUCARE_JSON_BODY_LIMIT:-1mb}
       API_RATE_LIMIT_WINDOW_MS: ${NUCARE_API_RATE_LIMIT_WINDOW_MS:-60000}
@@ -65,30 +68,28 @@ services:
       CONSULTATION_REQUEST_RATE_LIMIT_MAX: ${NUCARE_CONSULTATION_REQUEST_RATE_LIMIT_MAX:-10}
       STUDENT_IMPORT_BCRYPT_ROUNDS: ${NUCARE_STUDENT_IMPORT_BCRYPT_ROUNDS:-12}
       STUDENT_IMPORT_CONCURRENCY: ${NUCARE_STUDENT_IMPORT_CONCURRENCY:-4}
-      # SMTP ยังไม่มี: ใช้ console + ALLOW_CONSOLE_EMAIL ก่อน
-      # เมื่อคณะให้ SMTP แล้วเปลี่ยน EMAIL_PROVIDER=smtp, ALLOW_CONSOLE_EMAIL=false
-      # และใส่ SMTP_* (+ เพิ่ม secret smtp_password ในไฟล์นี้ถ้าต้องการ)
+      # SMTP ยังไม่มี: console + ALLOW_CONSOLE_EMAIL (ใส่ SMTP_* ใน .env.faculty เมื่อคณะให้ค่า)
       EMAIL_PROVIDER: ${NUCARE_EMAIL_PROVIDER:-console}
       ALLOW_CONSOLE_EMAIL: ${NUCARE_ALLOW_CONSOLE_EMAIL:-true}
       SMTP_HOST: ${NUCARE_SMTP_HOST:-}
       SMTP_PORT: ${NUCARE_SMTP_PORT:-587}
       SMTP_SECURE: ${NUCARE_SMTP_SECURE:-false}
       SMTP_USER: ${NUCARE_SMTP_USER:-}
-      SMTP_PASS: ${NUCARE_SMTP_PASS:-}
       SMTP_FROM: ${NUCARE_SMTP_FROM:-}
       CHAT_PROVIDER: ${NUCARE_CHAT_PROVIDER:-kku}
       KKU_GEN_BASE_URL: ${NUCARE_KKU_GEN_BASE_URL:-https://gen.ai.kku.ac.th/api/v1}
       KKU_GEN_CHAT_MODEL: ${NUCARE_KKU_GEN_CHAT_MODEL:-gemini-3.8-flash}
-      ENABLE_DEFAULT_USER_SEED: ${NUCARE_ENABLE_DEFAULT_USER_SEED:-false}
-      ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION: ${NUCARE_ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION:-false}
+      # ห้าม seed ผู้ใช้ตัวอย่างบนเซิร์ฟเวอร์คณะ
+      ENABLE_DEFAULT_USER_SEED: "false"
+      ALLOW_DEFAULT_USER_SEED_IN_PRODUCTION: "false"
     networks:
       - edge
       - backend
-    # No host ports — reachable only via client reverse rewrite on the Docker network
+    # No host ports — reachable only via client rewrite on the Docker network
     expose:
       - "5000"
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 512m
     secrets:
       - database_url
       - jwt_access_secret
@@ -100,7 +101,7 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        # Same-origin browser calls → Next rewrite /api/* to internal server
+        # Browser same-origin /api → Next rewrite → internal server (no secrets in NEXT_PUBLIC_*)
         NEXT_PUBLIC_API_URL: ""
         NEXT_PUBLIC_SITE_URL: ${NUCARE_PUBLIC_APP_ORIGIN:?NUCARE_PUBLIC_APP_ORIGIN is required}
         NUCARE_API_PROXY_URL: http://server:5000
@@ -114,7 +115,7 @@ services:
     ports:
       - "${NUCARE_CLIENT_PORT:-89}:3000"
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 512m
 
 networks:
   edge:

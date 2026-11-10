@@ -118,7 +118,7 @@ const pendingStudentSelect = {
       },
     },
   },
-} as const;
+};
 
 /** โหลดแดชบอร์ดพัฒนานิสิต — คัดกรองค้างประเมิน กลุ่มเสี่ยง และเคสสวัสดิการ */
 export const getStudentDevelopmentDashboard = async (req: Request, res: Response): Promise<void> => {
@@ -655,7 +655,7 @@ export const createStudentDevelopmentReminder = async (req: Request, res: Respon
 
     let emailSentCount = 0;
     if (sendEmail) {
-      const { sendAppEmail } = await import("../lib/email");
+      const { sendAppEmail } = await import("../lib/email/index.js");
       const subject = "โปรดทำแบบประเมินสุขภาพจิตในระบบ NuCare";
       const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:3000";
       const safeMessage = escapeHtmlForEmail(parsed.data.message);

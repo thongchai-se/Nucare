@@ -1,10 +1,12 @@
+import type { ObservationRoadmapStep, ObservationRoadmapStepKind } from "./observation-roadmap";
+
 export type RoadmapPrepareStep = {
   key: string;
   label: string;
   at: string;
   actorName?: string;
   detail?: string;
-  kind?: string;
+  kind?: ObservationRoadmapStepKind;
 };
 
 /** แยกป้ายส่งต่อยาวให้ขึ้นบรรทัดใหม่ และดึงปลายทางไว้รวมหมุดซ้ำ */
@@ -32,7 +34,7 @@ function isReferralStep(step: RoadmapPrepareStep): boolean {
  * รวมหมุดส่งต่อปลายทางเดียวกัน และตัดป้ายยาวเป็นสองบรรทัด
  * (กันข้อมูลเก่าจาก API ที่ยังแตกหมุดซ้ำ)
  */
-export function prepareRoadmapSteps(steps: readonly RoadmapPrepareStep[]): RoadmapPrepareStep[] {
+export function prepareRoadmapSteps(steps: readonly RoadmapPrepareStep[]): ObservationRoadmapStep[] {
   const prepared: ObservationRoadmapStep[] = [];
   const referralIndexByTarget = new Map<string, number>();
   const referralCountByTarget = new Map<string, number>();

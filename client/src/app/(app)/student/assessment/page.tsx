@@ -14,7 +14,7 @@ import {
   type ActiveStudentSurveyResponse,
   getApiErrorMessage,
 } from "@/lib/student-dashboard";
-import type { ActiveStudentSurveyResult, Survey } from "@/types/survey";
+import type { ActiveStudentSurveyResult, StudentFacingSurvey, Survey } from "@/types/survey";
 
 type StudentToastState = {
   description: string;
@@ -32,7 +32,7 @@ function StudentAssessmentContent() {
     title: "",
     description: "",
   });
-  const [activeSurvey, setActiveSurvey] = useState<Survey | null>(null);
+  const [activeSurvey, setActiveSurvey] = useState<Survey | StudentFacingSurvey | null>(null);
   const [activeSurveySubmittedAt, setActiveSurveySubmittedAt] = useState<string | null>(null);
   const [hasSubmittedActiveSurvey, setHasSubmittedActiveSurvey] = useState(false);
   const [surveyResult, setSurveyResult] = useState<ActiveStudentSurveyResult | null>(null);
@@ -142,7 +142,12 @@ function StudentAssessmentContent() {
                   </p>
                   {activeSurvey && !hasSubmittedActiveSurvey ? (
                     <p className="mt-2 text-sm font-bold text-blue-700">
-                      {activeSurvey.questionCount} คำถามที่เปิดรับคำตอบอยู่
+                      {"questions" in activeSurvey
+                        ? activeSurvey.questions.length
+                        : "questionCount" in activeSurvey
+                          ? Number((activeSurvey as Survey).questionCount || 0)
+                          : 0}{" "}
+                      คำถามที่เปิดรับคำตอบอยู่
                     </p>
                   ) : null}
                 </div>

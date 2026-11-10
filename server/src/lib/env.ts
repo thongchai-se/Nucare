@@ -5,31 +5,53 @@ const FILE_ENV_SUFFIX = "_FILE";
 
 let initialized = false;
 
-const loadFileBackedEnvironmentVariables = (): void => {
-  for (const [key, value] of Object.entries(process.env)) {
+/**
+ * อ่านค่าจากตัวแปร *_FILE เข้า process.env ของชื่อเดิม
+ * ค่าที่มีอยู่แล้วใน env โดยตรงมีความสำคัญสูงกว่า และไม่ log ค่า secret
+ */
+export const applyFileBackedEnvironmentVariables = (
+  env: NodeJS.ProcessEnv = process.env
+): void => {
+  for (const [key, rawValue] of Object.entries(env)) {
     if (!key.endsWith(FILE_ENV_SUFFIX)) {
       continue;
     }
 
     const targetName = key.slice(0, -FILE_ENV_SUFFIX.length);
-    if (process.env[targetName]?.trim()) {
+    if (env[targetName]?.trim()) {
       continue;
     }
 
-    const filePath = value?.trim();
+    const filePath = rawValue?.trim();
     if (!filePath) {
-      continue;
+      throw new Error(`${key} is set but empty; provide a readable secret file path`);
     }
 
-    const fileContents = fs.readFileSync(filePath, "utf8").trim();
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`${key} points to a missing file: ${filePath}`);
+    }
+
+    let fileContents: string;
+    try {
+      fileContents = fs.readFileSync(filePath, "utf8").trim();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unreadable file";
+      throw new Error(`${key} could not be read (${reason})`);
+    }
+
     if (!fileContents) {
-      throw new Error(`${key} points to an empty file`);
+      throw new Error(`${key} points to an empty file: ${filePath}`);
     }
 
-    process.env[targetName] = fileContents;
+    env[targetName] = fileContents;
   }
 };
 
+const loadFileBackedEnvironmentVariables = (): void => {
+  applyFileBackedEnvironmentVariables(process.env);
+};
+
+/** โหลด dotenv แล้วอ่าน *_FILE ก่อนที่แอปจะเริ่มใช้ env */
 export const initializeEnvironment = (): void => {
   if (initialized) {
     return;

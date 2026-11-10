@@ -71,7 +71,7 @@ export type ExecutiveStudentDossierPayload = {
     recent: Array<{
       id: string;
       target: string;
-      status: ReferralStatus;
+      status: string;
       isUrgent: boolean;
       advisorName: string;
       createdAt: string;
@@ -83,7 +83,7 @@ export type ExecutiveStudentDossierPayload = {
     resolved: number;
     recent: Array<{
       id: string;
-      status: EmergencyCaseStatus;
+      status: string;
       summary: string;
       openedAt: string;
       resolvedAt: string | null;

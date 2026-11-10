@@ -1241,7 +1241,7 @@ export const getActiveStudentSurvey = async (req: Request, res: Response): Promi
     });
 
     const surveysPayload: Array<ReturnType<typeof serializeStudentFacingSurvey>> = [];
-    let primaryResponse: { id: string; submittedAt: Date } | null = null;
+    let primaryResponse: ReturnType<typeof buildStudentFacingSurveyResult> | null = null;
     let primaryHasSubmitted = false;
     let primarySurvey: ReturnType<typeof serializeStudentFacingSurvey> | null = null;
 
