@@ -12,15 +12,6 @@ prisma/dev.db
 *.tmp
 *.tsbuildinfo
 
-# Docker secrets (keep examples only)
-secrets/*
-!secrets/README.md
-!secrets/examples/
-secrets/examples/*
-!secrets/examples/*.example.txt
-secrets/test-accounts.md
-secrets/seed-local-test-accounts.js
-
 # Local workspace / personal notes (keep at root, do not commit)
 status.md
 data.md
@@ -28,8 +19,10 @@ data.md
 .impeccable/
 .cursor/
 
-# Archive of non-delivery extras (local only)
+# Not for official GitHub (keep locally)
 all/
+docs/
+secrets/
 
 # App runtime / local artifacts
 server/backups/

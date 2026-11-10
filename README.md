@@ -6,13 +6,12 @@
 
 - `client/` — Next.js ฝั่งเว็บ
 - `server/` — Express + Prisma API
-- `docs/` — วิธี deploy และบันทึกการทดสอบ
 - `docker-compose*.yml` — local / test / prod / faculty
 - `server/prisma/schema.prisma` — โมเดลข้อมูล
 - `server/src/routes/` — จุดเข้า API ตามบทบาท
 - `client/src/app/(app)/` — หน้าทำงานของแต่ละบทบาท (URL เป็น `/student`, `/admin`, ฯลฯ)
 
-ของใช้เฉพาะเครื่อง (ไม่ขึ้น git): `status.md`, `data.md`, `.cursor/`, `.skill/`, `.impeccable/`, และคลัง `all/`
+ของใช้เฉพาะเครื่อง (ไม่ขึ้น git): `docs/`, `secrets/`, `status.md`, `data.md`, `.cursor/`, `.skill/`, `.impeccable/`, `all/`
 
 บทบาทหลัก: Student, Advisor, Instructor, Student Development, Mental Health, Executive, Admin
 
@@ -69,6 +68,17 @@ cd ..\client
 npx tsc -p tsconfig.json --noEmit
 ```
 
-รายละเอียด deploy:
-- Vercel: `docs/vercel-deploy.md`
-- เซิร์ฟเวอร์คณะ (Docker port 89): `docs/docker-faculty.md`
+## Deploy เซิร์ฟเวอร์คณะ (port 89)
+
+```bash
+cp .env.faculty.example .env.faculty
+# แก้ NUCARE_PUBLIC_APP_ORIGIN=http://10.101.111.160:89
+mkdir -p secrets/faculty
+# สร้างไฟล์ secret: postgres_password, database_url, jwt_access_secret,
+# jwt_refresh_secret, ai_api_key (อย่า commit)
+docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml build
+docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml up -d
+curl -sS http://127.0.0.1:89/api/health
+```
+
+เอกสารละเอียดเพิ่มเติมเก็บใน `docs/` บนเครื่องพัฒนา (ไม่ขึ้น repo นี้)
