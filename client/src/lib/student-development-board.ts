@@ -1,7 +1,7 @@
 /**
- * ค่าสำรองบอร์ดข่าวงานพัฒนานิสิตบนหน้าโฮมนักศึกษา
- * งานพัฒนานิสิต/แอดมินเพิ่ม-ลบรูปได้ที่พอร์ทัล SD (view=publicity) หรือ `/admin/site-media`
- * ถ้ายังไม่มีรายการในฐานข้อมูล จะใช้ค่าด้านล่าง
+ * ค่าสำรองบอร์ดข่าวงานพัฒนานิสิตบนหน้าโฮมนักศึกษา — ใช้หลังโหลด API แล้วเท่านั้น
+ * งานพัฒนานิสิต/แอดมินเพิ่ม-ลบรูปและใส่ลิงก์กดได้ที่พอร์ทัล SD (view=publicity) หรือ `/admin/site-media`
+ * ถ้ายังไม่มีรายการในฐานข้อมูล จะใช้ค่าด้านล่าง (แสดงพื้นหลังจนกว่าจะอัปโหลดรูป)
  */
 
 export type StudentDevBoardItem = {
@@ -11,6 +11,7 @@ export type StudentDevBoardItem = {
   /** ว่างได้ — จะแสดงพื้นหลังแทนรูป */
   imageSrc: string;
   imageAlt: string;
+  /** ลิงก์เมื่อกดภาพ — path ในแอปหรือ http(s) */
   href?: string;
   ctaLabel?: string;
   tag?: string;
@@ -25,7 +26,7 @@ export type StudentDevBoardConfig = {
 
 export const studentDevelopmentBoard: StudentDevBoardConfig = {
   title: "จากงานพัฒนานิสิต",
-  description: "ข่าว กิจกรรม และช่องทางที่อยากชวนให้นิสิตเข้าร่วมหรือติดตาม",
+  description: "ภาพประชาสัมพันธ์ที่งานพัฒนานิสิตอัปโหลด — กดตามลิงก์ที่ตั้งไว้",
   featured: {
     id: "featured-wellness",
     title: "พื้นที่ดูแลใจและกิจกรรมคณะ",
@@ -33,8 +34,6 @@ export const studentDevelopmentBoard: StudentDevBoardConfig = {
     imageSrc: "",
     imageAlt: "ภาพประชาสัมพันธ์งานพัฒนานิสิต",
     href: "/student/advisor",
-    ctaLabel: "ดูช่องทางติดต่อ",
-    tag: "แนะนำ",
   },
   items: [
     {
@@ -43,9 +42,7 @@ export const studentDevelopmentBoard: StudentDevBoardConfig = {
       summary: "ถ้าอยากระบายสั้น ๆ ก่อนคุยคนจริง เริ่มจากเพื่อน AI ได้",
       imageSrc: "",
       imageAlt: "ภาพชวนคุยกับเพื่อน",
-      href: "/student/chat",
-      ctaLabel: "เปิดแชท",
-      tag: "เชิญชวน",
+      href: "/student/chat?persona=peer-male",
     },
     {
       id: "invite-consult",
@@ -54,8 +51,6 @@ export const studentDevelopmentBoard: StudentDevBoardConfig = {
       imageSrc: "",
       imageAlt: "ภาพขอรับคำปรึกษา",
       href: "/student/advisor",
-      ctaLabel: "ส่งคำขอ",
-      tag: "บริการ",
     },
     {
       id: "invite-feedback",
@@ -64,8 +59,6 @@ export const studentDevelopmentBoard: StudentDevBoardConfig = {
       imageSrc: "",
       imageAlt: "ภาพรับข้อเสนอแนะ",
       href: "/student/advisor",
-      ctaLabel: "ส่งข้อความ",
-      tag: "เสนอแนะ",
     },
   ],
 };

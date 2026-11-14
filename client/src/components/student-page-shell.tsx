@@ -5,21 +5,27 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bot,
   ChevronDown,
   ClipboardEdit,
   Contact,
-  HeartPulse,
   Home,
   LogOut,
   Menu,
   MessageSquare,
   X,
 } from "lucide-react";
+import { FacultyLogo } from "@/components/faculty-logo";
 import { facultyFullName } from "@/lib/brand";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { useAuth } from "@/context/auth.context";
 import type { Role, User } from "@/types/auth";
+import {
+  STUDENT_LOGOUT_LABEL,
+  STUDENT_NAV_ADVISOR,
+  STUDENT_NAV_ASSESSMENT,
+  STUDENT_NAV_HOME,
+  STUDENT_NAV_PROFILE,
+} from "@/lib/student-chrome";
 import { formatStudentIdDisplay, getUserInitials } from "@/lib/student-dashboard";
 
 type StudentAppPage = "home" | "assessment" | "chat" | "advisor" | "profile";
@@ -48,38 +54,32 @@ const roleRedirects: Partial<Record<Role, string>> = {
 const studentShellNavItems: Array<{
   href: string;
   icon: typeof Home;
-  id: StudentAppPage;
+  id: Exclude<StudentAppPage, "chat">;
   label: string;
 }> = [
   {
     href: "/student",
     icon: Home,
     id: "home",
-    label: "หน้าหลัก",
+    label: STUDENT_NAV_HOME,
   },
   {
     href: "/student/assessment",
     icon: ClipboardEdit,
     id: "assessment",
-    label: "ประเมิน",
-  },
-  {
-    href: "/student/chat",
-    icon: Bot,
-    id: "chat",
-    label: "แชท AI",
+    label: STUDENT_NAV_ASSESSMENT,
   },
   {
     href: "/student/advisor",
     icon: MessageSquare,
     id: "advisor",
-    label: "ที่ปรึกษา",
+    label: STUDENT_NAV_ADVISOR,
   },
   {
     href: "/student/profile",
     icon: Contact,
     id: "profile",
-    label: "โปรไฟล์",
+    label: STUDENT_NAV_PROFILE,
   },
 ];
 
@@ -155,11 +155,6 @@ export function StudentPageShell({
     }, 180);
   };
 
-  const closeMobileMenu = () => {
-    setMobileMenuOpen(false);
-    setProfileMenuOpen(false);
-  };
-
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -181,9 +176,7 @@ export function StudentPageShell({
         <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
           <div className="flex h-16 items-center justify-between gap-4 sm:h-20">
             <Link href="/student" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
-                <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
+              <FacultyLogo size={40} className="h-9 w-9 sm:h-10 sm:w-10" priority />
               <div className="min-w-0">
                 <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
                   Nucare<span className="text-cyan-500">.</span>
@@ -195,7 +188,7 @@ export function StudentPageShell({
             </Link>
 
             <div className="hidden min-w-0 flex-1 items-center justify-center xl:flex">
-              <div className="grid grid-cols-5 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
+              <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
                 {studentShellNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = item.id === activePage || pathname === item.href;
@@ -267,25 +260,15 @@ export function StudentPageShell({
                   }`}
                   role="menu"
                 >
-                  <Link
-                    href="/student/profile"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
-                    onClick={() => setProfileMenuOpen(false)}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-                      <Contact className="h-4 w-4" />
-                    </div>
-                    <p className="text-sm font-semibold text-slate-800">โปรไฟล์และข้อมูลส่วนตัว</p>
-                  </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-slate-100 px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
                   >
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
                       <LogOut className="h-4 w-4" />
                     </div>
-                    <p className="text-sm font-semibold text-red-600">ออกจากระบบ</p>
+                    <p className="text-sm font-semibold text-red-600">{STUDENT_LOGOUT_LABEL}</p>
                   </button>
                 </div>
               </div>
@@ -306,41 +289,29 @@ export function StudentPageShell({
 
         <div
           className={`overflow-hidden border-t border-slate-100 bg-white transition-all duration-300 xl:hidden ${
-            mobileMenuOpen ? "max-h-[32rem] pb-4" : "max-h-0"
+            mobileMenuOpen ? "max-h-[16rem] pb-4" : "max-h-0"
           }`}
         >
           <div className="space-y-3 px-4 py-3">
-            <div className="grid grid-cols-2 gap-3">
-              {studentShellNavItems.map((item) => {
-                const Icon = item.icon;
-                const active = item.id === activePage;
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={`flex items-center justify-center gap-2 rounded-[1.05rem] border px-3 py-3 text-sm font-semibold shadow-sm transition-colors ${
-                      active
-                        ? "border-blue-200 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:text-blue-700"
-                    }`}
-                    onClick={closeMobileMenu}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
-              >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
-              </button>
+            <div className="flex items-center gap-3 rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-200 bg-cyan-100 font-bold text-cyan-700">
+                {userInitials}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold text-slate-900">{user.name}</p>
+                <p className="truncate text-xs font-medium text-slate-500">
+                  {user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {STUDENT_LOGOUT_LABEL}
+            </button>
           </div>
         </div>
       </nav>

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClipboardList, Loader2, Send, X } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import api from "@/lib/axios";
 import type {
@@ -446,20 +447,30 @@ export function OrientationSurveyModal({
                     <p className="mt-2 whitespace-pre-line">{survey.description}</p>
                   </div>
                 ) : null}
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
-                  <p className="text-sm font-black">ส่งแบบสอบถามแล้ว</p>
-                  <p className="mt-1 text-sm">เวลาส่ง: {formatThaiDateTime(submittedAt)}</p>
-                  {result?.totalScore != null ? (
-                    <p className="mt-3 text-sm font-bold">
-                      คะแนนรวม {result.totalScore}
-                      {result.maxScore != null ? ` / ${result.maxScore}` : ""}
-                      {result.distressLabel ? ` · ${result.distressLabel}` : ""}
-                    </p>
-                  ) : null}
-                  <p className="mt-3 text-sm leading-6">
+                <InlineAlert tone="success" className="p-5 text-emerald-900">
+                  <p className="font-black">ส่งแบบสอบถามแล้ว</p>
+                  <p className="mt-1 font-normal">เวลาส่ง: {formatThaiDateTime(submittedAt)}</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-emerald-200/80 bg-white/80 px-3 py-3">
+                      <p className="text-xs font-semibold text-emerald-800/80">คะแนนรวม</p>
+                      <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">
+                        {result?.totalScore != null
+                          ? `${result.totalScore}${result.maxScore != null && result.maxScore > 0 ? ` / ${result.maxScore}` : ""}`
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200/80 bg-white/80 px-3 py-3">
+                      <p className="text-xs font-semibold text-emerald-800/80">ผลตามเกณฑ์</p>
+                      <p className="mt-1 text-sm font-bold leading-snug text-emerald-950">
+                        {result?.distressLabel ||
+                          (result?.totalScore != null ? "ดูรายละเอียดเกณฑ์ในแบบประเมิน" : "บันทึกคำตอบแล้ว")}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 font-normal leading-6">
                     ขอบคุณที่สละเวลา หากต้องการพูดคุยเพิ่มเติม สามารถขอคำปรึกษาจากทีมดูแลได้ทุกเมื่อ
                   </p>
-                </div>
+                </InlineAlert>
               </div>
             ) : (
               survey.questions.map((question, index) => {
@@ -492,11 +503,7 @@ export function OrientationSurveyModal({
               })
             )}
 
-            {errorMessage ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
-                {errorMessage}
-              </div>
-            ) : null}
+            {errorMessage ? <InlineAlert className="p-4">{errorMessage}</InlineAlert> : null}
           </div>
 
           <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-200 bg-white p-4 sm:flex-row sm:p-5">

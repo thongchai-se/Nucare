@@ -136,8 +136,8 @@ export const postStudentChatMessage = async (req: Request, res: Response): Promi
         : "student.chat.message",
       entityType: "StudentChat",
       description: reply.blockedReason
-        ? `Student chat blocked (${reply.blockedReason}) with persona ${parsed.data.personaId}`
-        : `Student chat reply with persona ${parsed.data.personaId}`,
+        ? `outcome=blocked reason=${reply.blockedReason} persona=${parsed.data.personaId}`
+        : `outcome=replied persona=${parsed.data.personaId}`,
       ipAddress: getRequestIpAddress(req),
     });
 

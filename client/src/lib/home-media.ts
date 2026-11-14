@@ -22,10 +22,10 @@ export type HomeYoutubeConfig = {
 };
 
 /**
- * ค่าเริ่มต้น/สำรองของสื่อหน้าแรก
- * - แอดมินจัดการรูปจริงได้ที่ `/admin/site-media` (ช่อง HOME_HERO / HOME_GALLERY)
+ * ค่าสำรองของสื่อหน้าแรก — ใช้หลังโหลด API แล้วเท่านั้น (ไม่โชว์ตอนรีเฟรช)
+ * - แอดมินจัดการรูป/คลิปได้ที่ `/admin/site-media` (HOME_HERO / HOME_GALLERY / HOME_VIDEO)
  * - ถ้ายังไม่มีรายการในฐานข้อมูล จะใช้ค่าด้านล่าง (ช่องว่าง) เป็น placeholder
- * - คลิป YouTube ยังตั้งใน `homeYoutube` ที่นี่
+ * - `homeYoutube` เป็นค่าสำรองเมื่อยังไม่มีคลิปในช่อง HOME_VIDEO
  */
 export const homeHeroSlides: HomeHeroSlide[] = [
   {

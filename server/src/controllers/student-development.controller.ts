@@ -11,6 +11,7 @@ import {
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import {
   canMutateAcceptedReferral,
   mentalHealthOwnershipDeniedMessage,
@@ -559,7 +560,7 @@ export const updateStudentDevelopmentReferralStatus = async (
       action: "student-development.referral.update-status",
       entityType: "CaseReferral",
       entityId: referral.id,
-      description: `อัปเดตสถานะ referral พัฒนานิสิตเป็น ${nextStatus}`,
+      description: formatAuditMetadata({ status: nextStatus }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -677,7 +678,11 @@ export const createStudentDevelopmentReminder = async (req: Request, res: Respon
       actorUserId: userId,
       action: "student-development.reminder.create",
       entityType: "Alert",
-      description: `Student development sent ${recipients.length} screening reminder(s) inApp=${sendInApp} email=${emailSentCount}`,
+      description: formatAuditMetadata({
+        recipientCount: recipients.length,
+        inApp: sendInApp,
+        emailSentCount,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 

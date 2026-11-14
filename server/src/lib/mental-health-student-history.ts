@@ -22,6 +22,10 @@ import {
   type SensitiveStudentCard,
 } from "./sensitive-student-detail";
 import { normalizeRiskLevel } from "./user-format";
+import {
+  buildStudentAssessmentTimeline,
+  type StudentAssessmentTimelineEntry,
+} from "./survey-assessment-history";
 
 export type MentalHealthCareSessionHistory = {
   id: string;
@@ -66,6 +70,7 @@ export type MentalHealthStudentHistoryPayload = {
     instrument: string;
     riskLevel: ReturnType<typeof normalizeRiskLevel>;
   }>;
+  assessmentTimeline: StudentAssessmentTimelineEntry[];
   activity: MentalHealthHistoryActivityItem[];
 };
 
@@ -213,6 +218,7 @@ export async function getMentalHealthStudentHistory(
     emergencies,
     surveyResponses,
     legacyAssessments,
+    assessmentTimeline,
   ] = await Promise.all([
     db.specializedCareRecord.findMany({
       where: { studentId: studentUserId },
@@ -332,6 +338,7 @@ export async function getMentalHealthStudentHistory(
       orderBy: { assessedAt: "desc" },
       take: 8,
     }),
+    buildStudentAssessmentTimeline({ studentId: studentUserId }, db),
   ]);
 
   const careSessions: MentalHealthCareSessionHistory[] = specializedCare.map((row) => ({
@@ -445,6 +452,7 @@ export async function getMentalHealthStudentHistory(
       instrument: row.instrument,
       riskLevel: normalizeRiskLevel(row.riskLevel),
     })),
+    assessmentTimeline,
     activity: mergeMentalHealthHistoryActivity({
       baseActivity,
       careSessions,

@@ -11,6 +11,7 @@ import {
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import {
   canTransitionEmergencyCaseStatus,
   emergencyCaseStatusLabel,
@@ -449,7 +450,7 @@ export const updateEmergencyCaseStatus = async (req: Request, res: Response): Pr
           : "mental-health.emergency.update-status",
       entityType: "EmergencyCase",
       entityId: emergencyCase.id,
-      description: `อัปเดตสถานะ SOS เป็น ${nextStatus}`,
+      description: formatAuditMetadata({ status: nextStatus }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -502,7 +503,7 @@ export const getMentalHealthStudentHistoryDetail = async (req: Request, res: Res
       action: "mental-health.student-history.view",
       entityType: "User",
       entityId: result.student.id,
-      description: "ผู้เชี่ยวชาญเปิดดูประวัตินักศึกษา",
+      description: formatAuditMetadata({ op: "view_student_history" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -547,7 +548,7 @@ export const getMentalHealthReferralHistoryDetail = async (req: Request, res: Re
       action: "mental-health.referral-history.view",
       entityType: "CaseReferral",
       entityId: parsedParams.data.referralId,
-      description: "ผู้เชี่ยวชาญเปิดดูประวัติจากคิวส่งต่อ",
+      description: formatAuditMetadata({ op: "view_referral_history" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -674,7 +675,7 @@ export const createMentalHealthAppointment = async (req: Request, res: Response)
       action: "mental-health.appointment.create",
       entityType: "MentalHealthAppointment",
       entityId: appointment.id,
-      description: `สร้างนัดหมายให้ ${student.name}`,
+      description: formatAuditMetadata({ op: "create_appointment", studentId: student.id }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -752,7 +753,7 @@ export const cancelMentalHealthAppointment = async (req: Request, res: Response)
       action: "mental-health.appointment.cancel",
       entityType: "MentalHealthAppointment",
       entityId: appointment.id,
-      description: "ยกเลิกนัดหมายสุขภาพจิต",
+      description: formatAuditMetadata({ op: "cancel_appointment" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -790,7 +791,7 @@ export const clearScheduledMentalHealthAppointments = async (req: Request, res: 
       actorUserId: userId,
       action: "mental-health.appointment.clear-scheduled",
       entityType: "MentalHealthAppointment",
-      description: `ยกเลิกนัดหมายที่ยังไม่ถึง ${result.count} รายการ`,
+      description: formatAuditMetadata({ op: "cancel_upcoming", count: result.count }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -964,7 +965,7 @@ export const updateReferralStatus = async (req: Request, res: Response): Promise
       action: "mental-health.referral.update-status",
       entityType: "CaseReferral",
       entityId: referral.id,
-      description: `อัปเดตสถานะ referral เป็น ${nextStatus}`,
+      description: formatAuditMetadata({ status: nextStatus }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1078,7 +1079,7 @@ export const createSpecializedCareRecord = async (req: Request, res: Response): 
       action: "mental-health.specialized-care.create",
       entityType: "SpecializedCareRecord",
       entityId: record.id,
-      description: "บันทึกการดูแลเชิงลึก",
+      description: formatAuditMetadata({ op: "care_note" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1187,7 +1188,7 @@ export const updateMentalHealthAppointmentStatus = async (req: Request, res: Res
       action: "mental-health.appointment.update-status",
       entityType: "MentalHealthAppointment",
       entityId: appointment.id,
-      description: `อัปเดตสถานะนัดหมายเป็น ${nextStatus}`,
+      description: formatAuditMetadata({ status: nextStatus }),
       ipAddress: getRequestIpAddress(req),
     });
 

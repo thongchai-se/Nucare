@@ -46,6 +46,7 @@ import {
 } from "@/components/advisor/consultation-negotiate";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { StaffModalOverlay } from "@/components/ui/staff-modal-overlay";
 import { formatSoapNotePayload } from "@/lib/clinical-note-display";
@@ -1672,8 +1673,9 @@ function AdvisorDashboardContent() {
                   />
                 )}
                 {activeView === "advisees" && showingAdviseeDetail && loadingStudents && !selectedStudent && (
-                  <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-                    <p className="text-sm font-semibold text-slate-800">กำลังโหลดข้อมูลนิสิต...</p>
+                  <div className="mx-auto flex max-w-lg flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                    <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
+                    <p className="text-sm font-medium text-slate-500">กำลังโหลดข้อมูลนิสิต...</p>
                   </div>
                 )}
                 {activeView === "advisees" && showingAdviseeDetail && !selectedStudent && !loadingStudents && (
@@ -2326,9 +2328,7 @@ function AdvisorDashboardContent() {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            {observationError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{observationError}</div>
-            ) : null}
+            {observationError ? <InlineAlert className="p-3">{observationError}</InlineAlert> : null}
           </div>
           <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row sm:justify-end">
             <button

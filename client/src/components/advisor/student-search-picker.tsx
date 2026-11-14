@@ -175,7 +175,14 @@ export function StudentSearchPicker({
           </ul>
         ) : (
           <div className="px-4 py-6 text-center text-sm text-slate-500">
-            {isLoading ? "กำลังค้นหา..." : emptyMessage}
+            {isLoading ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <span className="loader h-4 w-4 text-blue-600" aria-hidden="true" />
+                กำลังค้นหา...
+              </span>
+            ) : (
+              emptyMessage
+            )}
           </div>
         )}
       </div>

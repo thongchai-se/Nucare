@@ -17,6 +17,7 @@ import {
   activeConsultationConflictMessage,
 } from "../lib/active-consultation";
 import { writeAuditLog, getRequestIpAddress } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import {
   canStudentCancelConsultation,
   consultationChannelLabel,
@@ -520,7 +521,9 @@ export const submitAssessment = async (req: Request, res: Response): Promise<voi
       action: "student.assessment.submit",
       entityType: "StudentAssessment",
       entityId: assessment.id,
-      description: `นักศึกษาส่งแบบประเมิน ${parsed.data.instrument} คะแนนรวม ${totalScore}`,
+      description: formatAuditMetadata({
+        instrument: parsed.data.instrument,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -872,7 +875,10 @@ export const createConsultationRequest = async (req: Request, res: Response): Pr
       action: "student.consultation-request.create",
       entityType: "ConsultationRequest",
       entityId: consultationRequest.id,
-      description: `นักศึกษาขอรับคำปรึกษากับ ${teacher.name} เรื่อง ${parsed.data.topic}`,
+      description: formatAuditMetadata({
+        teacherId: teacher.id,
+        channel: parsed.data.preferredChannel,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1026,7 +1032,9 @@ export const cancelConsultationRequest = async (req: Request, res: Response): Pr
       action: "student.consultation-request.cancel-request",
       entityType: "ConsultationRequest",
       entityId: existing.id,
-      description: `นักศึกษาขอยกเลิกเรื่อง ${existing.topic} (${parsedBody.data.reason})`,
+      description: formatAuditMetadata({
+        reasonCode: parsedBody.data.reason,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1151,7 +1159,7 @@ export const createStudentCounselingRequest = async (req: Request, res: Response
       action: "student.counseling-request.create",
       entityType: "CaseReferral",
       entityId: referral.id,
-      description: "นักศึกษาขอนัดผู้เชี่ยวชาญสุขภาพจิต",
+      description: formatAuditMetadata({ op: "counseling_request" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1206,7 +1214,7 @@ export const createSosCase = async (req: Request, res: Response): Promise<void> 
       action: "student.sos.create",
       entityType: "EmergencyCase",
       entityId: emergencyCase.id,
-      description: `นักศึกษากดปุ่ม SOS และแจ้งทีมดูแล ${notifiedCount} คน`,
+      description: formatAuditMetadata({ notifiedCount }),
       ipAddress: getRequestIpAddress(req),
     });
 

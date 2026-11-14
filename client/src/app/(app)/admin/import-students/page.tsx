@@ -14,6 +14,7 @@ import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { normalizeImportedStudentName } from "@/lib/name-prefix";
 import { normalizeStudyYear } from "@/lib/study-year";
 import { formatStudentIdDisplay } from "@/lib/student-id";
@@ -972,40 +973,40 @@ export default function ImportStudentsPage() {
                   </div>
                 </div>
 
-                {incompleteRowsCount > 0 && (
-                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                {incompleteRowsCount > 0 ? (
+                  <InlineAlert tone="warning" className="mb-4 p-4">
                     กรุณาแก้ข้อมูลไม่ครบก่อนนำเข้า: ข้อมูลไม่ครบ {incompleteRowsCount} รายการ
-                  </div>
-                )}
+                  </InlineAlert>
+                ) : null}
 
-                {incompleteRowsCount === 0 && duplicateRowsCount > 0 && (
-                  <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
-                    พบข้อมูลเดิมในระบบ {duplicateRowsCount} รายการ: อัปเดต {updateRowsCount} รายการ และข้าม {unchangedRowsCount} รายการที่ไม่เปลี่ยนแปลง
-                  </div>
-                )}
+                {incompleteRowsCount === 0 && duplicateRowsCount > 0 ? (
+                  <InlineAlert tone="warning" className="mb-4 p-4">
+                    พบข้อมูลเดิมในระบบ {duplicateRowsCount} รายการ: อัปเดต {updateRowsCount} รายการ และข้าม{" "}
+                    {unchangedRowsCount} รายการที่ไม่เปลี่ยนแปลง
+                  </InlineAlert>
+                ) : null}
 
-                {emailConflictRowsCount > 0 && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    พบอีเมลซ้ำกับข้อมูลที่มีอยู่ในระบบ {emailConflictRowsCount} รายการ กรุณาแก้ไขอีเมลในไฟล์ CSV ก่อนนำเข้า
-                  </div>
-                )}
+                {emailConflictRowsCount > 0 ? (
+                  <InlineAlert className="mb-4 p-4">
+                    พบอีเมลซ้ำกับข้อมูลที่มีอยู่ในระบบ {emailConflictRowsCount} รายการ กรุณาแก้ไขอีเมลในไฟล์ CSV
+                    ก่อนนำเข้า
+                  </InlineAlert>
+                ) : null}
 
-                {parseErrors.length > 0 && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    <p className="font-medium">พบข้อมูลบางแถวไม่สมบูรณ์ และจะไม่ถูกนำเข้า</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                {parseErrors.length > 0 ? (
+                  <InlineAlert className="mb-4 p-4">
+                    <p>พบข้อมูลบางแถวไม่สมบูรณ์ และจะไม่ถูกนำเข้า</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 font-normal">
                       {parseErrors.slice(0, 10).map((errorMessage) => (
                         <li key={errorMessage}>{errorMessage}</li>
                       ))}
                     </ul>
-                  </div>
-                )}
+                  </InlineAlert>
+                ) : null}
 
-                {existingCheckError && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    {existingCheckError}
-                  </div>
-                )}
+                {existingCheckError ? (
+                  <InlineAlert className="mb-4 p-4">{existingCheckError}</InlineAlert>
+                ) : null}
 
                 <div className="mb-6 min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full min-w-[1080px] table-fixed text-left text-sm">
@@ -1121,19 +1122,15 @@ export default function ImportStudentsPage() {
               </section>
             )}
 
-            {serverNotice && (
-              <section className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-800">
-                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                <p className="text-sm font-medium">{serverNotice}</p>
-              </section>
-            )}
+            {serverNotice ? (
+              <InlineAlert tone="warning" className="mt-4 rounded-2xl p-5">
+                {serverNotice}
+              </InlineAlert>
+            ) : null}
 
-            {serverError && (
-              <section className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
-                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                <p className="text-sm font-medium">{serverError}</p>
-              </section>
-            )}
+            {serverError ? (
+              <InlineAlert className="mt-4 rounded-2xl p-5">{serverError}</InlineAlert>
+            ) : null}
         </div>
       </div>
 

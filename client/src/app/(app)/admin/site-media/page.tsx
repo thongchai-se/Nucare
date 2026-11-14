@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AdminShell } from "@/components/admin-shell";
 import { SiteMediaManager, type SiteMediaSlotOption } from "@/components/site-media/site-media-manager";
+import { PageLoader } from "@/components/ui/page-loader";
 import { useAuth } from "@/context/auth.context";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 
@@ -19,9 +20,14 @@ const SLOT_OPTIONS: SiteMediaSlotOption[] = [
     hint: "กริดภาพกิจกรรมในส่วน Highlights",
   },
   {
+    value: "HOME_VIDEO",
+    label: "คลิปหน้าแรก",
+    hint: "แปะลิงก์ YouTube แล้วแสดงในส่วนคลิปแนะนำระบบ",
+  },
+  {
     value: "STUDENT_ACTIVITY",
     label: "กิจกรรมหน้านิสิต",
-    hint: "คารูเซลจากงานพัฒนานิสิต",
+    hint: "คารูเซลบนหน้าโฮมนิสิต — ใส่ลิงก์เมื่อกดภาพได้",
   },
 ];
 
@@ -43,17 +49,13 @@ export default function AdminSiteMediaPage() {
   }, [authLoading, router, user]);
 
   if (authLoading || !user || user.role !== "ADMIN") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
-        กำลังโหลด...
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (
     <AdminShell
       activeNav="siteMedia"
-      title="จัดการภาพประชาสัมพันธ์"
+      title="จัดการสื่อประชาสัมพันธ์"
       userName={user.name}
       userRoleLabel="ผู้ดูแลระบบ"
       onLogout={logout}
@@ -61,8 +63,8 @@ export default function AdminSiteMediaPage() {
       <SiteMediaManager
         apiBasePath="/api/admin/site-media"
         slots={SLOT_OPTIONS}
-        heading="ภาพหน้าหลักและหน้านิสิต"
-        description="จัดการรูปที่แสดงบนหน้าหลักและหน้านิสิต"
+        heading="ภาพและคลิปหน้าหลัก / หน้านิสิต"
+        description="จัดการรูปและคลิป YouTube ที่แสดงบนหน้าหลักและหน้านิสิต"
       />
     </AdminShell>
   );

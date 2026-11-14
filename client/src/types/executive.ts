@@ -72,9 +72,18 @@ export type ExecutiveYearFilter = "ALL" | "1" | "2" | "3" | "4";
 
 export type ScreeningRoundInfo = {
   id: string;
+  surveyId: string;
   title: string;
+  instrumentCode: "GHQ28" | "CUSTOM";
+  instrumentLabel: string;
   startsAt: string | null;
   responseCount: number;
+  assignmentSummary: {
+    assignedCount: number;
+    completedCount: number;
+    pendingCount: number;
+    overdueCount: number;
+  };
 };
 
 export type ScreeningRoundScore = {
@@ -105,6 +114,8 @@ export type ScreeningComparisonSummary = {
 
 export type ScreeningComparisonResponse = {
   generatedAt: string;
+  instrumentCode: string;
+  instrumentLabel: string;
   availableRounds: ScreeningRoundInfo[];
   round1: ScreeningRoundInfo | null;
   round2: ScreeningRoundInfo | null;

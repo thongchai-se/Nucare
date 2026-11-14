@@ -108,7 +108,9 @@ export function ReferralHistoryView({
             กดการ์ดสถานะเพื่อกรองรายการ — กดแถวเพื่อดูรายละเอียดและหมุดเส้นทาง
           </p>
         </div>
-        {loadingReferrals ? <span className="text-xs text-slate-400">กำลังโหลด...</span> : null}
+        {loadingReferrals ? (
+          <span className="loader h-3.5 w-3.5 text-blue-600" aria-label="กำลังโหลด" />
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" role="tablist" aria-label="สถานะการส่งต่อ">

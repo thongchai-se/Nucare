@@ -14,6 +14,7 @@ import { DashboardAlert } from "@/components/ui/dashboard-alert";
 import { DashboardPanel } from "@/components/ui/dashboard-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
+import { ScreeningReviewQueue } from "@/components/screening-review/screening-review-queue";
 import { UI_INLINE_ACTION, UI_TEXT_LINK } from "@/lib/ui-classes";
 import type { UpcomingCalendarAppointment } from "./upcoming-week-calendar";
 import { UpcomingWeekTimeline } from "./upcoming-week-timeline";
@@ -215,6 +216,8 @@ export function DashboardView(props: DashboardViewProps) {
           </div>
         )}
       </section>
+
+      <ScreeningReviewQueue basePath="/api/advisor/screening-reviews" viewer="advisor" />
 
       <DashboardPanel>
         <UpcomingWeekTimeline

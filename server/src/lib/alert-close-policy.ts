@@ -2,6 +2,8 @@
  * นโยบายปิดแจ้งเตือน — แยก "ปิดสัญญาณ/ปิดกระดิ่ง" ออกจาก "ปิดเรื่องหลังรับติดตาม"
  */
 
+import { formatAuditMetadata } from "./audit-metadata";
+
 export type AlertCloseMode = "follow_up" | "dismiss_signal";
 
 export type AlertClosePolicyInput = {
@@ -38,7 +40,10 @@ export function resolveAlertCloseData(input: AlertClosePolicyInput): AlertCloseP
       closedAt: input.now,
       ...(note ? { resolutionNote: note } : {}),
       auditAction: "alerts.dismiss",
-      auditDescription: "ปิดการแจ้งเตือนสัญญาณ (ไม่ถือว่ารับเรื่องติดตาม)",
+      auditDescription: formatAuditMetadata({
+        mode: "dismiss_signal",
+        hasNote: Boolean(note),
+      }),
     };
   }
 
@@ -55,8 +60,9 @@ export function resolveAlertCloseData(input: AlertClosePolicyInput): AlertCloseP
     closedAt: input.now,
     ...(note ? { resolutionNote: note } : {}),
     auditAction: "alerts.close",
-    auditDescription: note
-      ? `ปิดการแจ้งเตือนหลังติดตาม: ${note}`
-      : "ปิดการแจ้งเตือนหลังติดตาม",
+    auditDescription: formatAuditMetadata({
+      mode: "follow_up",
+      hasNote: Boolean(note),
+    }),
   };
 }

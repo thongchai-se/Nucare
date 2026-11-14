@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { RoleToast } from "@/components/role-toast";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { resolveActionToastPresentation } from "@/lib/expandable-toast";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
 import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
@@ -627,11 +628,7 @@ function StudentDevelopmentDashboardContent() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl pb-10">
-            {serverError ? (
-              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {serverError}
-              </div>
-            ) : null}
+            {serverError ? <InlineAlert className="mb-6 rounded-2xl">{serverError}</InlineAlert> : null}
 
             {activeView === "dashboard" && (
               <DashboardView

@@ -23,8 +23,10 @@ type AuditLogViewProps = {
   getAuditActionLabel: (log: AdminAuditLog) => string;
   getAuditActorName: (log: AdminAuditLog) => string;
   getAuditTargetLabel: (log: AdminAuditLog) => string;
+  getAuditTargetReference: (log: AdminAuditLog) => string;
+  getAuditLogRef: (log: AdminAuditLog) => string;
+  getAuditIpLabel: (log: AdminAuditLog) => string;
   getResolvedAuditActionDetail: (log: AdminAuditLog) => string;
-  getNormalizedAuditAction: (log: AdminAuditLog) => string;
   formatThaiDate: (value: string) => string;
   formatThaiTime: (value: string) => string;
 };
@@ -49,19 +51,22 @@ export function AuditLogView(props: AuditLogViewProps) {
     getAuditActionLabel,
     getAuditActorName,
     getAuditTargetLabel,
+    getAuditTargetReference,
+    getAuditLogRef,
+    getAuditIpLabel,
     getResolvedAuditActionDetail,
-    getNormalizedAuditAction,
     formatThaiDate,
     formatThaiTime,
   } = props;
 
   return (
-  
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-display text-2xl font-semibold text-slate-950">บันทึกระบบ</h2>
-          <p className="mt-1 text-sm text-slate-500">ประวัติการใช้งานและการเข้าถึงข้อมูลทั้งหมดเพื่อตรวจสอบย้อนหลัง</p>
+          <p className="mt-1 text-sm text-slate-500">
+            ประวัติการใช้งานและการเข้าถึงข้อมูลทั้งหมดเพื่อตรวจสอบย้อนหลัง
+          </p>
         </div>
         <button
           type="button"
@@ -72,7 +77,7 @@ export function AuditLogView(props: AuditLogViewProps) {
           <Download size={16} /> ส่งออก Log (.csv)
         </button>
       </div>
-  
+
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50 p-4">
           <div className="relative">
@@ -80,25 +85,25 @@ export function AuditLogView(props: AuditLogViewProps) {
               type="text"
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
-              placeholder="ค้นหาตาม User, IP, หรือกิจกรรม..."
+              placeholder="ค้นหาตามผู้ใช้งาน, กิจกรรม, หรือ IP..."
               className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none transition focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[1080px] table-fixed text-left text-sm">
             <colgroup>
+              <col className="w-28" />
               <col className="w-32" />
-              <col className="w-36" />
+              <col className="w-[16%]" />
+              <col className="w-[28%]" />
               <col className="w-[18%]" />
-              <col className="w-[26%]" />
-              <col className="w-[20%]" />
               <col className="w-28" />
               <col className="w-24" />
             </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th className="p-4 font-bold text-slate-600">Log ID</th>
+                <th className="p-4 font-bold text-slate-600">เลขอ้างอิง</th>
                 <th className="p-4 font-bold text-slate-600">วัน/เวลา</th>
                 <th className="p-4 font-bold text-slate-600">ผู้ใช้งาน</th>
                 <th className="p-4 font-bold text-slate-600">กิจกรรม</th>
@@ -113,8 +118,8 @@ export function AuditLogView(props: AuditLogViewProps) {
                 return (
                   <tr key={log.id} className="transition-colors hover:bg-slate-50">
                     <td className="p-4 align-top">
-                      <p className="font-mono text-xs leading-5 text-slate-600 break-all">
-                        {log.id}
+                      <p className="font-mono text-xs font-semibold tracking-wide text-slate-700">
+                        {getAuditLogRef(log)}
                       </p>
                     </td>
                     <td className="p-4 align-top text-slate-700">
@@ -123,21 +128,28 @@ export function AuditLogView(props: AuditLogViewProps) {
                     </td>
                     <td className="p-4 align-top text-slate-800">
                       <p className="font-bold break-words">{getAuditActorName(log)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ"}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ"}
+                      </p>
                     </td>
                     <td className="p-4 align-top text-slate-700">
                       <p className="font-semibold text-slate-800">{getAuditActionLabel(log)}</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{getResolvedAuditActionDetail(log)}</p>
-                      <p className="mt-1 font-mono text-[11px] leading-5 text-slate-400 break-all">{getNormalizedAuditAction(log)}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {getResolvedAuditActionDetail(log)}
+                      </p>
                     </td>
                     <td className="p-4 align-top text-slate-600">
                       <p className="font-medium text-slate-700">{getAuditTargetLabel(log)}</p>
-                      <p className="mt-1 font-mono text-xs leading-5 text-slate-500 break-all">
-                        {log.entityId || "-"}
-                      </p>
+                      {log.entityId ? (
+                        <p className="mt-1 font-mono text-[11px] leading-5 tracking-wide text-slate-500">
+                          {getAuditTargetReference(log)}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="p-4 align-top">
-                      <p className="font-mono text-xs leading-5 text-slate-600 break-all">{log.ipAddress || "-"}</p>
+                      <p className="text-xs leading-5 text-slate-600" title={log.ipAddress || undefined}>
+                        {getAuditIpLabel(log)}
+                      </p>
                     </td>
                     <td className="p-4 align-top">
                       <span
@@ -167,7 +179,11 @@ export function AuditLogView(props: AuditLogViewProps) {
         </div>
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span className="text-sm tabular-nums text-slate-500">
-            แสดง <span className="font-medium text-slate-800">{filteredAuditLogs.length === 0 ? 0 : auditStartItemIndex + 1}</span>-
+            แสดง{" "}
+            <span className="font-medium text-slate-800">
+              {filteredAuditLogs.length === 0 ? 0 : auditStartItemIndex + 1}
+            </span>
+            -
             <span className="font-medium text-slate-800">{auditEndItemIndex}</span> จาก
             <span className="font-medium text-slate-800"> {filteredAuditLogs.length}</span> รายการ
           </span>
@@ -180,7 +196,10 @@ export function AuditLogView(props: AuditLogViewProps) {
             >
               ก่อนหน้า
             </button>
-            <button type="button" className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white">
+            <button
+              type="button"
+              className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white"
+            >
               {auditCurrentPage}
             </button>
             <button
@@ -195,6 +214,5 @@ export function AuditLogView(props: AuditLogViewProps) {
         </div>
       </div>
     </div>
-  
   );
 }

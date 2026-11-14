@@ -22,14 +22,20 @@ import {
 import {
   createAdminSurvey,
   deleteAdminSurvey,
+  duplicateAdminSurvey,
   getAdminSurvey,
   listAdminSurveyResponses,
+  listAdminSurveyVersions,
   listAdminSurveys,
+  previewAdminSurvey,
+  publishAdminSurveyVersion,
   updateAdminSurvey,
 } from "../controllers/survey.controller";
 import {
+  cancelAdminSurveyWave,
   closeAdminSurveyWave,
   createAdminSurveyWave,
+  listAdminSurveyWaveAssignments,
   listAdminSurveyWaveResponses,
   listAdminSurveyWaves,
   openAdminSurveyWave,
@@ -40,6 +46,7 @@ import {
   createSiteMedia,
   deleteSiteMedia,
   listAdminSiteMedia,
+  reorderSiteMedia,
   updateSiteMedia,
 } from "../controllers/site-media.controller";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware";
@@ -145,6 +152,34 @@ router.delete(
 );
 
 router.get(
+  "/surveys/:id/versions",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listAdminSurveyVersions
+);
+
+router.post(
+  "/surveys/:id/publish-version",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  publishAdminSurveyVersion
+);
+
+router.post(
+  "/surveys/:id/duplicate",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  duplicateAdminSurvey
+);
+
+router.get(
+  "/surveys/:id/preview",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  previewAdminSurvey
+);
+
+router.get(
   "/surveys/:id/responses",
   authenticateToken,
   authorizeRoles(Role.ADMIN),
@@ -177,6 +212,20 @@ router.post(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   closeAdminSurveyWave
+);
+
+router.post(
+  "/surveys/:id/waves/:waveId/cancel",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  cancelAdminSurveyWave
+);
+
+router.get(
+  "/surveys/:id/waves/:waveId/assignments",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  listAdminSurveyWaveAssignments
 );
 
 router.get(
@@ -275,6 +324,13 @@ router.post(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   createSiteMedia
+);
+
+router.put(
+  "/site-media/reorder",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  reorderSiteMedia
 );
 
 router.put(

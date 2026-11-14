@@ -1,12 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileText, ShieldAlert, X } from "lucide-react";
 import { AdminShell } from "@/components/admin-shell";
 import { SurveyEditorView } from "@/components/admin/survey-editor-view";
 import { SurveyListView } from "@/components/admin/survey-list-view";
+import { SurveyPreviewModal } from "@/components/admin/survey-preview-modal";
+import { SurveyPublishVersionModal } from "@/components/admin/survey-publish-version-modal";
 import { DeleteSurveyDialog } from "@/components/delete-survey-dialog";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import { StaffModalOverlay } from "@/components/ui/staff-modal-overlay";
@@ -15,16 +17,23 @@ import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import { toDateTimeLocalValue } from "@/lib/survey-schedule";
+import { pickLatestVersion } from "@/lib/survey-scoring-rules-input";
 import type {
   Ghq28DistressLevel,
   Survey,
+  SurveyAdminPreview,
+  SurveyAssignmentRosterResponse,
+  SurveyAssignmentRosterState,
+  SurveyAssignmentStatusFilter,
   SurveyEligibilityRule,
   SurveyQuestion,
   SurveyQuestionOption,
   SurveyQuestionType,
   SurveyRiskLevel,
   SurveyResponseRow,
+  SurveyScoringRules,
   SurveyStatus,
+  SurveyVersionSummary,
   SurveyWaveSummary,
 } from "@/types/survey";
 import type { SurveyFormState } from "@/components/admin/survey-editor-view";
@@ -532,6 +541,22 @@ export default function AdminSurveysPage() {
   const [eligibilityPreviewCount, setEligibilityPreviewCount] = useState<number | null>(null);
   const [eligibilityPreviewLoading, setEligibilityPreviewLoading] = useState(false);
   const [waveActionLoading, setWaveActionLoading] = useState(false);
+  const [assignmentRoster, setAssignmentRoster] = useState<SurveyAssignmentRosterState | null>(null);
+  const [assignmentRosterLoading, setAssignmentRosterLoading] = useState(false);
+  const [assignmentRosterError, setAssignmentRosterError] = useState("");
+  // นับลำดับคำขอรายชื่อ เพื่อทิ้งผลของคำขอเก่าเมื่อสลับแท็บ/รอบเร็ว ๆ
+  const assignmentRosterRequestRef = useRef(0);
+  const [versions, setVersions] = useState<SurveyVersionSummary[]>([]);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishingVersion, setPublishingVersion] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewData, setPreviewData] = useState<SurveyAdminPreview | null>(null);
+  // นับลำดับคำขอ เพื่อทิ้งผลของคำขอเก่าเมื่อปิดพรีวิว/สลับแบบสอบถามเร็ว ๆ
+  const versionsRequestRef = useRef(0);
+  const previewRequestRef = useRef(0);
 
   const isAdmin = Boolean(user?.roles?.includes("ADMIN") || user?.role === "ADMIN");
 
@@ -923,6 +948,10 @@ export default function AdminSurveysPage() {
     setActiveQuestionClientId(nextForm.questions[0]?.clientId || null);
     setResponses([]);
     setWaves([]);
+    assignmentRosterRequestRef.current += 1;
+    setAssignmentRoster(null);
+    setAssignmentRosterLoading(false);
+    setAssignmentRosterError("");
     setEligibilityPreviewCount(null);
     setServerError("");
     setOpenMenuSurveyId(null);
@@ -1021,6 +1050,176 @@ export default function AdminSurveysPage() {
       setServerError(getErrorMessage(error, "ไม่สามารถปิดคลื่นได้"));
     } finally {
       setWaveActionLoading(false);
+    }
+  };
+
+  /** ยกเลิกรอบที่ SCHEDULED/OPEN ผ่าน API แล้วรีโหลดรายการรอบและรายการแบบสอบถาม */
+  const handleCancelWave = async (waveId: string) => {
+    if (!form.id) {
+      return;
+    }
+    setWaveActionLoading(true);
+    setServerError("");
+    try {
+      await api.post(`/api/admin/surveys/${form.id}/waves/${waveId}/cancel`);
+      assignmentRosterRequestRef.current += 1;
+      setAssignmentRoster((current) => (current?.waveId === waveId ? null : current));
+      setAssignmentRosterLoading(false);
+      await Promise.all([loadWaves(form.id), fetchSurveys()]);
+      showToast("ยกเลิกรอบแล้ว", "รอบนี้ถูกยกเลิก นักศึกษาจะไม่เห็นแบบประเมินจากรอบนี้อีก");
+    } catch (error) {
+      setServerError(getErrorMessage(error, "ไม่สามารถยกเลิกรอบได้"));
+    } finally {
+      setWaveActionLoading(false);
+    }
+  };
+
+  /** โหลดรายชื่อมอบหมายของรอบตามตัวกรองสถานะ; ทิ้งผลเมื่อมีคำขอใหม่กว่าแซงหน้า */
+  const handleLoadAssignments = async (waveId: string, status: SurveyAssignmentStatusFilter) => {
+    if (!form.id) {
+      return;
+    }
+    const requestId = assignmentRosterRequestRef.current + 1;
+    assignmentRosterRequestRef.current = requestId;
+    setAssignmentRosterLoading(true);
+    setAssignmentRosterError("");
+    try {
+      const response = await api.get<SurveyAssignmentRosterResponse>(
+        `/api/admin/surveys/${form.id}/waves/${waveId}/assignments`,
+        { params: { status } }
+      );
+      if (assignmentRosterRequestRef.current !== requestId) {
+        return;
+      }
+      setAssignmentRoster({
+        waveId,
+        status,
+        rows: response.data.assignments || [],
+        summary: response.data.summary,
+      });
+    } catch (error) {
+      if (assignmentRosterRequestRef.current !== requestId) {
+        return;
+      }
+      setAssignmentRoster(null);
+      setAssignmentRosterError(getErrorMessage(error, "ไม่สามารถโหลดรายชื่อมอบหมายได้"));
+    } finally {
+      if (assignmentRosterRequestRef.current === requestId) {
+        setAssignmentRosterLoading(false);
+      }
+    }
+  };
+
+  /** โหลดรายการเวอร์ชันของแบบสอบถาม; ทิ้งผลเมื่อมีคำขอใหม่กว่าแซง และไม่แสดง error (ไม่มีเวอร์ชัน = ไม่มี badge) */
+  const loadVersions = useCallback(async (surveyId: string) => {
+    const requestId = versionsRequestRef.current + 1;
+    versionsRequestRef.current = requestId;
+    try {
+      const response = await api.get<{ versions: SurveyVersionSummary[] }>(
+        `/api/admin/surveys/${surveyId}/versions`
+      );
+      if (versionsRequestRef.current === requestId) {
+        setVersions(response.data.versions || []);
+      }
+    } catch {
+      if (versionsRequestRef.current === requestId) {
+        setVersions([]);
+      }
+    }
+  }, []);
+
+  /** ปิด modal พรีวิวและยกเลิกคำขอที่ค้างอยู่ ไม่ให้ผลเก่าเด้งกลับมาเปิดใหม่ */
+  const handleClosePreview = useCallback(() => {
+    previewRequestRef.current += 1;
+    setPreviewOpen(false);
+    setPreviewLoading(false);
+    setPreviewData(null);
+    setPreviewError("");
+  }, []);
+
+  // เปิด/ปิดหน้าแก้ไขหรือสลับแบบสอบถาม: โหลดเวอร์ชันใหม่ และปิด modal พรีวิว/เผยแพร่ของแบบเดิม
+  useEffect(() => {
+    handleClosePreview();
+    setPublishOpen(false);
+    if (editorOpen && form.id) {
+      void loadVersions(form.id);
+    } else {
+      versionsRequestRef.current += 1;
+      setVersions([]);
+    }
+  }, [editorOpen, form.id, handleClosePreview, loadVersions]);
+
+  /** ทำสำเนาแบบสอบถามเป็นฉบับร่างใหม่ (ไม่เปิดใช้งาน) แล้วเปิดหน้าแก้ไขของฉบับใหม่ พร้อมรีเฟรชรายการ */
+  const handleDuplicateSurvey = async (survey: Survey) => {
+    setOpenMenuSurveyId(null);
+    setDuplicatingId(survey.id);
+    setServerError("");
+
+    try {
+      const response = await api.post<SurveyResponse>(`/api/admin/surveys/${survey.id}/duplicate`);
+      openEditorWithForm(surveyToForm(response.data.survey));
+      await fetchSurveys();
+      showToast("ทำสำเนาแล้ว", "เปิดฉบับร่างใหม่ให้แก้ไข ยังไม่เปิดให้นักศึกษาทำ");
+    } catch (error) {
+      setServerError(getErrorMessage(error, "ไม่สามารถทำสำเนาแบบสอบถามได้"));
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
+  /** เปิด modal พรีวิวมุมมองนักศึกษาของแบบสอบถามที่บันทึกแล้ว (อ่านอย่างเดียว) */
+  const handlePreviewSurvey = async () => {
+    if (!form.id) {
+      return;
+    }
+
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewData(null);
+
+    try {
+      const response = await api.get<{ preview: SurveyAdminPreview }>(`/api/admin/surveys/${form.id}/preview`);
+      if (previewRequestRef.current === requestId) {
+        setPreviewData(response.data.preview);
+      }
+    } catch (error) {
+      if (previewRequestRef.current === requestId) {
+        setPreviewError(getErrorMessage(error, "ไม่สามารถโหลดพรีวิวได้"));
+      }
+    } finally {
+      if (previewRequestRef.current === requestId) {
+        setPreviewLoading(false);
+      }
+    }
+  };
+
+  /** เผยแพร่เวอร์ชันใหม่ (ส่ง scoringRules เฉพาะ CUSTOM ที่กรอก); คืนข้อความ error หรือ null เมื่อสำเร็จ */
+  const handlePublishVersion = async (scoringRules: SurveyScoringRules | undefined): Promise<string | null> => {
+    if (!form.id) {
+      return "ต้องบันทึกแบบสอบถามก่อนจึงจะเผยแพร่เวอร์ชันได้";
+    }
+
+    setPublishingVersion(true);
+    try {
+      const response = await api.post<{ version: SurveyVersionSummary }>(
+        `/api/admin/surveys/${form.id}/publish-version`,
+        scoringRules ? { scoringRules } : {}
+      );
+      setPublishOpen(false);
+      await Promise.all([loadVersions(form.id), fetchSurveys()]);
+      showToast("เผยแพร่เวอร์ชันแล้ว", `ตรึงคำถามปัจจุบันเป็นเวอร์ชัน ${response.data.version.version}`);
+      return null;
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      if (status === 409) {
+        return "มีการเผยแพร่เวอร์ชันพร้อมกัน กรุณาลองอีกครั้ง";
+      }
+      return getErrorMessage(error, "ไม่สามารถเผยแพร่เวอร์ชันได้");
+    } finally {
+      setPublishingVersion(false);
     }
   };
 
@@ -1298,9 +1497,11 @@ export default function AdminSurveysPage() {
           formatThaiDateTime={formatThaiDateTime}
           handleCreateNew={handleCreateNew}
           handleRequestDeleteSurvey={handleRequestDeleteSurvey}
+          handleDuplicateSurvey={handleDuplicateSurvey}
           handleRestoreSurvey={handleRestoreSurvey}
           handleSelectSurvey={handleSelectSurvey}
           handleToggleSurveyActive={handleToggleSurveyActive}
+          duplicatingId={duplicatingId}
           loadingData={loadingData}
           openMenuSurveyId={openMenuSurveyId}
           restoringId={restoringId}
@@ -1360,8 +1561,35 @@ export default function AdminSurveysPage() {
           onCreateWave={handleCreateWave}
           onOpenWave={handleOpenWave}
           onCloseWave={handleCloseWave}
+          onCancelWave={handleCancelWave}
+          onLoadAssignments={handleLoadAssignments}
+          assignmentRoster={assignmentRoster}
+          assignmentRosterLoading={assignmentRosterLoading}
+          assignmentRosterError={assignmentRosterError}
+          versions={versions}
+          duplicating={duplicatingId !== null}
+          onPreviewSurvey={handlePreviewSurvey}
+          onDuplicateSurvey={handleDuplicateSurvey}
+          onOpenPublishVersion={() => setPublishOpen(true)}
         />
       </div>
+
+      <SurveyPreviewModal
+        open={previewOpen}
+        loading={previewLoading}
+        error={previewError}
+        preview={previewData}
+        onClose={handleClosePreview}
+      />
+
+      <SurveyPublishVersionModal
+        open={publishOpen}
+        isCustomInstrument={form.instrumentCode !== "GHQ28" && !isCurrentSurveyGhq28}
+        publishing={publishingVersion}
+        latestVersion={pickLatestVersion(versions)}
+        onCancel={() => setPublishOpen(false)}
+        onConfirm={handlePublishVersion}
+      />
 
       {showTemplatePicker ? (
         <StaffModalOverlay panelClassName="max-w-xl">

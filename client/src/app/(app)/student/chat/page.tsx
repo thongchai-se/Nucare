@@ -7,7 +7,7 @@ import { AlertTriangle, ArrowLeftRight, Phone, PhoneCall } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ChatComposer } from "@/components/student-chat/chat-composer";
 import { ChatThread } from "@/components/student-chat/chat-thread";
-import { PersonaPicker } from "@/components/student-chat/persona-picker";
+import { getNextPersona } from "@/components/student-chat/persona-switch";
 import {
   STUDENT_CHAT_PERSONA_STORAGE_KEY,
   type StudentChatMessage,
@@ -15,6 +15,7 @@ import {
   type StudentChatPersonaId,
 } from "@/components/student-chat/types";
 import { StudentPageShell } from "@/components/student-page-shell";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 import { getApiErrorMessage } from "@/lib/student-dashboard";
 import { runStudentSosRequest } from "@/lib/student-sos";
@@ -41,7 +42,7 @@ const PERSONA_AVATAR_SRC: Record<StudentChatPersonaId, string> = {
   "peer-female": "/student-chat/persona-peer-female.png",
 };
 
-function isPersonaId(value: string | null): value is StudentChatPersonaId {
+function isPersonaId(value: string | null | undefined): value is StudentChatPersonaId {
   return value === "peer-male" || value === "peer-female";
 }
 
@@ -49,11 +50,20 @@ function createMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function readStoredPersonaId(): StudentChatPersonaId | null {
+  try {
+    const stored = window.localStorage.getItem(STUDENT_CHAT_PERSONA_STORAGE_KEY);
+    return isPersonaId(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
 function StudentChatContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const suppressAutoStartRef = useRef(false);
-  const previousPersonaQueryRef = useRef<string | null>(null);
+  const personaQueryRef = useRef<string | null>(null);
+  const bootstrappedRef = useRef(false);
   const [personas, setPersonas] = useState<StudentChatPersona[]>(FALLBACK_PERSONAS);
   const [selectedPersonaId, setSelectedPersonaId] = useState<StudentChatPersonaId | null>(null);
   const [started, setStarted] = useState(false);
@@ -87,6 +97,11 @@ function StudentChatContent() {
     [personas, selectedPersonaId]
   );
 
+  const nextPersona = useMemo(
+    () => getNextPersona(personas, selectedPersonaId),
+    [personas, selectedPersonaId]
+  );
+
   const beginChat = useCallback(
     (personaId: StudentChatPersonaId) => {
       const persona = personas.find((item) => item.id === personaId) ?? null;
@@ -94,8 +109,9 @@ function StudentChatContent() {
         return;
       }
 
-      suppressAutoStartRef.current = false;
       setSelectedPersonaId(personaId);
+      setConfirmChangePeer(false);
+      bootstrappedRef.current = true;
 
       try {
         window.localStorage.setItem(STUDENT_CHAT_PERSONA_STORAGE_KEY, persona.id);
@@ -111,58 +127,73 @@ function StudentChatContent() {
           content: persona.greeting,
         },
       ]);
+      setDraft("");
       setError("");
       router.replace(`/student/chat?persona=${personaId}`, { scroll: false });
     },
     [personas, router]
   );
 
-  // Deep-link / หน้าแรกส่ง ?persona=... — ห้ามรันซ้ำตอนกดเปลี่ยนเพื่อน
-  // เพราะ router.replace เคลียร์ query แบบ async แล้ว effect อาจเห็นค่าเก่าแล้ว start กลับ
+  // เปิดห้องจาก ?persona= / ค่าที่เคยเลือก / เพื่อนคนแรก — ไม่มีหน้าเลือกแล้ว
+  useEffect(() => {
+    if (bootstrappedRef.current || started || personas.length === 0) {
+      return;
+    }
+
+    const requested = searchParams.get("persona");
+    if (isPersonaId(requested) && personas.some((persona) => persona.id === requested)) {
+      personaQueryRef.current = requested;
+      beginChat(requested);
+      return;
+    }
+
+    const stored = readStoredPersonaId();
+    if (stored && personas.some((persona) => persona.id === stored)) {
+      personaQueryRef.current = stored;
+      beginChat(stored);
+      return;
+    }
+
+    const fallback = personas[0]?.id;
+    if (isPersonaId(fallback)) {
+      personaQueryRef.current = fallback;
+      beginChat(fallback);
+    }
+  }, [beginChat, personas, searchParams, started]);
+
+  // Deep-link จากหน้าแรกเปลี่ยน ?persona= ขณะอยู่ในห้อง — สลับเมื่อ query เปลี่ยนจริงเท่านั้น
   useEffect(() => {
     const requested = searchParams.get("persona");
-    const previous = previousPersonaQueryRef.current;
-    previousPersonaQueryRef.current = requested;
+    const previous = personaQueryRef.current;
+    const queryChanged = requested !== previous;
+    personaQueryRef.current = requested;
 
-    if (!isPersonaId(requested)) {
-      suppressAutoStartRef.current = false;
-      // กดเมนูกลับ /student/chat หลังมี ?persona= แล้ว — กลับหน้าเลือกเพื่อน
-      // (ไม่รีเซ็ตตอน beginChat ตั้ง started ก่อนที่ URL จะอัปเดต)
-      if (started && isPersonaId(previous)) {
-        setStarted(false);
-        setSelectedPersonaId(null);
-        setMessages([]);
-        setDraft("");
-        setError("");
-        setConfirmChangePeer(false);
-      }
+    if (!started || !isPersonaId(requested) || requested === selectedPersonaId) {
       return;
     }
-
-    if (suppressAutoStartRef.current || started) {
+    // selected เปลี่ยนจาก beginChat แต่ URL ยังค่าเก่า — อย่าเด้งกลับ
+    if (!queryChanged) {
       return;
     }
-
     if (!personas.some((persona) => persona.id === requested)) {
       return;
     }
-
     beginChat(requested);
-  }, [beginChat, personas, searchParams, started]);
-
-  const resetPersona = () => {
-    suppressAutoStartRef.current = true;
-    setConfirmChangePeer(false);
-    setStarted(false);
-    setSelectedPersonaId(null);
-    setMessages([]);
-    setDraft("");
-    setError("");
-    router.replace("/student/chat", { scroll: false });
-  };
+  }, [beginChat, personas, searchParams, selectedPersonaId, started]);
 
   const requestChangePeer = () => {
+    if (!nextPersona) {
+      return;
+    }
     setConfirmChangePeer(true);
+  };
+
+  const confirmSwitchPeer = () => {
+    if (!nextPersona) {
+      setConfirmChangePeer(false);
+      return;
+    }
+    beginChat(nextPersona.id);
   };
 
   const sendMessage = async () => {
@@ -249,27 +280,16 @@ function StudentChatContent() {
 
   if (!started || !activePersona) {
     return (
-      <div className="space-y-4">
-        {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-            {error}
-          </div>
-        ) : null}
-        <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-          เพื่อนในระบบเป็น AI ช่วยคุยเบื้องต้น — ไม่ใช่ที่ปรึกษาคนจริง และข้อความอาจไม่ถูกเก็บถาวรในเครื่องนี้
-        </p>
-        <PersonaPicker personas={personas} selectedId={selectedPersonaId} onStart={beginChat} />
+      <div className="flex min-h-[16rem] flex-col items-center justify-center gap-3 rounded-[1.75rem] border border-slate-200 bg-white text-sm text-slate-500">
+        <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
+        กำลังเปิดห้องแชท...
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InlineAlert>{error}</InlineAlert> : null}
 
       <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
         คุณกำลังคุยกับ AI ในบทบาท {activePersona.displayName} — ไม่แทนที่การปรึกษาคนจริง · ข้อความในห้องนี้อาจหายเมื่อปิดหน้าหรือรีเฟรช
@@ -302,18 +322,20 @@ function StudentChatContent() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={requestChangePeer}
-            aria-label="เปลี่ยนเพื่อน"
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
-          >
-            <ArrowLeftRight className="h-4 w-4" />
-            <span>เปลี่ยนเพื่อน</span>
-          </button>
+          {nextPersona ? (
+            <button
+              type="button"
+              onClick={requestChangePeer}
+              aria-label={`เปลี่ยนเป็น${nextPersona.displayName}`}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              <span>เปลี่ยนเพื่อน</span>
+            </button>
+          ) : null}
         </header>
 
-        {confirmChangePeer ? (
+        {confirmChangePeer && nextPersona ? (
           <div
             className="mx-3 mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:mx-4"
             role="alertdialog"
@@ -321,18 +343,15 @@ function StudentChatContent() {
             aria-describedby="change-peer-desc"
           >
             <p id="change-peer-title" className="text-sm font-bold text-amber-950">
-              เปลี่ยนเพื่อนคุย?
-            </p>
-            <p id="change-peer-desc" className="mt-1 text-sm text-amber-900/90">
-              การสนทนากับ {activePersona.displayName} จะถูกล้าง และต้องเลือกเพื่อนใหม่
+              สลับไปคุยกับ {nextPersona.displayName}?
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={resetPersona}
+                onClick={confirmSwitchPeer}
                 className="rounded-xl bg-[#0057A8] px-3 py-2 text-xs font-bold text-white hover:bg-[#00468a]"
               >
-                ยืนยันเปลี่ยนเพื่อน
+                ยืนยันสลับเป็น {nextPersona.displayName}
               </button>
               <button
                 type="button"
@@ -428,7 +447,8 @@ export default function StudentChatPage() {
       {() => (
         <Suspense
           fallback={
-            <div className="flex min-h-[16rem] items-center justify-center rounded-[1.75rem] border border-slate-200 bg-white text-sm text-slate-500">
+            <div className="flex min-h-[16rem] flex-col items-center justify-center gap-3 rounded-[1.75rem] border border-slate-200 bg-white text-sm text-slate-500">
+              <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
               กำลังเปิดห้องแชท...
             </div>
           }

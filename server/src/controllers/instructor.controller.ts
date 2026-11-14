@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere } from "../lib/access-control";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import { listReporterObservations } from "../lib/behavior-observation";
 import { prisma } from "../lib/prisma";
 import { formatStudentIdForResponse } from "../lib/user-format";
@@ -163,7 +164,7 @@ export const createBehaviorRecord = async (req: Request, res: Response): Promise
       action: "instructor.behavior-record.create",
       entityType: "BehaviorRecord",
       entityId: behaviorRecord.id,
-      description: "อาจารย์ผู้สอนแจ้งข้อสังเกตแนวโน้มไปยังที่ปรึกษา",
+      description: formatAuditMetadata({ op: "behavior_record" }),
       ipAddress: getRequestIpAddress(req),
     });
 

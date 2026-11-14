@@ -167,7 +167,7 @@ export function NuCareToastCard({
           <Icon className="h-3.5 w-3.5" strokeWidth={2.75} />
         </div>
 
-        <p className="min-w-0 flex-1 truncate text-sm font-bold leading-none tracking-[-0.02em] text-slate-900">
+        <p className="min-w-0 flex-1 truncate py-0.5 text-sm font-bold leading-snug text-slate-900">
           {resolved.title}
         </p>
 

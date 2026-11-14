@@ -1,4 +1,11 @@
-import { SurveyInstrumentCode, SurveyStatus, SurveyQuestionType, Prisma } from "@prisma/client";
+import {
+  RiskLevel,
+  SurveyInstrumentCode,
+  SurveyStatus,
+  SurveyQuestionType,
+  Prisma,
+  type SurveyWaveStatus,
+} from "@prisma/client";
 import {
   calculateSurveyMaxScore,
   calculateSurveyResponseScore,
@@ -8,12 +15,24 @@ import {
 import { normalizeStudyYearKey } from "./executive-analytics";
 import { formatStudentIdForResponse } from "./user-format";
 import { prisma } from "./prisma";
+import { deriveAssignmentStatus } from "./survey-wave-lifecycle";
+
+export type ScreeningRoundAssignmentSummary = {
+  assignedCount: number;
+  completedCount: number;
+  pendingCount: number;
+  overdueCount: number;
+};
 
 export type ScreeningRoundInfo = {
   id: string;
+  surveyId: string;
   title: string;
+  instrumentCode: SurveyInstrumentCode;
+  instrumentLabel: string;
   startsAt: string | null;
   responseCount: number;
+  assignmentSummary: ScreeningRoundAssignmentSummary;
 };
 
 export type ScreeningRoundScore = {
@@ -44,6 +63,8 @@ export type ScreeningComparisonSummary = {
 
 export type ScreeningComparisonPayload = {
   generatedAt: string;
+  instrumentCode: string;
+  instrumentLabel: string;
   availableRounds: ScreeningRoundInfo[];
   round1: ScreeningRoundInfo | null;
   round2: ScreeningRoundInfo | null;
@@ -65,6 +86,60 @@ type ResponseScore = {
   submittedAt: Date;
 };
 
+type AssignmentStatusFixture = {
+  completedAt: Date | null;
+  closesAt: Date | null;
+  waveStatus: SurveyWaveStatus;
+};
+
+/**
+ * สรุปจำนวนผู้ได้รับมอบหมาย ทำแล้ว รอตอบ และหมดเขตในคลื่นเดียวด้วยการเดินข้อมูลหนึ่งรอบ
+ * ใช้เวลา O(n) และคืนค่าที่ไม่ซ้ำหมวดกัน
+ */
+export function buildWaveAssignmentSummary(
+  assignments: AssignmentStatusFixture[],
+  now: Date = new Date()
+): ScreeningRoundAssignmentSummary {
+  const summary: ScreeningRoundAssignmentSummary = {
+    assignedCount: assignments.length,
+    completedCount: 0,
+    pendingCount: 0,
+    overdueCount: 0,
+  };
+
+  for (const assignment of assignments) {
+    const status = deriveAssignmentStatus({
+      completedAt: assignment.completedAt,
+      closesAt: assignment.closesAt,
+      waveStatus: assignment.waveStatus,
+      now,
+    });
+    if (status === "completed") {
+      summary.completedCount += 1;
+    } else if (status === "overdue") {
+      summary.overdueCount += 1;
+    } else {
+      summary.pendingCount += 1;
+    }
+  }
+
+  return summary;
+}
+
+/** ตรวจว่าคลื่นสองรอบใช้สเกลเดียวกัน โดย CUSTOM ต้องเป็นแบบประเมินเดียวกันเสมอ */
+export function areScreeningRoundsComparable(
+  left: Pick<ScreeningRoundInfo, "instrumentCode" | "surveyId">,
+  right: Pick<ScreeningRoundInfo, "instrumentCode" | "surveyId">
+): boolean {
+  if (
+    left.instrumentCode === SurveyInstrumentCode.GHQ28 &&
+    right.instrumentCode === SurveyInstrumentCode.GHQ28
+  ) {
+    return true;
+  }
+  return left.instrumentCode === right.instrumentCode && left.surveyId === right.surveyId;
+}
+
 const matchesStudyYearFilter = (
   studyYear: number | null,
   filterStudyYear: StudyYearComparisonFilter
@@ -75,6 +150,14 @@ const matchesStudyYearFilter = (
 
   return normalizeStudyYearKey(studyYear) === filterStudyYear;
 };
+
+const resolveEffectiveInstrumentCode = (survey: {
+  instrumentCode: SurveyInstrumentCode;
+  title: string;
+}): SurveyInstrumentCode =>
+  survey.instrumentCode === SurveyInstrumentCode.GHQ28 || isGhq28SurveyTitle(survey.title)
+    ? SurveyInstrumentCode.GHQ28
+    : SurveyInstrumentCode.CUSTOM;
 
 export const formatDistressChange = (
   round1Label: string,
@@ -161,14 +244,22 @@ export const buildScreeningComparisonRows = (input: {
 
 const serializeRoundInfo = (round: {
   id: string;
+  surveyId: string;
   title: string;
+  instrumentCode: SurveyInstrumentCode;
+  instrumentLabel: string;
   startsAt: Date | null;
   responseCount: number;
+  assignmentSummary: ScreeningRoundAssignmentSummary;
 }): ScreeningRoundInfo => ({
   id: round.id,
+  surveyId: round.surveyId,
   title: round.title,
+  instrumentCode: round.instrumentCode,
+  instrumentLabel: round.instrumentLabel,
   startsAt: round.startsAt?.toISOString() ?? null,
   responseCount: round.responseCount,
+  assignmentSummary: round.assignmentSummary,
 });
 
 const resolveResponseScore = (
@@ -185,19 +276,29 @@ const resolveResponseScore = (
   response: {
     totalScore: number | null;
     maxScore: number;
+    riskLevel: RiskLevel;
     submittedAt: Date;
     answers: Array<{ questionId: string; value: unknown }>;
-  }
+  },
+  instrumentCode: SurveyInstrumentCode
 ): ResponseScore => {
   const totalScore =
     response.totalScore ??
     calculateSurveyResponseScore(survey.questions, response.answers, survey.title) ??
     0;
   const distress = getGhq28DistressLevel(totalScore);
+  const customRiskLabel: Record<RiskLevel, string> = {
+    [RiskLevel.NORMAL]: "ปกติ",
+    [RiskLevel.MEDIUM]: "เสี่ยงปานกลาง",
+    [RiskLevel.HIGH]: "เสี่ยงสูง",
+  };
 
   return {
     score: totalScore,
-    distressLabel: distress?.labelTh ?? "ไม่ระบุ",
+    distressLabel:
+      instrumentCode === SurveyInstrumentCode.GHQ28
+        ? distress?.labelTh ?? "ไม่ระบุ"
+        : customRiskLabel[response.riskLevel],
     submittedAt: response.submittedAt,
   };
 };
@@ -211,7 +312,32 @@ const pickDefaultRounds = (
     return { round1: null, round2: null };
   }
 
-  const [round1, round2] = withResponses.slice(-2);
+  const grouped = new Map<string, ScreeningRoundInfo[]>();
+  for (const round of withResponses) {
+    const comparisonKey =
+      round.instrumentCode === SurveyInstrumentCode.GHQ28
+        ? SurveyInstrumentCode.GHQ28
+        : round.surveyId;
+    const group = grouped.get(comparisonKey);
+    if (group) {
+      group.push(round);
+    } else {
+      grouped.set(comparisonKey, [round]);
+    }
+  }
+
+  const candidates = [...grouped.values()]
+    .filter((group) => group.length >= 2)
+    .sort((left, right) => {
+      const leftTime = new Date(left[left.length - 1]?.startsAt ?? 0).getTime();
+      const rightTime = new Date(right[right.length - 1]?.startsAt ?? 0).getTime();
+      return leftTime - rightTime;
+    });
+  const selected = candidates[candidates.length - 1];
+  if (!selected) {
+    return { round1: null, round2: null };
+  }
+  const [round1, round2] = selected.slice(-2);
   return { round1, round2 };
 };
 
@@ -219,8 +345,10 @@ export const buildScreeningRoundComparison = async (input?: {
   fromSurveyId?: string;
   toSurveyId?: string;
   studyYear?: StudyYearComparisonFilter;
+  instrumentCode?: string;
 }): Promise<ScreeningComparisonPayload> => {
   const studyYearFilter = input?.studyYear ?? "ALL";
+  const requestedInstrument = input?.instrumentCode?.trim() || SurveyInstrumentCode.GHQ28;
 
   const waves = await prisma.surveyWave.findMany({
     where: {
@@ -242,21 +370,54 @@ export const buildScreeningRoundComparison = async (input?: {
           responses: true,
         },
       },
+      assignments: {
+        select: {
+          completedAt: true,
+        },
+      },
     },
   });
 
-  const ghqWaves = waves.filter(
-    (wave) =>
-      wave.survey.instrumentCode === SurveyInstrumentCode.GHQ28 ||
-      isGhq28SurveyTitle(wave.survey.title)
-  );
+  const instrumentWaves = waves.filter((wave) => {
+    if (requestedInstrument.toUpperCase() === SurveyInstrumentCode.GHQ28) {
+      return (
+        wave.survey.instrumentCode === SurveyInstrumentCode.GHQ28 ||
+        isGhq28SurveyTitle(wave.survey.title)
+      );
+    }
+    if (requestedInstrument.toUpperCase() === SurveyInstrumentCode.CUSTOM) {
+      return wave.survey.instrumentCode === SurveyInstrumentCode.CUSTOM;
+    }
+    const surveyId = requestedInstrument.replace(/^CUSTOM:/i, "");
+    return wave.surveyId === surveyId;
+  });
 
-  const availableRounds = ghqWaves.map((wave) =>
+  const instrumentLabel =
+    requestedInstrument.toUpperCase() === SurveyInstrumentCode.GHQ28
+      ? "GHQ-28"
+      : requestedInstrument.toUpperCase() === SurveyInstrumentCode.CUSTOM
+        ? "แบบประเมินกำหนดเอง"
+        : instrumentWaves[0]?.survey.title ?? requestedInstrument;
+
+  const availableRounds = instrumentWaves.map((wave) =>
     serializeRoundInfo({
       id: wave.id,
+      surveyId: wave.surveyId,
       title: `${wave.survey.title} — ${wave.label}`,
+      instrumentCode: resolveEffectiveInstrumentCode(wave.survey),
+      instrumentLabel:
+        wave.survey.instrumentCode === SurveyInstrumentCode.GHQ28
+          ? "GHQ-28"
+          : wave.survey.title,
       startsAt: wave.opensAt,
       responseCount: wave._count.responses,
+      assignmentSummary: buildWaveAssignmentSummary(
+        wave.assignments.map((assignment) => ({
+          completedAt: assignment.completedAt,
+          closesAt: wave.closesAt,
+          waveStatus: wave.status,
+        }))
+      ),
     })
   );
 
@@ -268,7 +429,7 @@ export const buildScreeningRoundComparison = async (input?: {
     if (availableRounds.some((round) => round.id === requestedId)) {
       return requestedId;
     }
-    const legacyWave = ghqWaves
+    const legacyWave = instrumentWaves
       .filter((wave) => wave.surveyId === requestedId)
       .sort((a, b) => b.opensAt.getTime() - a.opensAt.getTime())[0];
     return legacyWave?.id;
@@ -291,6 +452,8 @@ export const buildScreeningRoundComparison = async (input?: {
   if (!round1Info || !round2Info) {
     return {
       generatedAt: new Date().toISOString(),
+      instrumentCode: requestedInstrument,
+      instrumentLabel,
       availableRounds,
       round1: round1Info,
       round2: round2Info,
@@ -299,12 +462,27 @@ export const buildScreeningRoundComparison = async (input?: {
     };
   }
 
-  const round1Wave = ghqWaves.find((wave) => wave.id === round1Info.id);
-  const round2Wave = ghqWaves.find((wave) => wave.id === round2Info.id);
+  if (!areScreeningRoundsComparable(round1Info, round2Info)) {
+    return {
+      generatedAt: new Date().toISOString(),
+      instrumentCode: requestedInstrument,
+      instrumentLabel,
+      availableRounds,
+      round1: round1Info,
+      round2: round2Info,
+      summary: buildScreeningComparisonSummary([]),
+      rows: [],
+    };
+  }
+
+  const round1Wave = instrumentWaves.find((wave) => wave.id === round1Info.id);
+  const round2Wave = instrumentWaves.find((wave) => wave.id === round2Info.id);
 
   if (!round1Wave || !round2Wave) {
     return {
       generatedAt: new Date().toISOString(),
+      instrumentCode: requestedInstrument,
+      instrumentLabel,
       availableRounds,
       round1: round1Info,
       round2: round2Info,
@@ -350,7 +528,11 @@ export const buildScreeningRoundComparison = async (input?: {
   round1Responses.forEach((response) => {
     round1ByStudentId.set(
       response.studentId,
-      resolveResponseScore(round1Wave.survey, response)
+      resolveResponseScore(
+        round1Wave.survey,
+        response,
+        resolveEffectiveInstrumentCode(round1Wave.survey)
+      )
     );
     students.set(response.studentId, {
       studentCode: formatStudentIdForResponse(response.student.studentId) ?? response.studentId,
@@ -363,7 +545,11 @@ export const buildScreeningRoundComparison = async (input?: {
   round2Responses.forEach((response) => {
     round2ByStudentId.set(
       response.studentId,
-      resolveResponseScore(round2Wave.survey, response)
+      resolveResponseScore(
+        round2Wave.survey,
+        response,
+        resolveEffectiveInstrumentCode(round2Wave.survey)
+      )
     );
     if (!students.has(response.studentId)) {
       students.set(response.studentId, {
@@ -383,6 +569,8 @@ export const buildScreeningRoundComparison = async (input?: {
 
   return {
     generatedAt: new Date().toISOString(),
+    instrumentCode: requestedInstrument,
+    instrumentLabel,
     availableRounds,
     round1: round1Info,
     round2: round2Info,

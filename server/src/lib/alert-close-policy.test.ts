@@ -17,7 +17,8 @@ describe("resolveAlertCloseData", () => {
     assert.equal(result.closedAt.toISOString(), now.toISOString());
     assert.equal(result.acknowledgedAt, undefined);
     assert.equal(result.auditAction, "alerts.dismiss");
-    assert.match(result.auditDescription, /ไม่ถือว่ารับเรื่อง/);
+    assert.match(result.auditDescription, /mode=dismiss_signal/);
+    assert.doesNotMatch(result.auditDescription, /ติดตามครบ|พูดคุย/);
   });
 
   it("follow_up rejects close when still not acknowledged", () => {
@@ -48,5 +49,8 @@ describe("resolveAlertCloseData", () => {
     assert.equal(result.acknowledgedAt, undefined);
     assert.equal(result.resolutionNote, "พูดคุยแล้ว");
     assert.equal(result.auditAction, "alerts.close");
+    assert.match(result.auditDescription, /mode=follow_up/);
+    assert.match(result.auditDescription, /hasNote=true/);
+    assert.doesNotMatch(result.auditDescription, /พูดคุยแล้ว/);
   });
 });

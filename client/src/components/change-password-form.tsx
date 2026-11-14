@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 
 export type PasswordFormTone = "student" | "portal" | "admin";
@@ -187,12 +188,12 @@ export function ChangePasswordForm({
           </div>
         </div>
 
-        {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
-        ) : null}
+        {error ? <InlineAlert className="rounded-2xl">{error}</InlineAlert> : null}
 
         {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div>
+          <InlineAlert tone="success" className="rounded-2xl">
+            {successMessage}
+          </InlineAlert>
         ) : null}
 
         <div className="grid grid-cols-[minmax(0,1fr)_7.75rem] gap-3 pt-2 sm:grid-cols-[minmax(0,1fr)_8.5rem]">

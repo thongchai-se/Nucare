@@ -6,6 +6,15 @@ import { Activity, Server, ShieldAlert, Users } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
+import {
+  formatAuditIpAddress,
+  formatAuditLogRef,
+  formatAuditTargetRef,
+  normalizeAuditAction,
+  resolveAuditActionDetail,
+  resolveAuditActionLabel,
+  resolveAuditTargetLabel,
+} from "@/lib/audit-display";
 import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import { getRoleHomePath } from "@/lib/roles";
 import { AdminShell } from "@/components/admin-shell";
@@ -13,6 +22,7 @@ import { AuditLogView } from "@/components/admin/audit-log-view";
 import { DashboardView } from "@/components/admin/dashboard-view";
 import { ReportsView, type AdminReportsSummary } from "@/components/admin/reports-view";
 import { SettingsView } from "@/components/admin/settings-view";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import type { Role } from "@/types/auth";
 
 type AdminRootView = "dashboard" | "audit" | "reports" | "settings";
@@ -43,6 +53,8 @@ type AuditLogItem = {
   description: string | null;
   ipAddress: string | null;
   createdAt: string;
+  targetStudentId?: string | null;
+  targetEmployeeId?: string | null;
   actor: {
     id: string;
     name: string;
@@ -88,78 +100,6 @@ const roleLabelMap: Record<Role, string> = {
   INSTRUCTOR: "อาจารย์ผู้สอน",
   MENTAL_HEALTH: "ผู้เชี่ยวชาญ",
   STUDENT: "นักศึกษา",
-};
-
-const auditActionLabelMap: Record<string, string> = {
-  "auth.login.success": "เข้าสู่ระบบสำเร็จ",
-  "auth.login.failed": "เข้าสู่ระบบไม่สำเร็จ",
-  "auth.logout": "ออกจากระบบ",
-  "auth.password-reset.request": "ขอรีเซ็ตรหัสผ่าน",
-  "auth.password-reset.complete": "รีเซ็ตรหัสผ่านสำเร็จ",
-  "auth.password-change": "เปลี่ยนรหัสผ่านสำเร็จ",
-  "auth.password-change.failed": "เปลี่ยนรหัสผ่านไม่สำเร็จ",
-  "admin.student.create": "สร้างบัญชีนักศึกษา",
-  "admin.user.create": "สร้างบัญชีบุคลากร",
-  "admin.student.update": "แก้ไขบัญชีนักศึกษา",
-  "admin.user.update": "แก้ไขบัญชีบุคลากร",
-  "admin.student.delete": "ลบบัญชีนักศึกษา",
-  "admin.user.delete": "ลบบัญชีบุคลากร",
-  "admin.student.import": "นำเข้าข้อมูลนักศึกษา",
-  "admin.user.import": "นำเข้าข้อมูลบุคลากร",
-  "admin.student.study-year.bulk-update": "เลื่อนชั้นปีแบบกลุ่ม",
-  "admin.advisor-assignment.assign": "มอบหมายอาจารย์ที่ปรึกษา",
-  "advisor.student-history.view": "เปิดดูประวัตินักศึกษา",
-  "advisor.referral.create": "สร้างรายการส่งต่อ",
-  "alerts.acknowledge": "รับทราบการแจ้งเตือน",
-  "instructor.behavior-record.create": "เพิ่มบันทึกพฤติกรรม",
-  "mental-health.referral.update-status": "อัปเดตสถานะการส่งต่อ",
-  "mental-health.specialized-care.create": "เพิ่มบันทึกการดูแลเฉพาะทาง",
-  "mental-health.emergency.resolve": "ปิดเคสฉุกเฉิน",
-  "student.assessment.submit": "ส่งแบบประเมิน",
-  "student.sos.create": "แจ้งเหตุฉุกเฉิน",
-};
-
-const auditActionDetailMap: Record<string, string> = {
-  "auth.login.success": "สร้างเซสชันเข้าสู่ระบบใหม่ให้ผู้ใช้งาน",
-  "auth.login.failed": "การยืนยันตัวตนไม่ผ่านหรือบัญชีไม่พร้อมใช้งาน",
-  "auth.logout": "สิ้นสุดเซสชันของผู้ใช้งาน",
-  "auth.password-reset.request": "บันทึกคำขอสำหรับตั้งรหัสผ่านใหม่",
-  "auth.password-reset.complete": "ยืนยันการตั้งรหัสผ่านใหม่เรียบร้อย",
-  "auth.password-change": "อัปเดตรหัสผ่านและออกโทเค็นการใช้งานใหม่",
-  "auth.password-change.failed": "ปฏิเสธการเปลี่ยนรหัสผ่านจากข้อมูลเดิมไม่ถูกต้อง",
-  "admin.student.create": "เพิ่มบัญชีนักศึกษาใหม่เข้าสู่ระบบ",
-  "admin.user.create": "เพิ่มบัญชีบุคลากรใหม่เข้าสู่ระบบ",
-  "admin.student.update": "ปรับปรุงข้อมูลนักศึกษาในระบบ",
-  "admin.user.update": "ปรับปรุงข้อมูลบุคลากรในระบบ",
-  "admin.student.delete": "ลบบัญชีนักศึกษาออกจากระบบ",
-  "admin.user.delete": "ลบบัญชีบุคลากรออกจากระบบ",
-  "admin.student.import": "นำเข้าข้อมูลนักศึกษาแบบกลุ่มจากไฟล์",
-  "admin.user.import": "นำเข้าข้อมูลบุคลากรแบบกลุ่มจากไฟล์ CSV",
-  "admin.student.study-year.bulk-update": "ปรับชั้นปีนักศึกษาแบบกลุ่มในครั้งเดียว",
-  "admin.advisor-assignment.assign": "บันทึกการจับคู่นักศึกษากับอาจารย์ที่ปรึกษา",
-  "advisor.student-history.view": "เข้าถึงหน้าประวัติและข้อมูลย้อนหลังของนักศึกษา",
-  "advisor.referral.create": "สร้างคำขอส่งต่อไปยังหน่วยงานที่เกี่ยวข้อง",
-  "alerts.acknowledge": "ผู้ใช้งานรับทราบเหตุแจ้งเตือนแล้ว",
-  "instructor.behavior-record.create": "สร้างรายการบันทึกพฤติกรรมใหม่",
-  "mental-health.referral.update-status": "อัปเดตสถานะการติดตามเคสส่งต่อ",
-  "mental-health.specialized-care.create": "เพิ่มข้อมูลการดูแลเฉพาะทางในระบบ",
-  "mental-health.emergency.resolve": "ปิดเคสฉุกเฉินหลังดำเนินการแล้ว",
-  "student.assessment.submit": "นักศึกษาส่งแบบประเมินเข้าระบบ",
-  "student.sos.create": "สร้างเหตุฉุกเฉินเพื่อขอความช่วยเหลือ",
-};
-
-const auditEntityLabelMap: Record<string, string> = {
-  AuthSession: "เซสชันเข้าสู่ระบบ",
-  User: "บัญชีผู้ใช้งาน",
-  StudentAccount: "บัญชีนักศึกษา",
-  StaffAccount: "บัญชีบุคลากร",
-  Alert: "การแจ้งเตือน",
-  StudentAssessment: "แบบประเมินนักศึกษา",
-  EmergencyCase: "เคสฉุกเฉิน",
-  CaseReferral: "รายการส่งต่อ",
-  BehaviorRecord: "บันทึกพฤติกรรม",
-  SpecializedCareRecord: "บันทึกการดูแลเฉพาะทาง",
-  StudentAdvisorAssignment: "การมอบหมายอาจารย์ที่ปรึกษา",
 };
 
 const formatThaiDateTime = (value: string): string => {
@@ -342,18 +282,6 @@ const getAuditStatus = (log: AuditLogItem): AuditStatus => {
   return haystack.includes("failed") || haystack.includes("error") ? "Failed" : "Success";
 };
 
-const getAuditTarget = (log: AuditLogItem): string => {
-  if (log.entityId && log.entityType) {
-    return `${log.entityType} • ${log.entityId}`;
-  }
-
-  if (log.entityType) {
-    return log.entityType;
-  }
-
-  return "ระบบ";
-};
-
 const getAuditStatusLabel = (status: AuditStatus): string => {
   if (status === "Success") {
     return "สำเร็จ";
@@ -366,22 +294,11 @@ const getAuditStatusLabel = (status: AuditStatus): string => {
   return "ไม่สำเร็จ";
 };
 
-const getNormalizedAuditAction = (log: AuditLogItem): string => {
-  if (!log.action.startsWith("admin.user.")) {
-    return log.action;
-  }
+const getNormalizedAuditAction = (log: AuditLogItem): string =>
+  normalizeAuditAction(log.action, log.description);
 
-  if ((log.description || "").toUpperCase().includes("STUDENT ACCOUNT")) {
-    return log.action.replace("admin.user.", "admin.student.");
-  }
-
-  return log.action;
-};
-
-const getAuditActionLabel = (log: AuditLogItem): string => {
-  const normalizedAction = getNormalizedAuditAction(log);
-  return auditActionLabelMap[normalizedAction] ?? normalizedAction;
-};
+const getAuditActionLabel = (log: AuditLogItem): string =>
+  resolveAuditActionLabel(log.action, log.description);
 
 const getResolvedAuditActionDetail = (log: AuditLogItem): string => {
   const importSummary = parseAuditImportSummary(log);
@@ -389,66 +306,45 @@ const getResolvedAuditActionDetail = (log: AuditLogItem): string => {
     return formatAuditImportDetail(importSummary);
   }
 
-  return getAuditActionDetail(log);
+  return resolveAuditActionDetail(log.action, log.description);
 };
 
-const getAuditActionDetail = (log: AuditLogItem): string =>
-  auditActionDetailMap[getNormalizedAuditAction(log)] ?? log.description ?? "กิจกรรมภายในระบบ";
+const getAuditTargetLabel = (log: AuditLogItem): string =>
+  resolveAuditTargetLabel(log.action, log.entityType, log.description);
 
-const getAuditActionScopedTargetLabel = (action: string): string | null => {
-  if (action.startsWith("admin.student.")) {
-    return "บัญชีนักศึกษา";
-  }
+const getAuditLogRef = (log: AuditLogItem): string =>
+  formatAuditLogRef(log.id, log.createdAt);
 
-  if (action.startsWith("admin.user.")) {
-    return "บัญชีบุคลากร";
-  }
+const getAuditTargetReference = (log: AuditLogItem): string =>
+  formatAuditTargetRef({
+    entityId: log.entityId,
+    entityType: log.entityType,
+    createdAt: log.createdAt,
+    studentId: log.targetStudentId,
+    employeeId: log.targetEmployeeId,
+  });
 
-  return null;
-};
-
-const getAuditTargetLabel = (log: AuditLogItem): string => {
-  const actionScopedLabel = getAuditActionScopedTargetLabel(getNormalizedAuditAction(log));
-  if (actionScopedLabel) {
-    return actionScopedLabel;
-  }
-
-  if (log.entityType) {
-    return auditEntityLabelMap[log.entityType] ?? log.entityType;
-  }
-
-  return "ระบบ";
-};
-
-const getAuditTargetReference = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  if (value.length <= 16) {
-    return value;
-  }
-
-  return `${value.slice(0, 8)}...${value.slice(-4)}`;
-};
+const getAuditIpLabel = (log: AuditLogItem): string => formatAuditIpAddress(log.ipAddress);
 
 const getAuditActorName = (log: AuditLogItem): string => log.actor?.name || "ระบบ";
 
 const getAuditSearchText = (log: AuditLogItem): string =>
   [
     log.id,
+    getAuditLogRef(log),
     getAuditActorName(log),
     log.actor?.role ? roleLabelMap[log.actor.role] : "",
     log.action,
+    getNormalizedAuditAction(log),
     getAuditActionLabel(log),
     getResolvedAuditActionDetail(log),
     log.description || "",
     log.ipAddress || "",
+    getAuditIpLabel(log),
     log.entityType || "",
-    getAuditTarget(log),
     getAuditTargetLabel(log),
     log.entityId || "",
-    getAuditTargetReference(log.entityId) || "",
+    getAuditTargetReference(log),
   ]
     .join(" ")
     .toLowerCase();
@@ -467,28 +363,30 @@ const exportAuditLogsCsv = (logs: AuditLogItem[]): void => {
     rows,
     "AuditLogs",
     [
-      "logId",
-      "createdAt",
-      "actorName",
-      "actorRole",
-      "action",
-      "entityType",
-      "entityId",
-      "description",
-      "ipAddress",
-      "status",
+      "เลขอ้างอิง",
+      "วันเวลา",
+      "ผู้ใช้งาน",
+      "บทบาท",
+      "กิจกรรม",
+      "รายละเอียด",
+      "เป้าหมาย",
+      "รหัสเป้าหมาย",
+      "IP Address",
+      "สถานะ",
+      "รหัสกิจกรรม",
     ],
     logs.map((log) => [
-      log.id,
+      getAuditLogRef(log),
       formatThaiDateTime(log.createdAt),
       getAuditActorName(log),
       log.actor?.role ? roleLabelMap[log.actor.role] : "ระบบ",
       getAuditActionLabel(log),
-      log.entityType ?? "",
-      log.entityId ?? "",
       getResolvedAuditActionDetail(log),
-      log.ipAddress ?? "",
+      getAuditTargetLabel(log),
+      getAuditTargetReference(log),
+      getAuditIpLabel(log),
       getAuditStatusLabel(getAuditStatus(log)),
+      getNormalizedAuditAction(log),
     ])
   );
 
@@ -729,9 +627,7 @@ function AdminDashboardContent() {
       userName={user.name}
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
-      {serverError && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>
-      )}
+      {serverError ? <InlineAlert className="mb-6 rounded-2xl p-4">{serverError}</InlineAlert> : null}
 
       {loadingData ? (
         <div className="flex min-h-[50vh] items-center justify-center">
@@ -772,10 +668,12 @@ function AdminDashboardContent() {
               formatThaiTime={formatThaiTime}
               getAuditActionLabel={getAuditActionLabel}
               getAuditActorName={getAuditActorName}
+              getAuditIpLabel={getAuditIpLabel}
+              getAuditLogRef={getAuditLogRef}
               getAuditStatus={getAuditStatus}
               getAuditStatusLabel={getAuditStatusLabel}
               getAuditTargetLabel={getAuditTargetLabel}
-              getNormalizedAuditAction={getNormalizedAuditAction}
+              getAuditTargetReference={getAuditTargetReference}
               getResolvedAuditActionDetail={getResolvedAuditActionDetail}
               onExport={() => exportAuditLogsCsv(filteredAuditLogs)}
               onNextPage={() => setAuditCurrentPage((prev) => Math.min(auditTotalPages, prev + 1))}

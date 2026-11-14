@@ -1,4 +1,4 @@
-export type SiteMediaSlot = "HOME_HERO" | "HOME_GALLERY" | "STUDENT_ACTIVITY";
+export type SiteMediaSlot = "HOME_HERO" | "HOME_GALLERY" | "HOME_VIDEO" | "STUDENT_ACTIVITY";
 
 export type SiteMediaItemDto = {
   id: string;

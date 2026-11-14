@@ -7,6 +7,7 @@ import { AlertCircle, FileSpreadsheet, ShieldAlert, Upload, X } from "lucide-rea
 import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { AdminShell } from "@/components/admin-shell";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { useAuth } from "@/context/auth.context";
 import { normalizeImportedStaffName } from "@/lib/name-prefix";
 import type { Role } from "@/types/auth";
@@ -922,15 +923,15 @@ export default function ImportStaffPage() {
                     <p className="mb-4 text-sm leading-relaxed text-gray-600">
                       กรุณาอัปโหลดไฟล์ .csv โดยต้องมีหัวตาราง title, name, email และ role ครบทุกช่อง
                     </p>
-                    <p className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                    <InlineAlert tone="info" className="mb-4 rounded-lg px-3 py-2">
                       ถ้าคนเดิมมีหลาย role สามารถใส่ในคอลัมน์ role โดยคั่นด้วย comma เช่น{" "}
                       <span className="font-semibold">ADVISOR, MENTAL_HEALTH</span> หรือใช้หลายแถวอีเมลเดียวกันได้
                       ระบบจะรวม role ให้อัตโนมัติถ้าชื่อเป็นคนเดียวกัน
-                    </p>
-                    <p className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    </InlineAlert>
+                    <InlineAlert tone="success" className="mb-4 rounded-lg px-3 py-2">
                       บัญชีบุคลากรใหม่จะได้ <span className="font-semibold">รหัสผ่านชั่วคราวแบบสุ่ม</span> ในผลลัพธ์หลังนำเข้า
                       และระบบจะบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก
-                    </p>
+                    </InlineAlert>
 
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs sm:hidden">
                       <div className="grid grid-cols-1 gap-2">
@@ -1103,40 +1104,39 @@ export default function ImportStaffPage() {
                 </div>
               </div>
 
-              {incompleteRowsCount > 0 && (
-                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              {incompleteRowsCount > 0 ? (
+                <InlineAlert tone="warning" className="mb-4 p-4">
                   กรุณาแก้ข้อมูลที่มีปัญหาก่อนนำเข้า: พบ {incompleteRowsCount} รายการ
-                </div>
-              )}
+                </InlineAlert>
+              ) : null}
 
-              {incompleteRowsCount === 0 && existingRowsCount > 0 && (
-                <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
-                  พบข้อมูลเดิมในระบบ {existingRowsCount} รายการ: อัปเดต {updateRowsCount} รายการ และข้าม {unchangedRowsCount} รายการที่ไม่เปลี่ยนแปลง
-                </div>
-              )}
+              {incompleteRowsCount === 0 && existingRowsCount > 0 ? (
+                <InlineAlert tone="warning" className="mb-4 p-4">
+                  พบข้อมูลเดิมในระบบ {existingRowsCount} รายการ: อัปเดต {updateRowsCount} รายการ และข้าม{" "}
+                  {unchangedRowsCount} รายการที่ไม่เปลี่ยนแปลง
+                </InlineAlert>
+              ) : null}
 
-              {conflictRowsCount > 0 && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {conflictRowsCount > 0 ? (
+                <InlineAlert className="mb-4 p-4">
                   พบอีเมลชนกับบัญชีนักศึกษาในระบบ {conflictRowsCount} รายการ กรุณาแก้ไขอีเมลในไฟล์ CSV ก่อนนำเข้า
-                </div>
-              )}
+                </InlineAlert>
+              ) : null}
 
-              {parseErrors.length > 0 && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">พบปัญหาในการอ่านไฟล์บางส่วน</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
+              {parseErrors.length > 0 ? (
+                <InlineAlert className="mb-4 p-4">
+                  <p>พบปัญหาในการอ่านไฟล์บางส่วน</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 font-normal">
                     {parseErrors.slice(0, 10).map((errorMessage) => (
                       <li key={errorMessage}>{errorMessage}</li>
                     ))}
                   </ul>
-                </div>
-              )}
+                </InlineAlert>
+              ) : null}
 
-              {existingCheckError && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  {existingCheckError}
-                </div>
-              )}
+              {existingCheckError ? (
+                <InlineAlert className="mb-4 p-4">{existingCheckError}</InlineAlert>
+              ) : null}
 
               <div className="mb-6 min-h-0 flex-1 overflow-y-auto overflow-x-auto rounded-xl border border-gray-200">
                 <table className="w-full min-w-[1260px] table-fixed text-left text-sm">
@@ -1255,19 +1255,15 @@ export default function ImportStaffPage() {
             </section>
           )}
 
-          {serverNotice && (
-            <section className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-800">
-              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-              <p className="text-sm font-medium">{serverNotice}</p>
-            </section>
-          )}
+          {serverNotice ? (
+            <InlineAlert tone="warning" className="mt-4 rounded-2xl p-5">
+              {serverNotice}
+            </InlineAlert>
+          ) : null}
 
-          {serverError && (
-            <section className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
-              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-              <p className="text-sm font-medium">{serverError}</p>
-            </section>
-          )}
+          {serverError ? (
+            <InlineAlert className="mt-4 rounded-2xl p-5">{serverError}</InlineAlert>
+          ) : null}
         </div>
       </div>
 

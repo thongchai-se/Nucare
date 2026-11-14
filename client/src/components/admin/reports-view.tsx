@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { BarChart3, FileSpreadsheet, Shield } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 
 export type AdminReportsSummary = {
   generatedAt: string;
@@ -59,11 +60,7 @@ export function ReportsView({ loading, summary, error, onRefresh, onOpenAudit }:
         </button>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InlineAlert className="rounded-2xl">{error}</InlineAlert> : null}
 
       {loading && !summary ? (
         <div className="flex min-h-40 items-center justify-center rounded-2xl border border-slate-200 bg-white">

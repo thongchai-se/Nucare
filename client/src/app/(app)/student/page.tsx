@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Bell,
-  Bot,
   CalendarClock,
   CalendarPlus,
   ChevronDown,
@@ -22,16 +20,25 @@ import {
   X,
 } from "lucide-react";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { FacultyLogo } from "@/components/faculty-logo";
 import { facultyFullName } from "@/lib/brand";
 import { useAuth } from "@/context/auth.context";
 import { PersonaCardGrid } from "@/components/student-chat/persona-card-grid";
 import { OrientationSurveyModal } from "@/components/orientation-survey-modal";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { StudentEmergencyHelpCard } from "@/components/student-emergency-help-card";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { ConsultationScheduleActions } from "@/components/student/consultation-schedule-actions";
 import { StudentDevCarousel } from "@/components/student/student-dev-carousel";
 import api from "@/lib/axios";
+import {
+  STUDENT_LOGOUT_LABEL,
+  STUDENT_NAV_ADVISOR,
+  STUDENT_NAV_ASSESSMENT,
+  STUDENT_NAV_HOME,
+  STUDENT_NAV_PROFILE,
+} from "@/lib/student-chrome";
 import {
   STUDENT_HOME_UPCOMING_LIMIT,
   hasOpenStudentConsultation,
@@ -41,7 +48,13 @@ import {
   resolveAppointmentLocation,
 } from "@/lib/student-consultation-inbox";
 import type { ConsultationScheduleOfferItem } from "@/lib/student-dashboard";
-import type { ActiveStudentSurveyResult, Survey } from "@/types/survey";
+import type { ActiveStudentSurveyResult, StudentFacingSurvey, Survey } from "@/types/survey";
+
+type DashboardSurvey = Survey | StudentFacingSurvey;
+
+/** จำนวนคำถามของแบบประเมินที่ส่งมาในรูปแบบเต็มหรือแบบสำหรับนักศึกษา */
+const getDashboardSurveyQuestionCount = (survey: DashboardSurvey): number =>
+  Array.isArray(survey.questions) ? survey.questions.length : Number((survey as Survey).questionCount || 0);
 
 const HOME_CHAT_PERSONAS = [
   {
@@ -103,18 +116,9 @@ type StudentMentalHealthAppointment = {
   providerName: string;
 };
 
-type StudentAlertItem = {
-  id: string;
-  title: string;
-  message: string;
-  status: "OPEN" | "ACKNOWLEDGED" | "CLOSED";
-  type: string;
-  createdAt: string;
-};
-
 type ActiveStudentSurveyResponse = {
-  survey: Survey | null;
-  surveys?: Survey[];
+  survey: DashboardSurvey | null;
+  surveys?: DashboardSurvey[];
   response: ActiveStudentSurveyResult | null;
   hasSubmitted: boolean;
 };
@@ -155,14 +159,13 @@ export default function StudentDashboardPage() {
     description: "",
   });
   const [studentServerError, setStudentServerError] = useState("");
-  const [activeSurvey, setActiveSurvey] = useState<Survey | null>(null);
+  const [activeSurvey, setActiveSurvey] = useState<DashboardSurvey | null>(null);
+  const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
   const [activeSurveySubmittedAt, setActiveSurveySubmittedAt] = useState<string | null>(null);
   const [hasSubmittedActiveSurvey, setHasSubmittedActiveSurvey] = useState(false);
   const [careTeam, setCareTeam] = useState<StudentCareTeamMember[]>([]);
   const [consultationRequests, setConsultationRequests] = useState<StudentConsultationRequest[]>([]);
   const [mentalHealthAppointments, setMentalHealthAppointments] = useState<StudentMentalHealthAppointment[]>([]);
-  const [studentAlerts, setStudentAlerts] = useState<StudentAlertItem[]>([]);
-  const [busyAlertId, setBusyAlertId] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profileMenuCloseTimerRef = useRef<number | null>(null);
 
@@ -254,16 +257,20 @@ export default function StudentDashboardPage() {
             careTeam?: StudentCareTeamMember[];
             consultationRequests?: StudentConsultationRequest[];
             mentalHealthAppointments?: StudentMentalHealthAppointment[];
-            alerts?: StudentAlertItem[];
           }>("/api/student/dashboard"),
           api.get<ActiveStudentSurveyResponse>("/api/student/surveys/active"),
         ]);
         setCareTeam(response.data.careTeam || []);
         setConsultationRequests(response.data.consultationRequests || []);
         setMentalHealthAppointments(response.data.mentalHealthAppointments || []);
-        setStudentAlerts(response.data.alerts || []);
-        setActiveSurvey(surveyResponse.data.survey);
-        setHasSubmittedActiveSurvey(surveyResponse.data.hasSubmitted);
+        // surveys[] ที่ค้างทำ (ว่างเมื่อทำครบแล้ว) — ใช้รายการแรกเป็น CTA และรองรับ API เดิมที่ส่งแค่ survey เดี่ยว
+        const surveyPayload = surveyResponse.data;
+        const pendingSurveys = surveyPayload.hasSubmitted
+          ? []
+          : surveyPayload.surveys ?? (surveyPayload.survey ? [surveyPayload.survey] : []);
+        setActiveSurvey(pendingSurveys[0] ?? surveyPayload.survey);
+        setPendingSurveyCount(pendingSurveys.length);
+        setHasSubmittedActiveSurvey(pendingSurveys.length === 0 && surveyPayload.hasSubmitted);
         setActiveSurveySubmittedAt(surveyResponse.data.response?.submittedAt || null);
       } catch (error) {
         setStudentServerError(getApiErrorMessage(error, "ไม่สามารถโหลดข้อมูลนักศึกษาได้"));
@@ -276,32 +283,6 @@ export default function StudentDashboardPage() {
   const handleLogout = async () => {
     await logout();
     router.replace("/?auth=login");
-  };
-
-  const handleAcknowledgeStudentAlert = async (alertId: string) => {
-    if (busyAlertId) {
-      return;
-    }
-    setBusyAlertId(alertId);
-    try {
-      await api.patch(`/api/alerts/${alertId}/acknowledge`);
-      setStudentAlerts((current) => current.filter((item) => item.id !== alertId));
-      setStudentToast({
-        open: true,
-        tone: "success",
-        title: "รับทราบแล้ว",
-        description: "เก็บการแจ้งเตือนออกจากรายการเปิดแล้ว",
-      });
-    } catch (error) {
-      setStudentToast({
-        open: true,
-        tone: "error",
-        title: "รับทราบไม่สำเร็จ",
-        description: getApiErrorMessage(error, "ลองใหม่อีกครั้ง"),
-      });
-    } finally {
-      setBusyAlertId(null);
-    }
   };
 
   const formatStudentIdDisplay = (studentId: string | null | undefined): string => {
@@ -352,11 +333,6 @@ export default function StudentDashboardPage() {
   const hasUpcomingAppointments = upcomingTotal > 0;
   const hasOpenConsultation = hasOpenStudentConsultation(consultationRequests);
 
-  const closeStudentMobileMenu = () => {
-    setStudentMobileMenuOpen(false);
-    setProfileMenuOpen(false);
-  };
-
   const openProfileMenu = () => {
     if (profileMenuCloseTimerRef.current !== null) {
       window.clearTimeout(profileMenuCloseTimerRef.current);
@@ -400,19 +376,17 @@ export default function StudentDashboardPage() {
         tone={studentToast.tone}
         zIndexClassName="z-[300]"
       />
-      {studentServerError && (
-        <div className="fixed left-1/2 top-24 z-[310] w-[min(92vw,36rem)] -translate-x-1/2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
+      {studentServerError ? (
+        <InlineAlert className="fixed left-1/2 top-24 z-[310] w-[min(92vw,36rem)] -translate-x-1/2 shadow-lg">
           {studentServerError}
-        </div>
-      )}
+        </InlineAlert>
+      ) : null}
 
       <nav className="fixed z-50 w-full border-b border-white/70 bg-white/85 backdrop-blur-md transition-all duration-300">
         <div className="mx-auto max-w-[116rem] px-3 sm:px-4 lg:px-5">
           <div className="flex h-16 items-center justify-between sm:h-20">
             <Link href="/student" className="flex items-center gap-2.5 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-md shadow-blue-500/30 sm:h-10 sm:w-10">
-                <HeartPulse className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
+              <FacultyLogo size={40} className="h-9 w-9 sm:h-10 sm:w-10" priority />
               <div className="flex flex-col justify-center">
                 <span className="mb-0.5 block text-lg font-bold leading-none text-blue-900 sm:text-xl">
                   Nucare<span className="text-cyan-500">.</span>
@@ -424,42 +398,35 @@ export default function StudentDashboardPage() {
             </Link>
 
             <div className="hidden min-w-0 flex-1 items-center justify-center xl:flex">
-              <div className="grid grid-cols-5 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
+              <div className="grid grid-cols-4 gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1">
                 <Link
                   href="/student"
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-bold text-blue-700 shadow-sm"
                   aria-current="page"
                 >
                   <Home className="h-4 w-4" />
-                  หน้าหลัก
+                  {STUDENT_NAV_HOME}
                 </Link>
                 <Link
                   href="/student/assessment"
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 transition-colors hover:bg-white/70 hover:text-blue-700"
                 >
                   <ClipboardEdit className="h-4 w-4" />
-                  ประเมิน
-                </Link>
-                <Link
-                  href="/student/chat"
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 transition-colors hover:bg-white/70 hover:text-blue-700"
-                >
-                  <Bot className="h-4 w-4" />
-                  แชท AI
+                  {STUDENT_NAV_ASSESSMENT}
                 </Link>
                 <Link
                   href="/student/advisor"
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 transition-colors hover:bg-white/70 hover:text-blue-700"
                 >
                   <MessageSquare className="h-4 w-4" />
-                  ที่ปรึกษา
+                  {STUDENT_NAV_ADVISOR}
                 </Link>
                 <Link
                   href="/student/profile"
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 transition-colors hover:bg-white/70 hover:text-blue-700"
                 >
                   <Contact className="h-4 w-4" />
-                  โปรไฟล์
+                  {STUDENT_NAV_PROFILE}
                 </Link>
               </div>
             </div>
@@ -507,28 +474,16 @@ export default function StudentDashboardPage() {
                   }`}
                   role="menu"
                 >
-                  <Link
-                    href="/student/profile"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
-                    onClick={() => setProfileMenuOpen(false)}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-                      <Contact className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">ประวัติส่วนตัว</p>
-                    </div>
-                  </Link>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-slate-100 px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-red-50/80"
                   >
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
                       <LogOut className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-red-600">ออกจากระบบ</p>
+                      <p className="text-sm font-semibold text-red-600">{STUDENT_LOGOUT_LABEL}</p>
                     </div>
                   </button>
                 </div>
@@ -550,7 +505,7 @@ export default function StudentDashboardPage() {
 
         <div
           className={`overflow-hidden border-t border-slate-100 bg-white transition-all duration-300 xl:hidden ${
-            studentMobileMenuOpen ? "max-h-[420px] pb-4" : "max-h-0"
+            studentMobileMenuOpen ? "max-h-[16rem] pb-4" : "max-h-0"
           }`}
         >
           <div className="space-y-3 px-4 py-3">
@@ -560,59 +515,19 @@ export default function StudentDashboardPage() {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-base font-bold text-slate-900">{user.name}</p>
-                <p className="truncate text-xs font-medium text-slate-500">{user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}</p>
+                <p className="truncate text-xs font-medium text-slate-500">
+                  {user.studentId ? `รหัสนักศึกษา: ${identifier}` : identifier}
+                </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Link
-                href="/student"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100"
-                onClick={closeStudentMobileMenu}
-              >
-                <Home className="h-4 w-4" />
-                หน้าหลัก
-              </Link>
-              <Link
-                href="/student/assessment"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                onClick={closeStudentMobileMenu}
-              >
-                <ClipboardEdit className="h-4 w-4 text-blue-700" />
-                ประเมิน
-              </Link>
-              <Link
-                href="/student/chat"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                onClick={closeStudentMobileMenu}
-              >
-                <Bot className="h-4 w-4 text-indigo-700" />
-                แชท AI
-              </Link>
-              <Link
-                href="/student/advisor"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                onClick={closeStudentMobileMenu}
-              >
-                <MessageSquare className="h-4 w-4 text-cyan-700" />
-                ที่ปรึกษา
-              </Link>
-              <Link
-                href="/student/profile"
-                className="flex items-center justify-center gap-2 rounded-[1.05rem] border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 hover:text-blue-700"
-                onClick={closeStudentMobileMenu}
-              >
-                <Contact className="h-4 w-4 text-slate-700" />
-                โปรไฟล์
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
-              >
-                <LogOut className="h-4 w-4" />
-                ออกจากระบบ
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {STUDENT_LOGOUT_LABEL}
+            </button>
           </div>
         </div>
       </nav>
@@ -640,7 +555,8 @@ export default function StudentDashboardPage() {
                       <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{activeSurvey.description}</p>
                     ) : null}
                     <p className="mt-2 text-sm font-bold text-blue-700">
-                      {activeSurvey.questionCount} คำถามที่เปิดรับคำตอบอยู่
+                      {getDashboardSurveyQuestionCount(activeSurvey)} คำถามที่เปิดรับคำตอบอยู่
+                      {pendingSurveyCount > 1 ? ` · มีแบบประเมินรอทำอีก ${pendingSurveyCount - 1} รายการ` : ""}
                     </p>
                   </div>
                 </div>
@@ -827,41 +743,6 @@ export default function StudentDashboardPage() {
                   ส่งคำตรงถึงศูนย์ให้คำปรึกษา — แยกจากการนัดกับที่ปรึกษา
                 </p>
               </Link>
-
-              <div className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
-                    <Bell className="h-4 w-4 text-amber-600" />
-                    การแจ้งเตือน
-                  </h3>
-                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                    {studentAlerts.length}
-                  </span>
-                </div>
-                {studentAlerts.length > 0 ? (
-                  <ul className="max-h-[18rem] space-y-2 overflow-y-auto overscroll-contain pr-1 lg:max-h-[20rem]">
-                    {studentAlerts.map((alert) => (
-                      <li key={alert.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="min-w-0 text-sm font-bold leading-snug text-slate-900">{alert.title}</p>
-                          <button
-                            type="button"
-                            disabled={busyAlertId === alert.id}
-                            onClick={() => void handleAcknowledgeStudentAlert(alert.id)}
-                            className="shrink-0 text-[11px] font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
-                          >
-                            รับทราบ
-                          </button>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{alert.message}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{formatThaiDateTime(alert.createdAt)}</p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-slate-500">ยังไม่มีการแจ้งเตือนใหม่</p>
-                )}
-              </div>
 
               <div className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">

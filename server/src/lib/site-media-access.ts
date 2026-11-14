@@ -4,6 +4,7 @@ import { hasAssignedRole } from "./roles";
 const ALL_SLOTS: SiteMediaSlot[] = [
   SiteMediaSlot.HOME_HERO,
   SiteMediaSlot.HOME_GALLERY,
+  SiteMediaSlot.HOME_VIDEO,
   SiteMediaSlot.STUDENT_ACTIVITY,
 ];
 

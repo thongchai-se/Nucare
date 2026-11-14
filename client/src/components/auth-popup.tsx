@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
   ArrowLeft,
   ArrowRight,
   Eye,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 import { getSafeNextPath } from "@/lib/auth-routes";
 import { acquireBodyScrollLock } from "@/lib/body-scroll-lock";
@@ -284,12 +284,7 @@ export default function AuthPopup({
               </div>
 
               <form className="space-y-5" onSubmit={handleLoginSubmit}>
-                {loginError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
-                    <AlertCircle className="mt-0.5 shrink-0" size={16} />
-                    <p>{loginError}</p>
-                  </div>
-                )}
+                {loginError ? <InlineAlert className="p-3">{loginError}</InlineAlert> : null}
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">รหัสประจำตัว หรือ อีเมล</label>
@@ -413,18 +408,9 @@ export default function AuthPopup({
                   </div>
                 </div>
 
-                {forgotError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
-                    <AlertCircle className="mt-0.5 shrink-0" size={16} />
-                    <p>{forgotError}</p>
-                  </div>
-                )}
+                {forgotError ? <InlineAlert>{forgotError}</InlineAlert> : null}
 
-                {forgotSuccess && (
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-                    {forgotSuccess}
-                  </div>
-                )}
+                {forgotSuccess ? <InlineAlert tone="success">{forgotSuccess}</InlineAlert> : null}
 
                 <button
                   type="submit"

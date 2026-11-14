@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Lock } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 
 const INVALID_RESET_TOKEN_MESSAGE = "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุ";
@@ -165,7 +166,8 @@ function ResetPasswordForm() {
           </svg>
           <p className="text-lg font-medium tracking-wide text-gray-800">
             เปลี่ยนรหัสผ่านสำเร็จ!
-            <span className="mt-1 block text-sm font-normal text-gray-500">
+            <span className="mt-2 flex items-center justify-center gap-2 text-sm font-normal text-gray-500">
+              <span className="loader h-4 w-4 text-blue-600" aria-hidden="true" />
               กำลังพาไปหน้าเข้าสู่ระบบ...
             </span>
           </p>
@@ -179,15 +181,13 @@ function ResetPasswordForm() {
         </div>
 
         {isTokenChecking ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-600">
+            <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
             กำลังตรวจสอบลิงก์เปลี่ยนรหัสผ่าน...
           </div>
         ) : !isTokenValid ? (
           <div className="space-y-4">
-            <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
-              <AlertCircle className="mt-0.5 shrink-0" size={16} />
-              <p>{tokenError || INVALID_RESET_TOKEN_MESSAGE}</p>
-            </div>
+            <InlineAlert>{tokenError || INVALID_RESET_TOKEN_MESSAGE}</InlineAlert>
 
             <Link
               href="/?auth=forgot"
@@ -250,12 +250,7 @@ function ResetPasswordForm() {
               </div>
             </div>
 
-            {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
-                <AlertCircle className="mt-0.5 shrink-0" size={16} />
-                <p>{error}</p>
-              </div>
-            )}
+            {error ? <InlineAlert>{error}</InlineAlert> : null}
 
             <button
               type="submit"
@@ -322,7 +317,8 @@ export default function ResetPasswordPage() {
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4 font-sans text-slate-900">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
             <p className="text-sm text-slate-500">กำลังโหลดหน้าตั้งรหัสผ่านใหม่...</p>
           </div>
         </main>

@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, ChevronRight, ClipboardList, Flag, Send } from "lucide-react";
+import { AssessmentTimelinePanel } from "@/components/assessment/assessment-timeline-panel";
 import { presentClinicalNote } from "@/lib/clinical-note-display";
 import { presentHistoryText, stripSeedMarkers } from "@/lib/history-display";
 import { formatStudentIdDisplay } from "@/lib/student-id";
@@ -237,6 +238,11 @@ export function AdviseeDetailView({
         </div>
 
         <div className="space-y-4 p-4 sm:p-6">
+          <AssessmentTimelinePanel
+            endpoint={`/api/advisor/students/${student.id}/assessment-history`}
+            formatThaiDate={formatThaiDate}
+          />
+
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 sm:px-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-800">สัญญาณจากแชท AI</h3>
@@ -271,7 +277,9 @@ export function AdviseeDetailView({
                 <ClipboardList className="h-4 w-4 text-[#0057A8]" />
                 ประวัติการติดตามล่าสุด
               </h3>
-              {loadingHistory ? <span className="text-xs text-slate-400">กำลังโหลด...</span> : null}
+              {loadingHistory ? (
+                <span className="loader h-3.5 w-3.5 text-blue-600" aria-label="กำลังโหลด" />
+              ) : null}
             </div>
 
             {visibleHistory.length > 0 ? (

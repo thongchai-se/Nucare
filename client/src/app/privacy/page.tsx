@@ -17,6 +17,7 @@ import {
 import { type MouseEvent, useEffect, useMemo, useState } from "react";
 import LegalTopNav from "@/components/legal-top-nav";
 import LegalFooter from "@/components/legal-footer";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import { facultyFullName } from "@/lib/brand";
 
@@ -498,9 +499,9 @@ export default function PrivacyPolicyPage() {
                       </p>
                     </div>
 
-                    <p className="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+                    <InlineAlert className="rounded-lg p-3">
                       * ผู้ที่ไม่เกี่ยวข้องกับกระบวนการดูแลจะไม่สามารถเข้าถึงผลประเมินเชิงสุขภาพจิตของผู้ใช้งานได้
-                    </p>
+                    </InlineAlert>
                   </div>
                 </section>
 

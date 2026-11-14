@@ -11,6 +11,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleToast } from "@/components/role-toast";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import {
   MAX_STUDY_YEAR,
   normalizeStudyYear,
@@ -650,31 +651,31 @@ export default function ManageStudentsPage() {
       />
 
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
             <h2 className="text-2xl font-bold text-slate-800">จัดการนักศึกษา</h2>
             <p className="mt-1 text-sm text-slate-500">ดูแลบัญชีนักศึกษาโดยเฉพาะ แยกออกจากบุคลากรเพื่อให้ค้นหา แก้ไข และตรวจสอบได้ง่ายขึ้น</p>
           </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
             <button
               type="button"
               onClick={openBulkPromotionModal}
-              className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 font-medium text-slate-700 shadow-sm transition-all duration-200 hover:bg-slate-50 sm:w-auto"
+              className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
             >
               เลื่อนชั้นปีแบบกลุ่ม
             </button>
             <button
               type="button"
               onClick={openAddModal}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 font-medium text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow sm:w-auto"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4 shrink-0" aria-hidden />
               เพิ่มนักศึกษาใหม่
             </button>
           </div>
         </div>
 
-        {serverError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{serverError}</div>}
+        {serverError ? <InlineAlert className="p-4">{serverError}</InlineAlert> : null}
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 md:flex-row">
@@ -691,16 +692,20 @@ export default function ManageStudentsPage() {
           </div>
 
           <div className="overflow-hidden">
-            {loadingUsers && (
-              <div className="flex items-center justify-center border-b border-slate-100 px-4 py-4 text-sm text-slate-500">
-                <span className="loader mr-2 h-4 w-4 text-blue-600"></span>
-                กำลังโหลดข้อมูลนักศึกษา...
-              </div>
-            )}
-
             <div className="divide-y divide-slate-100 md:hidden">
-              {paginatedUsers.length === 0 && <div className="px-5 py-10 text-center text-sm text-slate-500">ไม่พบนักศึกษา</div>}
-              {paginatedUsers.map((managedUser, index) => {
+              {paginatedUsers.length === 0 && (
+                <div className="flex items-center justify-center gap-2 px-5 py-10 text-center text-sm text-slate-500">
+                  {loadingUsers ? (
+                    <>
+                      <span className="loader h-4 w-4 text-blue-600" aria-hidden />
+                      กำลังโหลดข้อมูลนักศึกษา...
+                    </>
+                  ) : (
+                    "ไม่พบนักศึกษา"
+                  )}
+                </div>
+              )}
+              {!loadingUsers && paginatedUsers.map((managedUser, index) => {
                 return (
                   <div key={managedUser.id} className="min-h-[152px] space-y-3 px-4 py-4">
                     <div className="min-w-0">
@@ -768,22 +773,22 @@ export default function ManageStudentsPage() {
                 <colgroup>
                   <col className="w-20" />
                   <col className="w-[22%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
                   <col className="w-[20%]" />
-                  <col className="w-[10%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[12%]" />
                 </colgroup>
                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-6 py-4 text-center font-medium">ลำดับ</th>
                     <th className="px-6 py-4 font-medium">ชื่อ-นามสกุล</th>
-                    <th className="px-6 py-4 font-medium">รหัสนักศึกษา</th>
-                    <th className="px-6 py-4 text-center font-medium">ชั้นปี</th>
-                    <th className="px-6 py-4 font-medium">เซค / กลุ่ม</th>
+                    <th className="px-3 py-4 font-medium">รหัสนักศึกษา</th>
+                    <th className="px-3 py-4 text-center font-medium">ชั้นปี</th>
+                    <th className="px-3 py-4 text-center font-medium">เซค / กลุ่ม</th>
                     <th className="px-6 py-4 font-medium">อีเมล</th>
-                    <th className="px-6 py-4 text-center font-medium">สถานะ</th>
+                    <th className="px-3 py-4 text-center font-medium">สถานะ</th>
                     <th className="px-6 py-4 text-right font-medium">จัดการ</th>
                   </tr>
                 </thead>
@@ -791,12 +796,20 @@ export default function ManageStudentsPage() {
                   {paginatedUsers.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-6 py-10 text-center text-slate-500">
-                        ไม่พบนักศึกษา
+                        {loadingUsers ? (
+                          <span className="inline-flex items-center justify-center gap-2">
+                            <span className="loader h-4 w-4 text-blue-600" aria-hidden />
+                            กำลังโหลดข้อมูลนักศึกษา...
+                          </span>
+                        ) : (
+                          "ไม่พบนักศึกษา"
+                        )}
                       </td>
                     </tr>
                   )}
 
-                  {paginatedUsers.map((managedUser, index) => {
+                  {!loadingUsers &&
+                    paginatedUsers.map((managedUser, index) => {
                     const isDeleting = deletingId === managedUser.id;
 
                     return (
@@ -809,17 +822,17 @@ export default function ManageStudentsPage() {
                             {managedUser.instructorNames?.length ? ` · ผู้สอน: ${managedUser.instructorNames.join(", ")}` : ""}
                           </p>
                         </td>
-                        <td className="px-6 py-4 font-mono text-sm text-slate-700 whitespace-nowrap">{managedUser.studentId || "-"}</td>
-                        <td className="px-6 py-4 text-center text-slate-700">{managedUser.studyYear || "-"}</td>
-                        <td className="px-6 py-4 text-slate-500">
+                        <td className="px-3 py-4 font-mono text-sm text-slate-700 whitespace-nowrap">{managedUser.studentId || "-"}</td>
+                        <td className="px-3 py-4 text-center text-slate-700">{managedUser.studyYear || "-"}</td>
+                        <td className="px-3 py-4 text-center text-slate-500">
                           <p className="truncate">{managedUser.section || "-"}</p>
                         </td>
                         <td className="px-6 py-4 text-slate-500">
                           <p className="truncate">{managedUser.email || "-"}</p>
                         </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${managedUser.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
-                            <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${managedUser.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
+                        <td className="px-3 py-4 text-center">
+                          <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${managedUser.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                            <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${managedUser.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
                             {managedUser.status === "active" ? "ใช้งาน" : "ระงับ"}
                           </span>
                         </td>
@@ -1134,11 +1147,11 @@ export default function ManageStudentsPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <InlineAlert tone="info">
               จะอัปเดตนักศึกษาชั้นปี <span className="font-semibold">{bulkFromStudyYear}</span> จำนวน{" "}
               <span className="font-semibold">{bulkPromotionMatchCount}</span> คน ให้เป็นชั้นปี{" "}
               <span className="font-semibold">{bulkToStudyYear}</span>
-            </div>
+            </InlineAlert>
 
             <div className="flex justify-end gap-3 pt-2">
               <button

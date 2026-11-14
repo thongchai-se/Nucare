@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { SurveyInstrumentCode, SurveyWaveStatus } from "@prisma/client";
 import {
+  areScreeningRoundsComparable,
   buildScreeningComparisonRows,
   buildScreeningComparisonSummary,
+  buildWaveAssignmentSummary,
   formatDistressChange,
 } from "./executive-screening-comparison";
 
@@ -165,5 +168,52 @@ describe("executive screening comparison", () => {
   it("ESC-05 formatDistressChange returns arrow label when levels differ", () => {
     assert.equal(formatDistressChange("Normal", "Mild"), "Normal → Mild");
     assert.equal(formatDistressChange("Mild", "Mild"), null);
+  });
+
+  it("ESC-06 summarizes assigned, completed, pending, and overdue by wave", () => {
+    const summary = buildWaveAssignmentSummary(
+      [
+        {
+          completedAt: new Date("2026-01-02T00:00:00.000Z"),
+          closesAt: new Date("2026-01-10T00:00:00.000Z"),
+          waveStatus: SurveyWaveStatus.CLOSED,
+        },
+        {
+          completedAt: null,
+          closesAt: new Date("2026-01-10T00:00:00.000Z"),
+          waveStatus: SurveyWaveStatus.CLOSED,
+        },
+        {
+          completedAt: null,
+          closesAt: new Date("2026-07-10T00:00:00.000Z"),
+          waveStatus: SurveyWaveStatus.OPEN,
+        },
+      ],
+      new Date("2026-06-01T00:00:00.000Z")
+    );
+
+    assert.deepEqual(summary, {
+      assignedCount: 3,
+      completedCount: 1,
+      pendingCount: 1,
+      overdueCount: 1,
+    });
+  });
+
+  it("ESC-07 never compares different custom surveys but allows GHQ-28 waves", () => {
+    assert.equal(
+      areScreeningRoundsComparable(
+        { instrumentCode: SurveyInstrumentCode.CUSTOM, surveyId: "custom-a" },
+        { instrumentCode: SurveyInstrumentCode.CUSTOM, surveyId: "custom-b" }
+      ),
+      false
+    );
+    assert.equal(
+      areScreeningRoundsComparable(
+        { instrumentCode: SurveyInstrumentCode.GHQ28, surveyId: "ghq-a" },
+        { instrumentCode: SurveyInstrumentCode.GHQ28, surveyId: "ghq-b" }
+      ),
+      true
+    );
   });
 });

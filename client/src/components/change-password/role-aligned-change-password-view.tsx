@@ -6,6 +6,7 @@ import { ChevronRight, LogOut, Menu, X } from "lucide-react";
 import { AppBrand } from "@/components/app-brand";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { getInitials, type PortalShellConfig } from "@/components/change-password/shared";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import type { User } from "@/types/auth";
 
 export function RoleAlignedChangePasswordView({
@@ -87,10 +88,12 @@ export function RoleAlignedChangePasswordView({
 
         <div className="border-t border-slate-100 bg-slate-50/80 p-4">
           {config.footerNote ? (
-            <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <InlineAlert tone="success" className="mb-4 rounded-2xl text-emerald-800">
               <div className="font-bold">{config.footerNote.title}</div>
-              <p className="mt-1 text-xs leading-relaxed text-emerald-700">{config.footerNote.description}</p>
-            </div>
+              <p className="mt-1 text-xs font-normal leading-relaxed text-emerald-700">
+                {config.footerNote.description}
+              </p>
+            </InlineAlert>
           ) : null}
           <button
             type="button"

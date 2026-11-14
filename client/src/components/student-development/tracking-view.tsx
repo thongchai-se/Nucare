@@ -1,6 +1,7 @@
 "use client";
 
 import { Filter, Megaphone, Send } from "lucide-react";
+import { ScreeningReviewQueue } from "@/components/screening-review/screening-review-queue";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import {
   RosterCountBadge,
@@ -59,6 +60,12 @@ export function TrackingView({
           ส่งแจ้งเตือนทั้งหมด
         </button>
       </div>
+
+      <ScreeningReviewQueue
+        basePath="/api/student-development/screening-reviews"
+        viewer="staff"
+        showAdvisorName
+      />
 
       <RosterTableCard
         toolbar={

@@ -9,9 +9,11 @@ describe("site-media access", () => {
     assert.deepEqual(slots, [
       SiteMediaSlot.HOME_HERO,
       SiteMediaSlot.HOME_GALLERY,
+      SiteMediaSlot.HOME_VIDEO,
       SiteMediaSlot.STUDENT_ACTIVITY,
     ]);
     assert.equal(canManageSiteMediaSlot(Role.ADMIN, SiteMediaSlot.HOME_HERO), true);
+    assert.equal(canManageSiteMediaSlot(Role.ADMIN, SiteMediaSlot.HOME_VIDEO), true);
   });
 
   it("SMA-02 SD จัดการได้เฉพาะกิจกรรมหน้านิสิต", () => {
@@ -20,6 +22,7 @@ describe("site-media access", () => {
     assert.equal(canManageSiteMediaSlot(Role.STUDENT_DEVELOPMENT, SiteMediaSlot.STUDENT_ACTIVITY), true);
     assert.equal(canManageSiteMediaSlot(Role.STUDENT_DEVELOPMENT, SiteMediaSlot.HOME_HERO), false);
     assert.equal(canManageSiteMediaSlot(Role.STUDENT_DEVELOPMENT, SiteMediaSlot.HOME_GALLERY), false);
+    assert.equal(canManageSiteMediaSlot(Role.STUDENT_DEVELOPMENT, SiteMediaSlot.HOME_VIDEO), false);
   });
 
   it("SMA-03 บทบาทอื่นจัดการไม่ได้", () => {

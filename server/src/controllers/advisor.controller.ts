@@ -16,6 +16,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { canAccessStudent, getStudentScopeWhere, isAdvisorRole } from "../lib/access-control";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import {
   assertObservationReportTarget,
   createStudentObservation,
@@ -843,7 +844,7 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
       action: "advisor.consultation-request.update",
       entityType: "ConsultationRequest",
       entityId: updatedRequest.id,
-      description: `อาจารย์อัปเดตคำขอปรึกษาเป็น ${nextStatus}`,
+      description: formatAuditMetadata({ status: nextStatus }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1100,7 +1101,7 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
       action: "advisor.student-history.view",
       entityType: "User",
       entityId: student.id,
-      description: "อาจารย์ที่ปรึกษาเปิดดูประวัตินักศึกษาในความดูแล",
+      description: formatAuditMetadata({ op: "view_advisee_history" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1353,7 +1354,7 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
       action: "advisor.referral.create",
       entityType: "CaseReferral",
       entityId: referral.id,
-      description: "อาจารย์ที่ปรึกษาส่งต่อเคส",
+      description: formatAuditMetadata({ op: "create_referral" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1462,7 +1463,7 @@ export const createObservationRecord = async (req: Request, res: Response): Prom
       action: "advisor.observation.create",
       entityType: "BehaviorRecord",
       entityId: behaviorRecord.id,
-      description: "อาจารย์แจ้งข้อสังเกตแนวโน้มไปยังที่ปรึกษาของนิสิต (นอกสังกัดผู้แจ้ง)",
+      description: formatAuditMetadata({ op: "observation_report" }),
       ipAddress: getRequestIpAddress(req),
     });
 

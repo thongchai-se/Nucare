@@ -14,6 +14,7 @@ import {
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import { prisma } from "../lib/prisma";
 import { createSurveyScreeningAlerts } from "../lib/screening";
 import {
@@ -32,10 +33,22 @@ import {
   getSurveyInstrumentLabel,
   getSurveyRiskLevel,
   isGhq28SurveyTitle,
+  parseSurveyScoringRules,
+  surveyScoringRulesSchema,
 } from "../lib/survey-scoring";
 import { serializeStudentFacingSurvey } from "../lib/survey-student-serialize";
+import {
+  buildScoringSnapshot,
+  duplicateSurvey,
+  ensureVersionForWave,
+  publishSurveyVersion,
+  serializeVersionQuestionsForPreview,
+  serializeVersionSummary,
+  SurveyScoringRulesError,
+} from "../lib/survey-versioning";
 import { hasAssignedRole } from "../lib/roles";
 import { formatStudentIdForResponse } from "../lib/user-format";
+import { closeExpiredOpenWaves } from "../lib/survey-wave-lifecycle";
 import { syncSurveyActiveFromWaves } from "./survey-wave.controller";
 
 const MAX_SURVEY_QUESTIONS = 100;
@@ -571,28 +584,6 @@ const buildStudentSurveyWhere = (surveyId?: string) => {
   };
 };
 
-const deactivateOtherSurveysIfNeeded = async (
-  tx: Prisma.TransactionClient,
-  surveyId: string,
-  isActive: boolean
-): Promise<void> => {
-  if (!isActive) {
-    return;
-  }
-
-  await tx.survey.updateMany({
-    where: {
-      id: {
-        not: surveyId,
-      },
-      isActive: true,
-    },
-    data: {
-      isActive: false,
-    },
-  });
-};
-
 export const listAdminSurveys = async (req: Request, res: Response): Promise<void> => {
   if (!hasAssignedRole(req.user, Role.ADMIN)) {
     res.status(403).json({ message: "Forbidden" });
@@ -757,9 +748,11 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
       );
 
       if (isActive) {
+        const version = await ensureVersionForWave(createdSurvey.id, actorUserId, tx);
         const wave = await tx.surveyWave.create({
           data: {
             surveyId: createdSurvey.id,
+            versionId: version.id,
             label: "รอบเปิดแรก",
             opensAt: parsed.data.startsAt ?? new Date(),
             closesAt: parsed.data.endsAt,
@@ -782,8 +775,6 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
           db: tx,
         });
         await syncSurveyActiveFromWaves(tx, createdSurvey.id);
-      } else {
-        await deactivateOtherSurveysIfNeeded(tx, createdSurvey.id, createdSurvey.isActive);
       }
 
       return tx.survey.findUniqueOrThrow({
@@ -806,7 +797,7 @@ export const createAdminSurvey = async (req: Request, res: Response): Promise<vo
       action: "admin.survey.create",
       entityType: "Survey",
       entityId: survey.id,
-      description: `Created survey "${survey.title}"`,
+      description: formatAuditMetadata({ op: "create" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -959,10 +950,20 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
           orderBy: { opensAt: "desc" },
         });
 
+        // คลื่นที่เปิดอยู่และมีคำตอบแล้วคงเวอร์ชันเดิม (ต้องเผยแพร่เวอร์ชันใหม่ผ่าน publish-version)
+        const openWaveHasResponses = openWave
+          ? (await tx.surveyResponse.count({ where: { waveId: openWave.id } })) > 0
+          : false;
+        const version =
+          openWave && openWaveHasResponses && openWave.versionId
+            ? null
+            : await ensureVersionForWave(existingSurvey.id, actorUserId, tx);
+
         if (!openWave) {
           openWave = await tx.surveyWave.create({
             data: {
               surveyId: existingSurvey.id,
+              versionId: version?.id ?? null,
               label: "รอบที่เปิด",
               opensAt: parsed.data.startsAt ?? new Date(),
               closesAt: parsed.data.endsAt,
@@ -975,6 +976,7 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
             data: {
               opensAt: parsed.data.startsAt ?? openWave.opensAt,
               closesAt: parsed.data.endsAt,
+              ...(version ? { versionId: version.id } : {}),
             },
           });
         }
@@ -1000,7 +1002,6 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
           where: { surveyId: existingSurvey.id, status: SurveyWaveStatus.OPEN },
           data: { status: SurveyWaveStatus.CLOSED, closesAt: new Date() },
         });
-        await deactivateOtherSurveysIfNeeded(tx, existingSurvey.id, false);
       }
 
       return tx.survey.findUniqueOrThrow({
@@ -1035,7 +1036,7 @@ export const updateAdminSurvey = async (req: Request, res: Response): Promise<vo
       action: "admin.survey.update",
       entityType: "Survey",
       entityId: survey.id,
-      description: `Updated survey "${survey.title}"`,
+      description: formatAuditMetadata({ op: "update" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1110,9 +1111,10 @@ export const deleteAdminSurvey = async (req: Request, res: Response): Promise<vo
       action: "admin.survey.delete",
       entityType: "Survey",
       entityId: survey.id,
-      description: force
-        ? `Force-deleted survey "${survey.title}" including ${survey._count.responses} response(s)`
-        : `Deleted survey "${survey.title}"`,
+      description: formatAuditMetadata({
+        op: force ? "force_delete" : "delete",
+        responseCount: survey._count.responses,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1122,6 +1124,194 @@ export const deleteAdminSurvey = async (req: Request, res: Response): Promise<vo
   } catch (error) {
     console.error("Delete admin survey error:", error);
     res.status(500).json({ message: "Failed to delete survey" });
+  }
+};
+
+const publishVersionBodySchema = z
+  .object({
+    scoringRules: surveyScoringRulesSchema.nullable().optional(),
+  })
+  .strict();
+
+/** รายการเวอร์ชันของแบบประเมิน (ใหม่ → เก่า) พร้อมจำนวนคำถาม/คลื่น/คำตอบ — ผู้ดูแลระบบเท่านั้น */
+export const listAdminSurveyVersions = async (req: Request, res: Response): Promise<void> => {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  try {
+    const survey = await prisma.survey.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!survey) {
+      res.status(404).json({ message: "Survey not found" });
+      return;
+    }
+
+    const versions = await prisma.surveyVersion.findMany({
+      where: { surveyId: survey.id },
+      orderBy: { version: "desc" },
+      include: { _count: { select: { questions: true, waves: true, responses: true } } },
+    });
+
+    res.status(200).json({ versions: versions.map(serializeVersionSummary) });
+  } catch (error) {
+    console.error("List admin survey versions error:", error);
+    res.status(500).json({ message: "Failed to list survey versions" });
+  }
+};
+
+/**
+ * freeze คำถามปัจจุบันของแบบประเมินเป็นเวอร์ชัน PUBLISHED ใหม่ (ใช้เมื่อแก้เนื้อหาหลังมีคำตอบ)
+ * รับ scoringRules ที่แอดมินกำหนดได้ (riskCutoffs ใช้กับ CUSTOM เท่านั้น) และบันทึก audit log
+ */
+export const publishAdminSurveyVersion = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  const parsed = publishVersionBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid payload", errors: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const survey = await prisma.survey.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, title: true, instrumentCode: true, _count: { select: { questions: true } } },
+    });
+    if (!survey) {
+      res.status(404).json({ message: "Survey not found" });
+      return;
+    }
+    if (survey._count.questions === 0) {
+      res.status(400).json({ message: "Survey has no questions to publish" });
+      return;
+    }
+
+    const isGhq28 =
+      survey.instrumentCode === SurveyInstrumentCode.GHQ28 || isGhq28SurveyTitle(survey.title);
+    if (isGhq28 && parsed.data.scoringRules?.riskCutoffs) {
+      res.status(400).json({ message: "GHQ-28 uses fixed scoring; custom risk cutoffs are not allowed" });
+      return;
+    }
+
+    const version = await publishSurveyVersion(
+      survey.id,
+      actorUserId,
+      parsed.data.scoringRules
+    );
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.survey.version.publish",
+      entityType: "SurveyVersion",
+      entityId: version.id,
+      description: formatAuditMetadata({
+        op: "publish_version",
+        surveyId: survey.id,
+        version: version.version,
+      }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(201).json({
+      message: "Survey version published successfully",
+      version: serializeVersionSummary({ ...version, _count: undefined }),
+    });
+  } catch (error) {
+    if (error instanceof SurveyScoringRulesError) {
+      res.status(400).json({ message: "Invalid scoring rules" });
+      return;
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      res.status(409).json({ message: "Another version was published at the same time. Please retry." });
+      return;
+    }
+
+    console.error("Publish admin survey version error:", error);
+    res.status(500).json({ message: "Failed to publish survey version" });
+  }
+};
+
+/** ทำสำเนาแบบประเมินเป็นแบบใหม่สถานะ DRAFT ไม่เปิดใช้งาน (คำถาม + เกณฑ์กลุ่มเป้าหมาย) */
+export const duplicateAdminSurvey = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  try {
+    const copy = await duplicateSurvey(req.params.id, actorUserId);
+    if (!copy) {
+      res.status(404).json({ message: "Survey not found" });
+      return;
+    }
+
+    const survey = await prisma.survey.findUniqueOrThrow({
+      where: { id: copy.id },
+      include: {
+        createdBy: { select: { id: true, name: true } },
+        eligibilityRule: true,
+        waves: { include: { _count: { select: { assignments: true, responses: true } } } },
+        questions: { orderBy: { order: "asc" } },
+        _count: { select: { questions: true, responses: true } },
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.survey.duplicate",
+      entityType: "Survey",
+      entityId: survey.id,
+      description: formatAuditMetadata({ op: "duplicate", sourceSurveyId: req.params.id }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(201).json({
+      message: "Survey duplicated successfully",
+      survey: serializeSurvey(survey),
+    });
+  } catch (error) {
+    console.error("Duplicate admin survey error:", error);
+    res.status(500).json({ message: "Failed to duplicate survey" });
+  }
+};
+
+/** พรีวิวแบบประเมินจากคำถามปัจจุบัน ในมุมมองนักศึกษา (ตัดคะแนน/เกณฑ์ออก) — ผู้ดูแลระบบเท่านั้น ไม่เขียนข้อมูล */
+export const previewAdminSurvey = async (req: Request, res: Response): Promise<void> => {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  try {
+    const survey = await prisma.survey.findUnique({
+      where: { id: req.params.id },
+      include: { questions: { orderBy: { order: "asc" } } },
+    });
+    if (!survey) {
+      res.status(404).json({ message: "Survey not found" });
+      return;
+    }
+
+    res.status(200).json({
+      preview: {
+        id: survey.id,
+        title: survey.title,
+        description: survey.description,
+        questions: serializeVersionQuestionsForPreview(survey.questions),
+      },
+    });
+  } catch (error) {
+    console.error("Preview admin survey error:", error);
+    res.status(500).json({ message: "Failed to preview survey" });
   }
 };
 
@@ -1219,6 +1409,7 @@ export const getActiveStudentSurvey = async (req: Request, res: Response): Promi
   }
 
   try {
+    await closeExpiredOpenWaves();
     const now = new Date();
     const openWaves = await prisma.surveyWave.findMany({
       where: {
@@ -1305,6 +1496,7 @@ export const getActiveStudentSurvey = async (req: Request, res: Response): Promi
               submittedAt: true,
               totalScore: true,
               maxScore: true,
+              riskLevel: true,
             },
           });
           primaryResponse = existing
@@ -1314,6 +1506,7 @@ export const getActiveStudentSurvey = async (req: Request, res: Response): Promi
                 totalScore: existing.totalScore,
                 maxScore: existing.maxScore,
                 surveyTitle: wave.survey.title,
+                riskLevel: existing.riskLevel,
               })
             : null;
         }
@@ -1374,6 +1567,9 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
         survey: { status: SurveyStatus.PUBLISHED },
       },
       include: {
+        version: {
+          select: { id: true, version: true, instrumentCode: true, scoringRulesJson: true },
+        },
         survey: {
           include: {
             questions: { orderBy: { order: "asc" } },
@@ -1477,11 +1673,22 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       return;
     }
 
+    // กฎคะแนนมาจากเวอร์ชันที่ผูกกับคลื่นเท่านั้น (ไม่รับจาก client)
+    const pinnedVersion = openWave.version;
+    const scoringInstrumentCode = pinnedVersion?.instrumentCode ?? survey.instrumentCode;
+    const scoringRules = parseSurveyScoringRules(pinnedVersion?.scoringRulesJson);
     const { totalScore, maxScore, scorePercent, riskLevel } = enrichSurveyResponseScores(
       survey.title,
       survey.questions,
-      normalizedAnswers
+      normalizedAnswers,
+      { scoringRules, instrumentCode: scoringInstrumentCode }
     );
+    const scoringSnapshot = buildScoringSnapshot({
+      versionId: pinnedVersion?.id ?? null,
+      version: pinnedVersion?.version ?? null,
+      instrumentCode: scoringInstrumentCode,
+      rules: scoringRules,
+    });
     const instrument = getSurveyInstrumentLabel(survey.title);
     const scoredAt = new Date();
 
@@ -1497,6 +1704,8 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
           riskLevel,
           instrument,
           scoredAt,
+          versionId: pinnedVersion?.id ?? null,
+          scoringSnapshot,
           answers: {
             create: normalizedAnswers,
           },
@@ -1523,7 +1732,7 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
       action: "student.survey.submit",
       entityType: "SurveyResponse",
       entityId: surveyResponse.id,
-      description: `Submitted survey "${survey.title}"`,
+      description: formatAuditMetadata({ op: "submit", surveyId: survey.id }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1536,6 +1745,7 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
         totalScore: surveyResponse.totalScore,
         maxScore: surveyResponse.maxScore,
         surveyTitle: survey.title,
+        riskLevel: surveyResponse.riskLevel,
       }),
     });
   } catch (error) {

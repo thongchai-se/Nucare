@@ -7,13 +7,13 @@ import {
   SurveyAudienceType,
   SurveyFrequency,
   SurveyInstrumentCode,
-  SurveyStatus,
   SurveyWaveStatus,
   WellnessTrendSignalCode,
 } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
 import { hasAssignedRole } from "../lib/roles";
@@ -29,7 +29,13 @@ import {
   getSurveyRiskLevel,
   isGhq28SurveyTitle,
 } from "../lib/survey-scoring";
+import { ensureVersionForWave } from "../lib/survey-versioning";
 import { formatStudentIdForResponse } from "../lib/user-format";
+import {
+  closeExpiredOpenWaves,
+  deriveAssignmentStatus,
+  syncSurveyActiveFromWaves,
+} from "../lib/survey-wave-lifecycle";
 
 const nullableDateSchema = z.preprocess((value) => {
   if (value === undefined || value === null || value === "") {
@@ -91,12 +97,14 @@ const serializeWave = (wave: {
   opensAt: Date;
   closesAt: Date | null;
   status: SurveyWaveStatus;
+  versionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   _count?: { assignments?: number; responses?: number };
 }) => ({
   id: wave.id,
   surveyId: wave.surveyId,
+  versionId: wave.versionId ?? null,
   label: wave.label,
   termKey: wave.termKey,
   weekStart: wave.weekStart,
@@ -109,36 +117,13 @@ const serializeWave = (wave: {
   responseCount: wave._count?.responses ?? 0,
 });
 
-/** ซิงก์ isActive/startsAt/endsAt ของ Survey จากคลื่นที่ OPEN ล่าสุด */
-export async function syncSurveyActiveFromWaves(
-  tx: Prisma.TransactionClient,
-  surveyId: string
-): Promise<void> {
-  const openWave = await tx.surveyWave.findFirst({
-    where: { surveyId, status: SurveyWaveStatus.OPEN },
-    orderBy: { opensAt: "desc" },
-  });
+export { syncSurveyActiveFromWaves };
 
-  await tx.survey.update({
-    where: { id: surveyId },
-    data: {
-      isActive: Boolean(openWave),
-      startsAt: openWave?.opensAt ?? null,
-      endsAt: openWave?.closesAt ?? null,
-      status: openWave ? SurveyStatus.PUBLISHED : undefined,
-    },
-  });
-
-  if (openWave) {
-    await tx.survey.updateMany({
-      where: {
-        id: { not: surveyId },
-        isActive: true,
-      },
-      data: { isActive: false },
-    });
-  }
-}
+const assignmentStatusQuerySchema = z
+  .object({
+    status: z.enum(["all", "completed", "pending", "overdue"]).default("all"),
+  })
+  .strict();
 
 /** รายการคลื่นของแบบประเมิน */
 export const listAdminSurveyWaves = async (req: Request, res: Response): Promise<void> => {
@@ -148,6 +133,8 @@ export const listAdminSurveyWaves = async (req: Request, res: Response): Promise
   }
 
   try {
+    await closeExpiredOpenWaves();
+
     const survey = await prisma.survey.findUnique({
       where: { id: req.params.id },
       select: { id: true },
@@ -212,9 +199,13 @@ export const createAdminSurveyWave = async (req: Request, res: Response): Promis
         });
       }
 
+      // ผูกคลื่นกับเวอร์ชันเผยแพร่ล่าสุด (หรือเผยแพร่ใหม่ถ้าไม่มี/คำถามเปลี่ยนไปแล้ว)
+      const version = await ensureVersionForWave(survey.id, actorUserId, tx);
+
       const created = await tx.surveyWave.create({
         data: {
           surveyId: survey.id,
+          versionId: version.id,
           label: parsed.data.label.trim(),
           termKey: parsed.data.termKey?.trim() || null,
           weekStart: parsed.data.weekStart,
@@ -242,7 +233,7 @@ export const createAdminSurveyWave = async (req: Request, res: Response): Promis
       action: "admin.survey.wave.create",
       entityType: "SurveyWave",
       entityId: wave.id,
-      description: `Created wave "${wave.label}" for survey ${survey.id}`,
+      description: formatAuditMetadata({ op: "create", surveyId: survey.id }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -304,10 +295,18 @@ export const openAdminSurveyWave = async (req: Request, res: Response): Promise<
         data: { status: SurveyWaveStatus.CLOSED, closesAt: new Date() },
       });
 
+      // คลื่นที่ยังไม่มีคำตอบ ผูกเวอร์ชันล่าสุดใหม่ตอนเปิด; คลื่นที่มีคำตอบแล้วคงเวอร์ชันเดิมไว้
+      const responseCount = await tx.surveyResponse.count({ where: { waveId: wave.id } });
+      const versionId =
+        responseCount > 0 && wave.versionId
+          ? wave.versionId
+          : (await ensureVersionForWave(survey.id, actorUserId, tx)).id;
+
       const opened = await tx.surveyWave.update({
         where: { id: wave.id },
         data: {
           status: SurveyWaveStatus.OPEN,
+          versionId,
           opensAt: wave.opensAt > new Date() ? new Date() : wave.opensAt,
         },
         include: {
@@ -382,7 +381,7 @@ export const openAdminSurveyWave = async (req: Request, res: Response): Promise<
       action: "admin.survey.wave.open",
       entityType: "SurveyWave",
       entityId: updated.id,
-      description: `Opened wave "${updated.label}" · notified ${notifiedCount} student(s)`,
+      description: formatAuditMetadata({ op: "open", notifiedCount }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -434,7 +433,7 @@ export const closeAdminSurveyWave = async (req: Request, res: Response): Promise
       action: "admin.survey.wave.close",
       entityType: "SurveyWave",
       entityId: updated.id,
-      description: `Closed wave "${updated.label}"`,
+      description: formatAuditMetadata({ op: "close" }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -445,6 +444,177 @@ export const closeAdminSurveyWave = async (req: Request, res: Response): Promise
   } catch (error) {
     console.error("Close survey wave error:", error);
     res.status(500).json({ message: "Failed to close survey wave" });
+  }
+};
+
+/** ยกเลิกคลื่นที่ SCHEDULED/OPEN เป็น CANCELLED และซิงก์สถานะแบบประเมินถ้าคลื่นเคย OPEN */
+export const cancelAdminSurveyWave = async (req: Request, res: Response): Promise<void> => {
+  const actorUserId = req.user?.userId;
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  try {
+    const wave = await prisma.surveyWave.findFirst({
+      where: { id: req.params.waveId, surveyId: req.params.id },
+    });
+    if (!wave) {
+      res.status(404).json({ message: "Wave not found" });
+      return;
+    }
+
+    if (wave.status !== SurveyWaveStatus.SCHEDULED && wave.status !== SurveyWaveStatus.OPEN) {
+      res.status(400).json({ message: "Only scheduled or open waves can be cancelled" });
+      return;
+    }
+
+    const wasOpen = wave.status === SurveyWaveStatus.OPEN;
+    const updated = await prisma.$transaction(async (tx) => {
+      const cancelled = await tx.surveyWave.update({
+        where: { id: wave.id },
+        data: { status: SurveyWaveStatus.CANCELLED },
+        include: {
+          _count: { select: { assignments: true, responses: true } },
+        },
+      });
+      if (wasOpen) {
+        await syncSurveyActiveFromWaves(tx, wave.surveyId);
+      }
+      return cancelled;
+    });
+
+    await writeAuditLog({
+      actorUserId,
+      action: "admin.survey.wave.cancel",
+      entityType: "SurveyWave",
+      entityId: updated.id,
+      description: formatAuditMetadata({ op: "cancel", surveyId: wave.surveyId, wasOpen }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "Wave cancelled successfully",
+      wave: serializeWave(updated),
+    });
+  } catch (error) {
+    console.error("Cancel survey wave error:", error);
+    res.status(500).json({ message: "Failed to cancel survey wave" });
+  }
+};
+
+/** รายชื่อ assignment ของคลื่นพร้อมสถานะ completed/pending/overdue และสรุปจำนวน (ผู้ดูแลระบบเท่านั้น) */
+export const listAdminSurveyWaveAssignments = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!hasAssignedRole(req.user, Role.ADMIN)) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  const parsedQuery = assignmentStatusQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ message: "Invalid query", errors: parsedQuery.error.flatten() });
+    return;
+  }
+  const statusFilter = parsedQuery.data.status;
+
+  try {
+    await closeExpiredOpenWaves();
+
+    const wave = await prisma.surveyWave.findFirst({
+      where: { id: req.params.waveId, surveyId: req.params.id },
+      select: { id: true, surveyId: true, status: true, closesAt: true },
+    });
+    if (!wave) {
+      res.status(404).json({ message: "Wave not found" });
+      return;
+    }
+
+    const now = new Date();
+    // สถานะ overdue ของคนที่ยังไม่ทำ ขึ้นกับคลื่นเท่านั้น จึงคำนวณครั้งเดียวต่อคลื่น
+    const incompleteIsOverdue =
+      deriveAssignmentStatus({
+        completedAt: null,
+        closesAt: wave.closesAt,
+        waveStatus: wave.status,
+        now,
+      }) === "overdue";
+
+    const [total, completed] = await Promise.all([
+      prisma.surveyAssignment.count({ where: { waveId: wave.id } }),
+      prisma.surveyAssignment.count({ where: { waveId: wave.id, completedAt: { not: null } } }),
+    ]);
+    const incomplete = total - completed;
+    const summary = {
+      total,
+      completed,
+      pending: incompleteIsOverdue ? 0 : incomplete,
+      overdue: incompleteIsOverdue ? incomplete : 0,
+    };
+
+    let completedAtFilter: Prisma.SurveyAssignmentWhereInput["completedAt"] | undefined;
+    if (statusFilter === "completed") {
+      completedAtFilter = { not: null };
+    } else if (statusFilter === "pending" || statusFilter === "overdue") {
+      completedAtFilter = null;
+    }
+    const skipRows =
+      (statusFilter === "pending" && incompleteIsOverdue) ||
+      (statusFilter === "overdue" && !incompleteIsOverdue);
+
+    const assignments = skipRows
+      ? []
+      : await prisma.surveyAssignment.findMany({
+          where: {
+            waveId: wave.id,
+            ...(completedAtFilter !== undefined ? { completedAt: completedAtFilter } : {}),
+          },
+          orderBy: [{ eligibleAt: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            studentId: true,
+            eligibleAt: true,
+            completedAt: true,
+            student: {
+              select: { name: true, studentId: true, studyYear: true, section: true },
+            },
+          },
+        });
+
+    // m = จำนวน response ของคลื่น — ดึงครั้งเดียวแล้วใช้ Map ค้นหา O(1) ต่อแถว
+    const responses = assignments.length
+      ? await prisma.surveyResponse.findMany({
+          where: { waveId: wave.id },
+          select: { id: true, studentId: true },
+        })
+      : [];
+    const responseIdByStudent = new Map(responses.map((row) => [row.studentId, row.id]));
+
+    res.status(200).json({
+      assignments: assignments.map((row) => ({
+        id: row.id,
+        studentId: row.studentId,
+        studentName: row.student.name,
+        studentCode: formatStudentIdForResponse(row.student.studentId),
+        studyYear: row.student.studyYear,
+        section: row.student.section,
+        eligibleAt: row.eligibleAt,
+        completedAt: row.completedAt,
+        status: deriveAssignmentStatus({
+          completedAt: row.completedAt,
+          closesAt: wave.closesAt,
+          waveStatus: wave.status,
+          now,
+        }),
+        responseId: responseIdByStudent.get(row.studentId) ?? null,
+      })),
+      summary,
+    });
+  } catch (error) {
+    console.error("List wave assignments error:", error);
+    res.status(500).json({ message: "Failed to list wave assignments" });
   }
 };
 

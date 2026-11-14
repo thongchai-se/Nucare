@@ -259,7 +259,9 @@ export function ConsultationRequestsView({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {loadingConsultationRequests ? <span className="text-xs text-slate-400">กำลังโหลด...</span> : null}
+          {loadingConsultationRequests ? (
+            <span className="loader h-3.5 w-3.5 text-blue-600" aria-label="กำลังโหลด" />
+          ) : null}
           <button type="button" onClick={onRefresh} className={UI_BUTTON_SECONDARY}>
             <RefreshCw className={`h-4 w-4 ${loadingConsultationRequests ? "animate-spin" : ""}`} />
             รีเฟรช

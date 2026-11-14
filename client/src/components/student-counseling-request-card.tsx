@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { HeartHandshake, Loader2 } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 
 type StudentCounselingRequestCardProps = {
@@ -70,9 +71,9 @@ export function StudentCounselingRequestCard({
       </div>
 
       {disabled ? (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <InlineAlert tone="warning" className="mt-4 rounded-lg px-3 py-2">
           {disabledReason || "ตอนนี้ยังไม่สามารถส่งคำขอใหม่ได้"}
-        </p>
+        </InlineAlert>
       ) : (
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <label className="block text-sm font-medium text-slate-700">
@@ -86,8 +87,8 @@ export function StudentCounselingRequestCard({
               className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ring-violet-200 placeholder:text-slate-400 focus:ring-2"
             />
           </label>
-          {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
-          {success ? <p className="text-sm font-medium text-emerald-700">{success}</p> : null}
+          {error ? <InlineAlert>{error}</InlineAlert> : null}
+          {success ? <InlineAlert tone="success">{success}</InlineAlert> : null}
           <button
             type="submit"
             disabled={submitting}

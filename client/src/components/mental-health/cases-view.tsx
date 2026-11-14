@@ -73,6 +73,18 @@ type StudentHistoryResponse = {
     instrument: string;
     riskLevel: MentalHealthCase["riskLevel"];
   }>;
+  assessmentTimeline: Array<{
+    id: string;
+    waveLabel: string;
+    surveyTitle: string;
+    instrumentCode: "GHQ28" | "CUSTOM";
+    status: "COMPLETED" | "NOT_COMPLETED" | "OVERDUE";
+    totalScore: number | null;
+    maxScore: number | null;
+    riskLevel: "NORMAL" | "MEDIUM" | "HIGH" | null;
+    submittedAt: string | null;
+    scheduledAt: string;
+  }>;
   activity: Array<{
     id: string;
     kind: string;
@@ -134,12 +146,6 @@ const appointmentStatusLabel: Record<string, string> = {
   COMPLETED: "พบแล้ว",
   CANCELLED: "ยกเลิก",
   NO_SHOW: "ไม่มาตามนัด",
-};
-
-const riskTextLabel: Record<MentalHealthCase["riskLevel"], string> = {
-  high: "เสี่ยงสูง",
-  medium: "เสี่ยงปานกลาง",
-  normal: "ปกติ",
 };
 
 /** เวิร์กสเปซคิวหรือเคสแบบ master–detail — รายชื่อซ้าย ประวัติ/นัด/บันทึกขวา */
@@ -664,28 +670,47 @@ export function CasesView({
                       </div>
 
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <h4 className="mb-2 text-sm font-bold text-slate-900">ผลประเมินล่าสุด</h4>
-                        {history.assessments.length === 0 ? (
-                          <p className="text-sm text-slate-600">ยังไม่มีผลประเมิน</p>
+                        <h4 className="mb-1 text-sm font-bold text-slate-900">ไทม์ไลน์แบบประเมิน</h4>
+                        <p className="mb-3 text-xs text-slate-600">ผลคะแนนและรอบที่ยังไม่ตอบ แยกตามกำหนดของแต่ละรอบ</p>
+                        {history.assessmentTimeline.length === 0 ? (
+                          <p className="text-sm text-slate-600">ยังไม่มีรอบประเมิน</p>
                         ) : (
                           <ul className="space-y-2">
-                            {history.assessments.slice(0, 3).map((row) => (
+                            {[...history.assessmentTimeline].reverse().slice(0, 8).map((row) => (
                               <li
-                                key={`${row.assessedAt}-${row.instrument}`}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                                key={row.id}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"
                               >
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">{row.instrument}</p>
-                                  <p className="text-[11px] text-slate-600">{formatThaiDate(row.assessedAt)}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-sm font-bold tabular-nums text-slate-900">
-                                    {row.score === null ? "—" : row.score}
-                                  </p>
-                                  <p className="text-[11px] font-semibold text-slate-700">
-                                    {riskTextLabel[row.riskLevel]}
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{row.surveyTitle}</p>
+                                  <p className="text-[11px] text-slate-600">
+                                    {row.waveLabel} · {formatThaiDate(row.submittedAt ?? row.scheduledAt)}
                                   </p>
                                 </div>
+                                {row.status === "COMPLETED" ? (
+                                  <div className="shrink-0 text-right">
+                                    <p className="text-sm font-bold tabular-nums text-slate-900">
+                                      {row.totalScore === null ? "—" : `${row.totalScore}${row.maxScore ? `/${row.maxScore}` : ""}`}
+                                    </p>
+                                    <p className="text-[11px] font-semibold text-slate-700">
+                                      {row.riskLevel === "HIGH"
+                                        ? "เสี่ยงสูง"
+                                        : row.riskLevel === "MEDIUM"
+                                          ? "เสี่ยงปานกลาง"
+                                          : "ปกติ"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <span
+                                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      row.status === "OVERDUE"
+                                        ? "bg-rose-100 text-rose-800"
+                                        : "bg-amber-100 text-amber-800"
+                                    }`}
+                                  >
+                                    {row.status === "OVERDUE" ? "หมดเขต" : "ยังไม่ตอบ"}
+                                  </span>
+                                )}
                               </li>
                             ))}
                           </ul>

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import api from "@/lib/axios";
 import {
   formatThaiDateTime,
@@ -115,9 +116,9 @@ export function ConsultationScheduleActions({
   return (
     <div className="mt-3 space-y-3">
       {wasScheduled && pendingOffer ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+        <InlineAlert tone="warning" className="rounded-lg px-3 py-2 text-xs">
           กำลังเจรจาวันใหม่ — นัดเดิมถูกพักไว้จนกว่าทั้งสองฝ่ายจะตกลงกัน
-        </p>
+        </InlineAlert>
       ) : null}
 
       {pendingOffer ? (

@@ -19,6 +19,7 @@ import { ConsultationScheduleActions } from "@/components/student/consultation-s
 import { StudentCounselingRequestCard } from "@/components/student-counseling-request-card";
 import { StudentEmergencyHelpCard } from "@/components/student-emergency-help-card";
 import { StudentPageShell } from "@/components/student-page-shell";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
@@ -110,7 +111,7 @@ function StudentAdvisorContent() {
           setExpertCounselingDisabledReason(
             response.data.openCounselingReferral.status === "ACCEPTED"
               ? "มีคิวผู้เชี่ยวชาญที่กำลังดูแลอยู่แล้ว"
-              : "มีคำขอพบผู้เชี่ยวชาญรอรับอยู่แล้ว"
+              : "กรุณารอสักครู่"
           );
         } else if (response.data.canRequestExpertCounseling === false) {
           setExpertCounselingDisabledReason("ยังไม่มีอาจารย์ที่ปรึกษาในระบบ กรุณาติดต่องานพัฒนานิสิต");
@@ -359,11 +360,7 @@ function StudentAdvisorContent() {
         }}
       />
 
-      {serverError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">
-          {serverError}
-        </div>
-      )}
+      {serverError ? <InlineAlert className="shadow-sm">{serverError}</InlineAlert> : null}
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_21rem]">
@@ -417,9 +414,9 @@ function StudentAdvisorContent() {
                   <p className="mt-1 text-sm text-slate-500">เลือกอาจารย์แล้วส่งคำขอ — นัดจะตามมาเมื่ออาจารย์เสนอเวลา</p>
                 </div>
                 {hasOpenConsultation ? (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  <InlineAlert tone="warning" className="rounded-lg px-3 py-2 text-xs font-semibold">
                     มีคำขอเปิดอยู่ · ส่งคำขอใหม่ได้เมื่อรอบนี้ปิดแล้ว
-                  </p>
+                  </InlineAlert>
                 ) : (
                   <button
                     type="button"

@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { resolveAuthCookieSecure } from "../lib/auth-cookie";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import { sendAppEmail } from "../lib/email";
 import { readEnv, requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
@@ -252,6 +253,16 @@ const findUserByIdentifier = async (identifier: string) => {
   });
 };
 
+const resolveLoginIdentifierKind = (identifier: string): "email" | "studentId" | "employeeId" => {
+  if (identifier.includes("@")) {
+    return "email";
+  }
+  if (STUDENT_ID_PATTERN.test(identifier) || /^[0-9-]+$/.test(identifier)) {
+    return "studentId";
+  }
+  return "employeeId";
+};
+
 export const login = async (req: Request, res: Response): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body);
   const ipAddress = getRequestIpAddress(req);
@@ -263,12 +274,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const { identifier, password } = parsed.data;
+    const identifierKind = resolveLoginIdentifierKind(identifier);
     const user = await findUserByIdentifier(identifier);
 
     if (!user || !user.isActive) {
       await writeAuthAuditLog({
         action: "auth.login.failed",
-        description: "Failed login attempt",
+        description: formatAuditMetadata({
+          outcome: "failed",
+          reason: user ? "inactive" : "not_found",
+          identifierKind,
+        }),
         entityType: "AuthSession",
         ipAddress,
       });
@@ -281,7 +297,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       await writeAuthAuditLog({
         action: "auth.login.failed",
         actorUserId: user.id,
-        description: "Failed login attempt",
+        description: formatAuditMetadata({
+          outcome: "failed",
+          reason: "bad_password",
+          identifierKind,
+        }),
         entityType: "AuthSession",
         entityId: user.id,
         ipAddress,
@@ -313,7 +333,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await writeAuthAuditLog({
       action: "auth.login.success",
       actorUserId: user.id,
-      description: "User logged in successfully",
+      description: formatAuditMetadata({
+        outcome: "success",
+        identifierKind,
+        role: user.role,
+      }),
       entityType: "AuthSession",
       entityId: user.id,
       ipAddress,
@@ -351,7 +375,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     await writeAuthAuditLog({
       action: "auth.logout",
       actorUserId: storedToken?.userId,
-      description: "User logged out",
+      description: formatAuditMetadata({ outcome: "logout" }),
       entityType: "AuthSession",
       entityId: storedToken?.userId,
       ipAddress,
@@ -408,7 +432,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     await writeAuthAuditLog({
       action: "auth.password-reset.request",
       actorUserId: user.id,
-      description: "Password reset requested",
+      description: formatAuditMetadata({ outcome: "requested" }),
       entityType: "User",
       entityId: user.id,
       ipAddress,
@@ -507,7 +531,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     await writeAuthAuditLog({
       action: "auth.password-reset.complete",
       actorUserId: resetToken.userId,
-      description: "Password reset completed",
+      description: formatAuditMetadata({ outcome: "completed" }),
       entityType: "User",
       entityId: resetToken.userId,
       ipAddress,
@@ -558,7 +582,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       await writeAuthAuditLog({
         action: "auth.password-change.failed",
         actorUserId: user.id,
-        description: "Password change rejected due to invalid current password",
+        description: formatAuditMetadata({ outcome: "failed", reason: "bad_current_password" }),
         entityType: "User",
         entityId: user.id,
         ipAddress,
@@ -602,7 +626,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     await writeAuthAuditLog({
       action: "auth.password-change",
       actorUserId: user.id,
-      description: "Password changed successfully",
+      description: formatAuditMetadata({ outcome: "success" }),
       entityType: "User",
       entityId: user.id,
       ipAddress,

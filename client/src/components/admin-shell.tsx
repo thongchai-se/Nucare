@@ -34,7 +34,6 @@ type AdminNavKey =
   | "students"
   | "staff"
   | "import"
-  | "externalDirectory"
   | "surveys"
   | "siteMedia"
   | "reports"
@@ -90,12 +89,6 @@ const primaryNavItems: NavItem[] = [
     icon: <Database size={20} />,
   },
   {
-    key: "externalDirectory",
-    label: "รายชื่อจาก API",
-    href: "/admin/external-directory",
-    icon: <Server size={20} />,
-  },
-  {
     key: "surveys",
     label: "แบบสอบถาม",
     href: "/admin/surveys",
@@ -103,7 +96,7 @@ const primaryNavItems: NavItem[] = [
   },
   {
     key: "siteMedia",
-    label: "ภาพประชาสัมพันธ์",
+    label: "สื่อประชาสัมพันธ์",
     href: "/admin/site-media",
     icon: <Images size={20} />,
   },

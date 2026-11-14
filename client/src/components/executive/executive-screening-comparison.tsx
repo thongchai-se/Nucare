@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, RefreshCw } from "lucide-react";
 import { ExecutiveQuietExport } from "@/components/executive/executive-quiet-export";
 import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
+import { MultiSeriesLineChart } from "@/components/executive/multi-series-line-chart";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { useListPagination } from "@/hooks/use-list-pagination";
 import api from "@/lib/axios";
@@ -13,6 +15,7 @@ import type {
   ScreeningComparisonResponse,
   ScreeningRoundInfo,
 } from "@/types/executive";
+import type { ScreeningOverviewInstrumentOption } from "@/types/executive-screening-overview";
 
 type ExecutiveScreeningComparisonProps = {
   yearFilter: ExecutiveYearFilter;
@@ -48,6 +51,7 @@ const exportComparisonCsv = (
   pushKeyValueRows(rows, [
     ["วันที่ export", new Date().toISOString().slice(0, 10)],
     ["อัปเดตข้อมูล", data.generatedAt.slice(0, 10)],
+    ["เครื่องมือ", data.instrumentLabel],
     ["ชั้นปีที่กรอง", formatYearFilterLabel(yearFilter)],
     ["รอบที่ 1", data.round1 ? formatRoundLabel(data.round1) : "-"],
     ["รอบที่ 2", data.round2 ? formatRoundLabel(data.round2) : "-"],
@@ -99,9 +103,13 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
   const [error, setError] = useState<string | null>(null);
   const [fromSurveyId, setFromSurveyId] = useState("");
   const [toSurveyId, setToSurveyId] = useState("");
+  const [instrumentCode, setInstrumentCode] = useState("GHQ28");
+  const [instrumentOptions, setInstrumentOptions] = useState<ScreeningOverviewInstrumentOption[]>([
+    { code: "GHQ28", label: "GHQ-28" },
+  ]);
 
   const loadComparison = useCallback(
-    async (fromId: string, toId: string, options?: { silent?: boolean }) => {
+    async (fromId: string, toId: string, nextInstrument: string, options?: { silent?: boolean }) => {
       if (!options?.silent) {
         setLoading(true);
       }
@@ -110,6 +118,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
       try {
         const params: Record<string, string> = {
           studyYear: yearFilter,
+          instrumentCode: nextInstrument,
         };
 
         if (fromId) {
@@ -120,13 +129,21 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
           params.toSurveyId = toId;
         }
 
-        const response = await api.get<ScreeningComparisonResponse>("/api/executive/screening-comparison", {
-          params,
-        });
+        const [comparisonResponse, overviewResponse] = await Promise.all([
+          api.get<ScreeningComparisonResponse>("/api/executive/screening-comparison", { params }),
+          api.get<{ availableInstruments: ScreeningOverviewInstrumentOption[] }>(
+            "/api/executive/screening-overview",
+            { params: { studyYear: yearFilter, instrumentCode: nextInstrument } }
+          ),
+        ]);
 
-        setData(response.data);
-        setFromSurveyId(response.data.round1?.id ?? fromId);
-        setToSurveyId(response.data.round2?.id ?? toId);
+        setData(comparisonResponse.data);
+        setFromSurveyId(comparisonResponse.data.round1?.id ?? fromId);
+        setToSurveyId(comparisonResponse.data.round2?.id ?? toId);
+        setInstrumentCode(comparisonResponse.data.instrumentCode || nextInstrument);
+        if (overviewResponse.data.availableInstruments.length > 0) {
+          setInstrumentOptions(overviewResponse.data.availableInstruments);
+        }
       } catch {
         setError("ไม่สามารถโหลดข้อมูลเปรียบเทียบได้ กรุณาลองใหม่อีกครั้ง");
         setData(null);
@@ -139,37 +156,67 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
 
   useEffect(() => {
     // เปลี่ยนชั้นปีเท่านั้นที่รีโหลดรอบเริ่มต้น — ไม่กระพริบถ้ามีข้อมูลเดิม
-    void loadComparison("", "", { silent: Boolean(data) });
+    void loadComparison("", "", instrumentCode, { silent: Boolean(data) });
     // ไม่ใส่ data ใน deps เพื่อกันโหลดวน
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadComparison]);
 
   const roundOptions = useMemo(() => data?.availableRounds ?? [], [data?.availableRounds]);
   const comparisonRows = data?.rows ?? [];
-  const pagination = useListPagination(comparisonRows, `${yearFilter}:${fromSurveyId}:${toSurveyId}`, {
-    fixedRowsPerPage: 12,
-  });
+  const pagination = useListPagination(
+    comparisonRows,
+    `${yearFilter}:${instrumentCode}:${fromSurveyId}:${toSurveyId}`,
+    {
+      fixedRowsPerPage: 12,
+    }
+  );
 
   const canCompare = Boolean(data?.round1 && data?.round2 && data.rows.length > 0);
+
+  const comparisonChart = useMemo(() => {
+    const rows = data?.rows ?? [];
+    if (rows.length === 0) {
+      return { labels: [] as string[], series: [] as Array<{ id: string; label: string; color: string; values: number[] }> };
+    }
+    // จำกัดจุดบนกราฟเพื่ออ่านง่าย — เรียงตามรหัส
+    const sample = rows.slice(0, 40);
+    return {
+      labels: sample.map((row) => row.studentCode.slice(-4)),
+      series: [
+        {
+          id: "round1",
+          label: data?.round1 ? `รอบ 1 · ${data.round1.instrumentLabel}` : "รอบ 1",
+          color: "#2563eb",
+          values: sample.map((row) => row.round1.score),
+        },
+        {
+          id: "round2",
+          label: data?.round2 ? `รอบ 2 · ${data.round2.instrumentLabel}` : "รอบ 2",
+          color: "#dc2626",
+          values: sample.map((row) => row.round2.score),
+        },
+      ],
+    };
+  }, [data]);
 
   const handleFromRoundChange = (nextFromId: string) => {
     setFromSurveyId(nextFromId);
     if (nextFromId && toSurveyId) {
-      void loadComparison(nextFromId, toSurveyId);
+      void loadComparison(nextFromId, toSurveyId, instrumentCode);
     }
   };
 
   const handleToRoundChange = (nextToId: string) => {
     setToSurveyId(nextToId);
     if (fromSurveyId && nextToId) {
-      void loadComparison(fromSurveyId, nextToId);
+      void loadComparison(fromSurveyId, nextToId, instrumentCode);
     }
   };
 
   return (
     <ExecutiveSectionShell
       title="เปรียบเทียบรายบุคคล (รอบต่อรอบ)"
-      subtitle="เทียบคะแนน GHQ-28 รอบต่อรอบ — แสดงรหัสนักศึกษา (ยังระบุตัวตนได้) ไม่มีชื่อ-นามสกุล"
+      subtitle={`เทียบคะแนนเครื่องมือเดียวกันเท่านั้น · ${data?.instrumentLabel ?? "GHQ-28"} — แสดงรหัสนักศึกษา ไม่มีชื่อ-นามสกุล`}
       action={
         <ExecutiveQuietExport
           label="ส่งออก CSV เทียบรอบ"
@@ -178,52 +225,76 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
         />
       }
     >
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block text-sm">
-            <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 1 (ก่อนหน้า)</span>
-            <select
-              value={fromSurveyId}
-              onChange={(event) => handleFromRoundChange(event.target.value)}
-              disabled={loading || roundOptions.length === 0}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
-            >
-              <option value="">เลือกรอบประเมิน</option>
-              {roundOptions.map((round) => (
-                <option key={round.id} value={round.id}>
-                  {formatRoundLabel(round)} — {round.responseCount.toLocaleString()} คน
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="mb-6 flex flex-col gap-3">
+        <label className="block text-sm lg:max-w-sm">
+          <span className="mb-1.5 block font-bold text-slate-700">เครื่องมือแบบประเมิน</span>
+          <select
+            value={instrumentCode}
+            onChange={(event) => {
+              const next = event.target.value;
+              setInstrumentCode(next);
+              setFromSurveyId("");
+              setToSurveyId("");
+              void loadComparison("", "", next);
+            }}
+            disabled={loading}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
+          >
+            {instrumentOptions.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          <label className="block text-sm">
-            <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 2 (ล่าสุด)</span>
-            <select
-              value={toSurveyId}
-              onChange={(event) => handleToRoundChange(event.target.value)}
-              disabled={loading || roundOptions.length === 0}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
-            >
-              <option value="">เลือกรอบประเมิน</option>
-              {roundOptions.map((round) => (
-                <option key={round.id} value={round.id}>
-                  {formatRoundLabel(round)} — {round.responseCount.toLocaleString()} คน
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 1 (ก่อนหน้า)</span>
+              <select
+                value={fromSurveyId}
+                onChange={(event) => handleFromRoundChange(event.target.value)}
+                disabled={loading || roundOptions.length === 0}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
+              >
+                <option value="">เลือกรอบประเมิน</option>
+                {roundOptions.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {formatRoundLabel(round)} — {round.instrumentLabel} · ตอบ {round.responseCount.toLocaleString()} คน
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-bold text-slate-700">รอบที่ 2 (ล่าสุด)</span>
+              <select
+                value={toSurveyId}
+                onChange={(event) => handleToRoundChange(event.target.value)}
+                disabled={loading || roundOptions.length === 0}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-300"
+              >
+                <option value="">เลือกรอบประเมิน</option>
+                {roundOptions.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {formatRoundLabel(round)} — {round.instrumentLabel} · ตอบ {round.responseCount.toLocaleString()} คน
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void loadComparison(fromSurveyId, toSurveyId, instrumentCode)}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            โหลดใหม่
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => void loadComparison(fromSurveyId, toSurveyId)}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          โหลดใหม่
-        </button>
       </div>
 
       {loading ? (
@@ -231,21 +302,21 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
           <span className="loader h-7 w-7 text-blue-600" />
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-6 text-center text-sm font-medium text-red-700">
+        <InlineAlert className="rounded-2xl px-4 py-6">
           <p>{error}</p>
           <button
             type="button"
-            onClick={() => void loadComparison(fromSurveyId, toSurveyId)}
+            onClick={() => void loadComparison(fromSurveyId, toSurveyId, instrumentCode)}
             className="mt-3 inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white"
           >
             <RefreshCw size={16} /> ลองใหม่
           </button>
-        </div>
+        </InlineAlert>
       ) : !data?.round1 || !data.round2 ? (
         <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center">
           <p className="text-sm font-bold text-slate-600">ต้องมีอย่างน้อย 2 รอบที่นักศึกษาทำครบทั้งคู่</p>
           <p className="mt-2 text-sm text-slate-500">
-            เมื่อเปิดแบบสอบถาม GHQ-28 รอบใหม่และมีนักศึกษาทำครบทั้งสองรอบ ข้อมูลจะแสดงที่นี่
+            เมื่อเปิดแบบสอบถามรอบใหม่ของเครื่องมือเดียวกันและมีนักศึกษาทำครบทั้งสองรอบ ข้อมูลจะแสดงที่นี่
           </p>
         </div>
       ) : (
@@ -280,6 +351,28 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
               </p>
             </div>
           </div>
+
+          <p className="mb-4 text-xs font-medium text-slate-600">
+            {data.instrumentLabel} · รอบล่าสุดที่เลือก: มอบหมาย {data.round2.assignmentSummary.assignedCount.toLocaleString()} คน
+            · ตอบแล้ว {data.round2.assignmentSummary.completedCount.toLocaleString()} · รอตอบ{" "}
+            {data.round2.assignmentSummary.pendingCount.toLocaleString()} · หมดเขต{" "}
+            {data.round2.assignmentSummary.overdueCount.toLocaleString()}
+          </p>
+
+          {data.rows.length > 0 ? (
+            <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <p className="mb-3 text-sm font-bold text-slate-800">กราฟเทียบคะแนนซ้อน (รอบ 1 / รอบ 2)</p>
+              <MultiSeriesLineChart
+                labels={comparisonChart.labels}
+                series={comparisonChart.series}
+                yLabel="คะแนนรายคน"
+                emptyMessage="ยังไม่มีคู่คะแนนสำหรับกราฟเทียบ"
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                แสดงรหัสท้าย 4 หลักสูงสุด 40 คน · สีน้ำเงิน = รอบ 1 · สีแดง = รอบ 2
+              </p>
+            </div>
+          ) : null}
 
           {data.rows.length === 0 ? (
             <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center">

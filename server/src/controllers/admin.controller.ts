@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import { buildExecutiveDashboardStats } from "../lib/executive-analytics";
 import { normalizePersonNameForRole } from "../lib/name-prefix";
 import { prisma } from "../lib/prisma";
@@ -262,31 +263,22 @@ const summarizeImportFailureReasons = (
 };
 
 const buildImportAuditDescription = (
-  label: string,
+  batch: "student" | "staff",
   summary: ImportAuditSummary,
   failures: Array<{ reason: string }> = [],
-  note?: string
+  failedUnexpected = false
 ): string => {
-  const parts = [
-    label,
-    `outcome=${resolveImportAuditOutcome(summary)}`,
-    `total=${summary.total}`,
-    `created=${summary.created}`,
-    `updated=${summary.updated}`,
-    `skipped=${summary.skipped}`,
-    `failed=${summary.failed}`,
-  ];
-
-  const issueSummary = summarizeImportFailureReasons(failures);
-  if (issueSummary) {
-    parts.push(`issues=${issueSummary}`);
-  }
-
-  if (note) {
-    parts.push(`note=${note.replace(/[|\r\n]+/g, " ").trim()}`);
-  }
-
-  return parts.join(" | ");
+  return formatAuditMetadata({
+    batch,
+    outcome: resolveImportAuditOutcome(summary),
+    total: summary.total,
+    created: summary.created,
+    updated: summary.updated,
+    skipped: summary.skipped,
+    failed: summary.failed,
+    issueKinds: summarizeImportFailureReasons(failures) || undefined,
+    unexpectedError: failedUnexpected || undefined,
+  });
 };
 
 const normalizeStudentId = (raw: string): string => {
@@ -337,14 +329,12 @@ const getAdminUserAuditMetadata = (role: Role) => {
   if (role === Role.STUDENT) {
     return {
       actionPrefix: "admin.student",
-      descriptionLabel: "student account",
       entityType: "StudentAccount",
     } as const;
   }
 
   return {
     actionPrefix: "admin.user",
-    descriptionLabel: `${role} account`,
     entityType: "StaffAccount",
   } as const;
 };
@@ -995,7 +985,11 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       action: `${auditMetadata.actionPrefix}.create`,
       entityType: auditMetadata.entityType,
       entityId: created.id,
-      description: `Created ${auditMetadata.descriptionLabel} ${studentId}`,
+      description: formatAuditMetadata({
+        op: "create",
+        role: Role.STUDENT,
+        studentId,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1160,7 +1154,12 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       action: `${auditMetadata.actionPrefix}.create`,
       entityType: auditMetadata.entityType,
       entityId: created.id,
-      description: `Created ${auditMetadata.descriptionLabel} ${payload.studentId ?? payload.employeeId ?? created.id}`,
+      description: formatAuditMetadata({
+        op: "create",
+        role: payload.role,
+        studentId: payload.studentId || undefined,
+        employeeId: payload.employeeId || undefined,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1275,7 +1274,11 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
       action: `${auditMetadata.actionPrefix}.update`,
       entityType: auditMetadata.entityType,
       entityId: updated.id,
-      description: `Updated ${auditMetadata.descriptionLabel} ${studentId}`,
+      description: formatAuditMetadata({
+        op: "update",
+        role: Role.STUDENT,
+        studentId,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1440,7 +1443,12 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       action: `${auditMetadata.actionPrefix}.update`,
       entityType: auditMetadata.entityType,
       entityId: updated.id,
-      description: `Updated ${auditMetadata.descriptionLabel} ${payload.studentId ?? payload.employeeId ?? updated.id}`,
+      description: formatAuditMetadata({
+        op: "update",
+        role: payload.role,
+        studentId: payload.studentId || undefined,
+        employeeId: payload.employeeId || undefined,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1507,7 +1515,11 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
       action: `${auditMetadata.actionPrefix}.delete`,
       entityType: auditMetadata.entityType,
       entityId: studentUserId,
-      description: `Deleted ${auditMetadata.descriptionLabel} ${existing.studentId ?? studentUserId}`,
+      description: formatAuditMetadata({
+        op: "delete",
+        role: Role.STUDENT,
+        studentId: existing.studentId || undefined,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1570,7 +1582,12 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       action: `${auditMetadata.actionPrefix}.delete`,
       entityType: auditMetadata.entityType,
       entityId: userId,
-      description: `Deleted ${auditMetadata.descriptionLabel} ${existing.studentId ?? existing.employeeId ?? userId}`,
+      description: formatAuditMetadata({
+        op: "delete",
+        role: existing.role,
+        studentId: existing.studentId || undefined,
+        employeeId: existing.employeeId || undefined,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -1903,7 +1920,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
         actorUserId,
         action: "admin.student.import",
         entityType: auditMetadata.entityType,
-        description: buildImportAuditDescription("Imported student batch", importSummary, failures),
+        description: buildImportAuditDescription("student", importSummary, failures),
         ipAddress: getRequestIpAddress(req),
       });
     } catch (auditError) {
@@ -1940,12 +1957,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
         actorUserId,
         action: "admin.student.import",
         entityType: auditMetadata.entityType,
-        description: buildImportAuditDescription(
-          "Imported student batch",
-          failedSummary,
-          [],
-          error instanceof Error ? error.message : "Unexpected import error"
-        ),
+        description: buildImportAuditDescription("student", failedSummary, [], true),
         ipAddress: getRequestIpAddress(req),
       });
     } catch (auditError) {
@@ -1993,7 +2005,12 @@ export const bulkPromoteStudentStudyYear = async (req: Request, res: Response): 
       actorUserId,
       action: "admin.student.study-year.bulk-update",
       entityType: auditMetadata.entityType,
-      description: `Bulk updated study year from ${fromStudyYear} to ${toStudyYear} for ${result.count} students`,
+      description: formatAuditMetadata({
+        op: "bulk_study_year",
+        fromStudyYear,
+        toStudyYear,
+        updatedCount: result.count,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -2303,7 +2320,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
         actorUserId,
         action: "admin.user.import",
         entityType: "StaffAccount",
-        description: buildImportAuditDescription("Imported staff batch", importSummary, failures),
+        description: buildImportAuditDescription("staff", importSummary, failures),
         ipAddress: getRequestIpAddress(req),
       });
     } catch (auditError) {
@@ -2339,12 +2356,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
         actorUserId,
         action: "admin.user.import",
         entityType: "StaffAccount",
-        description: buildImportAuditDescription(
-          "Imported staff batch",
-          failedSummary,
-          [],
-          error instanceof Error ? error.message : "Unexpected import error"
-        ),
+        description: buildImportAuditDescription("staff", failedSummary, [], true),
         ipAddress: getRequestIpAddress(req),
       });
     } catch (auditError) {
@@ -2464,7 +2476,10 @@ export const assignAdvisorStudents = async (req: Request, res: Response): Promis
       action: "admin.advisor-assignment.assign",
       entityType: "StudentAdvisorAssignment",
       entityId: parsed.data.advisorId,
-      description: `Assigned ${parsed.data.studentIds.length} students to advisor`,
+      description: formatAuditMetadata({
+        op: "assign_advisor",
+        studentCount: parsed.data.studentIds.length,
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -2508,8 +2523,37 @@ export const listAuditLogs = async (req: Request, res: Response): Promise<void> 
       },
     });
 
+    const userTargetIds = Array.from(
+      new Set(
+        auditLogs
+          .filter((log) => log.entityType === "User" && Boolean(log.entityId))
+          .map((log) => log.entityId as string)
+      )
+    );
+
+    const targetUsers =
+      userTargetIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: userTargetIds } },
+            select: {
+              id: true,
+              studentId: true,
+              employeeId: true,
+            },
+          })
+        : [];
+
+    const targetUserById = new Map(targetUsers.map((user) => [user.id, user]));
+
     res.status(200).json({
-      logs: auditLogs,
+      logs: auditLogs.map((log) => {
+        const targetUser = log.entityId ? targetUserById.get(log.entityId) : undefined;
+        return {
+          ...log,
+          targetStudentId: targetUser?.studentId ?? null,
+          targetEmployeeId: targetUser?.employeeId ?? null,
+        };
+      }),
     });
   } catch (error) {
     console.error("List audit logs error:", error);

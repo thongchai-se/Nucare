@@ -8,6 +8,10 @@ import { ChangePasswordForm } from "@/components/change-password-form";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { getInitials } from "@/components/change-password/shared";
 import { facultyFullName } from "@/lib/brand";
+import {
+  STUDENT_LOGOUT_LABEL,
+  STUDENT_NAV_PROFILE,
+} from "@/lib/student-chrome";
 import type { User } from "@/types/auth";
 
 export function StudentProfileStyledChangePasswordView({
@@ -129,20 +133,8 @@ export function StudentProfileStyledChangePasswordView({
                   role="menu"
                 >
                   <Link
-                    href="/student/profile"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-slate-50"
-                    onClick={() => setProfileMenuOpen(false)}
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                      <Contact className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">ประวัติส่วนตัว</p>
-                    </div>
-                  </Link>
-                  <Link
                     href="/change-password"
-                    className="mt-1 flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-left ring-1 ring-inset ring-blue-100"
+                    className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-left ring-1 ring-inset ring-blue-100"
                     onClick={() => setProfileMenuOpen(false)}
                   >
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
@@ -164,7 +156,7 @@ export function StudentProfileStyledChangePasswordView({
                       <LogOut className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-red-600">ออกจากระบบ</p>
+                      <p className="text-sm font-semibold text-red-600">{STUDENT_LOGOUT_LABEL}</p>
                     </div>
                   </button>
                 </div>
@@ -206,7 +198,7 @@ export function StudentProfileStyledChangePasswordView({
                 onClick={closeStudentMobileMenu}
               >
                 <Contact className="h-4 w-4 text-slate-700" />
-                โปรไฟล์
+                {STUDENT_NAV_PROFILE}
               </Link>
               <Link
                 href="/change-password"
@@ -224,7 +216,7 @@ export function StudentProfileStyledChangePasswordView({
                 }}
                 className="col-span-2 flex w-full items-center justify-center gap-2 rounded-[1.05rem] border border-red-200 bg-red-50/60 px-3 py-3 text-sm font-semibold text-red-600 shadow-sm transition-colors hover:bg-red-50"
               >
-                <LogOut size={18} /> ออกจากระบบ
+                <LogOut size={18} /> {STUDENT_LOGOUT_LABEL}
               </button>
             </div>
           </div>

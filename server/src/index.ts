@@ -7,9 +7,13 @@ import { readEnv, requireEnv } from "./lib/env";
 import { assertEmailReadyForEnvironment } from "./lib/email";
 import { seedDefaultUsersIfMissing } from "./lib/default-users.seed";
 import { prisma } from "./lib/prisma";
+import { resolveUnhandledHttpError } from "./lib/http-error-message";
 import { SITE_MEDIA_UPLOAD_DIR } from "./lib/site-media";
+import { purgeExpiredAuditLogs } from "./lib/audit-log";
 import { purgeStaleStudentChatMemories } from "./lib/student-chat/memory";
+import { materializeDueWaves } from "./lib/survey-auto-schedule";
 import { assertChatReadyForEnvironment } from "./lib/student-chat/provider";
+import { purgeExpiredTrafficLogs, trafficLogMiddleware } from "./lib/traffic-log";
 import adminRoutes from "./routes/admin.routes";
 import alertsRoutes from "./routes/alerts.routes";
 import authRoutes from "./routes/auth.routes";
@@ -44,7 +48,10 @@ const trustProxyHops = Math.max(
   0,
   parseNonNegativeInt(readEnv("TRUST_PROXY_HOPS"), defaultTrustProxyHops)
 );
-/** รองรับอัปโหลดรูปสื่อแบบ data URL จากแอดมิน (สูงสุด ~2MB ไฟล์) */
+/**
+ * รองรับอัปโหลดรูปสื่อแบบ data URL (ไฟล์จริงสูงสุด ~2MB)
+ * base64 บวมประมาณ 4/3 จึงควรตั้งอย่างน้อย 4mb — ค่าใน .env ที่ต่ำกว่าจะทำให้อัปโหลดหลุดก่อนถึงตัวตรวจขนาดรูป
+ */
 const jsonBodyLimit = readEnv("JSON_BODY_LIMIT") || "4mb";
 const allowedOrigins = (readEnv("CLIENT_ORIGIN") || "http://localhost:3000")
   .split(",")
@@ -180,6 +187,7 @@ app.use(
 );
 app.use(express.json({ limit: jsonBodyLimit }));
 app.use(cookieParser());
+app.use(trafficLogMiddleware);
 app.use(async (_req: Request, _res: Response, next: NextFunction) => {
   try {
     await ensureAppReady();
@@ -233,10 +241,11 @@ app.get("/api/uploads/site-media/:fileName", (req: Request, res: Response) => {
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ message: "Internal server error" });
+  const resolved = resolveUnhandledHttpError(err);
+  res.status(resolved.status).json({ message: resolved.message });
 });
 
-const CHAT_MEMORY_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const LOG_MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const runChatMemoryMaintenance = async (): Promise<void> => {
   try {
@@ -249,12 +258,62 @@ const runChatMemoryMaintenance = async (): Promise<void> => {
   }
 };
 
+const runComplianceLogMaintenance = async (): Promise<void> => {
+  try {
+    const [trafficDeleted, auditDeleted] = await Promise.all([
+      purgeExpiredTrafficLogs(),
+      purgeExpiredAuditLogs(),
+    ]);
+    if (trafficDeleted > 0) {
+      console.log(`[traffic-log] purged ${trafficDeleted} expired rows`);
+    }
+    if (auditDeleted > 0) {
+      console.log(`[audit-log] purged ${auditDeleted} expired rows`);
+    }
+  } catch (error) {
+    console.error("[compliance-log] purge failed:", error);
+  }
+};
+
+/** ช่วงเวลา tick งานสร้างรอบแบบประเมินอัตโนมัติ (ค่าเริ่มต้น 10 นาที, ขั้นต่ำ 1 นาที) */
+const surveyScheduleIntervalMs = Math.max(
+  60 * 1000,
+  parseNonNegativeInt(readEnv("SURVEY_SCHEDULE_INTERVAL_MS"), 10 * 60 * 1000)
+);
+let surveyScheduleRunning = false;
+
+/** รันงานปิดรอบที่หมดเวลาและสร้าง/เปิดรอบตามความถี่ของแบบประเมิน; ข้ามถ้า tick ก่อนหน้ายังไม่จบ */
+const runSurveyScheduleTick = async (): Promise<void> => {
+  if (surveyScheduleRunning) {
+    return;
+  }
+  surveyScheduleRunning = true;
+  try {
+    const result = await materializeDueWaves();
+    if (result.closed > 0 || result.created > 0 || result.opened > 0) {
+      console.log(
+        `[survey-schedule] closed=${result.closed} created=${result.created} opened=${result.opened}`
+      );
+    }
+  } catch (error) {
+    console.error("[survey-schedule] tick failed:", error);
+  } finally {
+    surveyScheduleRunning = false;
+  }
+};
+
 const startServer = async (): Promise<void> => {
   await ensureAppReady(5);
   await runChatMemoryMaintenance();
+  await runComplianceLogMaintenance();
+  await runSurveyScheduleTick();
   setInterval(() => {
     void runChatMemoryMaintenance();
-  }, CHAT_MEMORY_PURGE_INTERVAL_MS);
+    void runComplianceLogMaintenance();
+  }, LOG_MAINTENANCE_INTERVAL_MS);
+  setInterval(() => {
+    void runSurveyScheduleTick();
+  }, surveyScheduleIntervalMs);
 
   app.listen(port, () => {
     console.log(`NuCare server listening on http://localhost:${port}`);

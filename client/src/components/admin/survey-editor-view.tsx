@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+} from "react";
 import {
   AlertCircle,
   AlignLeft,
@@ -11,8 +19,11 @@ import {
   CheckCircle2,
   CheckSquare,
   ClipboardList,
+  Copy,
   Download,
+  Eye,
   Hash,
+  Layers,
   Loader2,
   Plus,
   SlidersHorizontal,
@@ -24,6 +35,9 @@ import {
 import type {
   Ghq28DistressLevel,
   Survey,
+  SurveyAssignmentRosterState,
+  SurveyAssignmentRowStatus,
+  SurveyAssignmentStatusFilter,
   SurveyAudienceType,
   SurveyEligibilityRule,
   SurveyFrequency,
@@ -35,10 +49,12 @@ import type {
   SurveyRiskLevel,
   SurveyScheduleUnit,
   SurveyStatus,
+  SurveyVersionSummary,
   SurveyWaveSummary,
   WellnessTrendSignalCode,
 } from "@/types/survey";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { pickLatestVersion } from "@/lib/survey-scoring-rules-input";
 import { buildNextWaveDraft, toDateTimeLocalValue } from "@/lib/survey-schedule";
 
 export type SurveyQuestionForm = Omit<SurveyQuestion, "id" | "order"> & {
@@ -82,6 +98,19 @@ const waveStatusLabels: Record<string, string> = {
   OPEN: "เปิดอยู่",
   CLOSED: "ปิดแล้ว",
   CANCELLED: "ยกเลิก",
+};
+
+const rosterFilterTabs: Array<{ value: SurveyAssignmentStatusFilter; label: string }> = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "pending", label: "รอทำ" },
+  { value: "completed", label: "ทำแล้ว" },
+  { value: "overdue", label: "เกินกำหนด" },
+];
+
+const rosterStatusMeta: Record<SurveyAssignmentRowStatus, { className: string; label: string }> = {
+  completed: { className: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "ทำแล้ว" },
+  pending: { className: "border-amber-200 bg-amber-50 text-amber-700", label: "รอทำ" },
+  overdue: { className: "border-red-200 bg-red-50 text-red-700", label: "เกินกำหนด" },
 };
 
 const audienceLabels: Record<SurveyAudienceType, string> = {
@@ -186,6 +215,16 @@ type SurveyEditorViewProps = {
   }) => void | Promise<void>;
   onOpenWave?: (waveId: string) => void | Promise<void>;
   onCloseWave?: (waveId: string) => void | Promise<void>;
+  onCancelWave?: (waveId: string) => void | Promise<void>;
+  onLoadAssignments?: (waveId: string, status: SurveyAssignmentStatusFilter) => void | Promise<void>;
+  assignmentRoster?: SurveyAssignmentRosterState | null;
+  assignmentRosterLoading?: boolean;
+  assignmentRosterError?: string;
+  versions?: SurveyVersionSummary[];
+  duplicating?: boolean;
+  onPreviewSurvey?: () => void | Promise<void>;
+  onDuplicateSurvey?: (survey: Survey) => void | Promise<void>;
+  onOpenPublishVersion?: () => void;
 };
 
 export function SurveyEditorView(props: SurveyEditorViewProps) {
@@ -213,6 +252,16 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
     onCreateWave,
     onOpenWave,
     onCloseWave,
+    onCancelWave,
+    onLoadAssignments,
+    assignmentRoster = null,
+    assignmentRosterLoading = false,
+    assignmentRosterError = "",
+    versions = [],
+    duplicating = false,
+    onPreviewSurvey,
+    onDuplicateSurvey,
+    onOpenPublishVersion,
     ghq28DistressCounts,
     highRiskResponseCount,
     statusLabels,
@@ -253,6 +302,40 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
   const [waveTermKey, setWaveTermKey] = useState("");
   const [waveOpenNow, setWaveOpenNow] = useState(true);
 
+  const [rosterWaveId, setRosterWaveId] = useState<string | null>(null);
+  const [rosterFilter, setRosterFilter] = useState<SurveyAssignmentStatusFilter>("all");
+  const [confirmCancelWaveId, setConfirmCancelWaveId] = useState<string | null>(null);
+
+  // ปิดหน้าต่างหรือสลับไปแบบสอบถามอื่นต้องไม่ค้างแผงรายชื่อ/คำยืนยันยกเลิกของรอบเดิม
+  useEffect(() => {
+    setRosterWaveId(null);
+    setRosterFilter("all");
+    setConfirmCancelWaveId(null);
+  }, [editorOpen, form.id]);
+
+  /** เปิด/พับแผงรายชื่อมอบหมายของรอบ — เปิดแล้วโหลดแท็บ "ทั้งหมด" ใหม่ทุกครั้ง */
+  const toggleRoster = (waveId: string) => {
+    if (rosterWaveId === waveId) {
+      setRosterWaveId(null);
+      return;
+    }
+    setRosterWaveId(waveId);
+    setRosterFilter("all");
+    void onLoadAssignments?.(waveId, "all");
+  };
+
+  const changeRosterFilter = (waveId: string, status: SurveyAssignmentStatusFilter) => {
+    setRosterFilter(status);
+    void onLoadAssignments?.(waveId, status);
+  };
+
+  /** ยืนยันยกเลิกรอบแล้วพับแผงรายชื่อของรอบนั้น (ข้อมูลรายชื่อเปลี่ยนหลังยกเลิก) */
+  const confirmCancelWave = async (waveId: string) => {
+    setConfirmCancelWaveId(null);
+    await onCancelWave?.(waveId);
+    setRosterWaveId((current) => (current === waveId ? null : current));
+  };
+
   const applySuggestedWave = () => {
     setWaveLabel(suggestedWave.label);
     setWaveOpensAt(toDateTimeLocalValue(suggestedWave.opensAt));
@@ -262,6 +345,7 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
   };
 
   const showOptionScores = form.instrumentCode === "GHQ28" || isCurrentSurveyGhq28;
+  const latestVersion = useMemo(() => pickLatestVersion(versions), [versions]);
 
   return editorOpen ? (
       <div
@@ -310,11 +394,9 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5">
             <div id="survey-workspace" className="mx-auto max-w-7xl space-y-6 pb-6">
       {loadingData ? (
-        <div className="flex min-h-[24rem] items-center justify-center rounded-2xl border border-slate-200 bg-white">
-          <div className="flex items-center gap-3 text-sm font-medium text-slate-500">
-            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-            กำลังโหลดข้อมูล
-          </div>
+        <div className="flex min-h-[24rem] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white">
+          <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
+          <p className="text-sm font-medium text-slate-500">กำลังโหลดข้อมูล</p>
         </div>
       ) : (
         <form id="admin-survey-form" onSubmit={handleSave} className="space-y-5 pb-10 lg:pb-6">
@@ -328,12 +410,61 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
                   {form.questions.length.toLocaleString()} คำถาม
                   {activeQuestion ? ` · กำลังแก้ข้อ ${form.questions.findIndex((question) => question.clientId === activeQuestion.clientId) + 1}` : ""}
                 </p>
-                <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                  {form.id ? `ID: ${form.id}` : "ยังไม่ได้บันทึกลงฐานข้อมูล"}
-                </p>
+                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                  <p className="truncate text-xs font-medium text-slate-500">
+                    {form.id ? `ID: ${form.id}` : "ยังไม่ได้บันทึกลงฐานข้อมูล"}
+                  </p>
+                  {form.id && latestVersion ? (
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700"
+                      title={`เวอร์ชันล่าสุด ${latestVersion.questionCount.toLocaleString()} คำถาม · ${latestVersion.responseCount.toLocaleString()} คำตอบ`}
+                    >
+                      <Layers className="h-3 w-3" />
+                      เวอร์ชัน {latestVersion.version.toLocaleString()}
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                {form.id ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void onPreviewSurvey?.()}
+                      disabled={!onPreviewSurvey}
+                      className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                      title="ดูแบบสอบถามตามที่นักศึกษาจะเห็น (ตามที่บันทึกล่าสุด)"
+                    >
+                      <Eye className="h-4 w-4" />
+                      พรีวิว
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedSurvey) {
+                          void onDuplicateSurvey?.(selectedSurvey);
+                        }
+                      }}
+                      disabled={!onDuplicateSurvey || !selectedSurvey || duplicating}
+                      className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      title="ทำสำเนาจากฉบับที่บันทึกแล้ว เป็นฉบับร่างใหม่ (การแก้ไขที่ยังไม่บันทึกจะไม่ถูกคัดลอก)"
+                    >
+                      {duplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                      ทำสำเนา
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenPublishVersion?.()}
+                      disabled={!onOpenPublishVersion}
+                      className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-60"
+                      title="ตรึงคำถามที่บันทึกล่าสุดเป็นเวอร์ชันใหม่"
+                    >
+                      <Layers className="h-4 w-4" />
+                      เผยแพร่เวอร์ชัน
+                    </button>
+                  </>
+                ) : null}
                 {form.id ? (
                   <button
                     type="button"
@@ -836,7 +967,8 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
                       {waves.map((wave) => (
-                        <tr key={wave.id}>
+                        <Fragment key={wave.id}>
+                        <tr>
                           <td className="px-3 py-2 font-semibold text-slate-900">{wave.label}</td>
                           <td className="px-3 py-2 text-slate-600">
                             {waveStatusLabels[wave.status] || "ไม่ทราบสถานะ"}
@@ -849,28 +981,173 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
-                              {wave.status !== "OPEN" ? (
-                                <button
-                                  type="button"
-                                  disabled={waveActionLoading}
-                                  onClick={() => void onOpenWave?.(wave.id)}
-                                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700"
-                                >
-                                  เปิด
-                                </button>
-                              ) : (
+                              {wave.status === "OPEN" ? (
                                 <button
                                   type="button"
                                   disabled={waveActionLoading}
                                   onClick={() => void onCloseWave?.(wave.id)}
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 disabled:opacity-60"
                                 >
                                   ปิด
                                 </button>
-                              )}
+                              ) : wave.status !== "CANCELLED" ? (
+                                <button
+                                  type="button"
+                                  disabled={waveActionLoading}
+                                  onClick={() => void onOpenWave?.(wave.id)}
+                                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 disabled:opacity-60"
+                                >
+                                  เปิด
+                                </button>
+                              ) : null}
+
+                              {onCancelWave && (wave.status === "SCHEDULED" || wave.status === "OPEN") ? (
+                                confirmCancelWaveId === wave.id ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={waveActionLoading}
+                                      onClick={() => void confirmCancelWave(wave.id)}
+                                      className="rounded-lg border border-red-300 bg-red-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                                    >
+                                      ยืนยันยกเลิก
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmCancelWaveId(null)}
+                                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                    >
+                                      ไม่ยกเลิก
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={waveActionLoading}
+                                    onClick={() => setConfirmCancelWaveId(wave.id)}
+                                    className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                                  >
+                                    ยกเลิกรอบ
+                                  </button>
+                                )
+                              ) : null}
+
+                              <button
+                                type="button"
+                                aria-expanded={rosterWaveId === wave.id}
+                                onClick={() => toggleRoster(wave.id)}
+                                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                                  rosterWaveId === wave.id
+                                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                                }`}
+                              >
+                                <Users className="h-3.5 w-3.5" />
+                                รายชื่อมอบหมาย
+                              </button>
                             </div>
                           </td>
                         </tr>
+                        {rosterWaveId === wave.id ? (
+                          <tr>
+                            <td colSpan={7} className="bg-slate-50/70 px-3 py-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap gap-1.5" role="group" aria-label="กรองรายชื่อตามสถานะ">
+                                  {rosterFilterTabs.map((tab) => {
+                                    const count =
+                                      assignmentRoster?.waveId === wave.id
+                                        ? tab.value === "all"
+                                          ? assignmentRoster.summary.total
+                                          : assignmentRoster.summary[tab.value]
+                                        : null;
+                                    return (
+                                      <button
+                                        key={tab.value}
+                                        type="button"
+                                        aria-pressed={rosterFilter === tab.value}
+                                        onClick={() => changeRosterFilter(wave.id, tab.value)}
+                                        className={`rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                                          rosterFilter === tab.value
+                                            ? "border-blue-600 bg-blue-600 text-white"
+                                            : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700"
+                                        }`}
+                                      >
+                                        {tab.label}
+                                        {count !== null ? ` (${count.toLocaleString()})` : ""}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setRosterWaveId(null)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  ซ่อนรายชื่อ
+                                </button>
+                              </div>
+
+                              {assignmentRosterError ? (
+                                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                                  {assignmentRosterError}
+                                </p>
+                              ) : null}
+
+                              {assignmentRosterLoading ||
+                              (!assignmentRosterError &&
+                                !(assignmentRoster?.waveId === wave.id && assignmentRoster.status === rosterFilter)) ? (
+                                <div className="mt-3 flex items-center gap-2 py-4 text-sm font-medium text-slate-500">
+                                  <span className="loader h-4 w-4 text-blue-600" aria-hidden="true" />
+                                  กำลังโหลดรายชื่อ
+                                </div>
+                              ) : assignmentRoster?.waveId === wave.id && assignmentRoster.status === rosterFilter ? (
+                                <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white">
+                                  <table className="min-w-full divide-y divide-slate-100 text-xs">
+                                    <thead className="sticky top-0 bg-slate-50 text-left font-bold text-slate-500">
+                                      <tr>
+                                        <th className="px-3 py-2">ชื่อ</th>
+                                        <th className="px-3 py-2">รหัสนักศึกษา</th>
+                                        <th className="px-3 py-2">สถานะ</th>
+                                        <th className="px-3 py-2">ส่งเมื่อ</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {assignmentRoster.rows.length === 0 ? (
+                                        <tr>
+                                          <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                                            ไม่มีรายชื่อในสถานะนี้
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        assignmentRoster.rows.map((row) => {
+                                          const meta = rosterStatusMeta[row.status] ?? rosterStatusMeta.pending;
+                                          return (
+                                            <tr key={row.id}>
+                                              <td className="px-3 py-2 font-semibold text-slate-900">{row.studentName}</td>
+                                              <td className="px-3 py-2 text-slate-600">{row.studentCode || "-"}</td>
+                                              <td className="px-3 py-2">
+                                                <span
+                                                  className={`inline-flex rounded-full border px-2 py-0.5 font-bold ${meta.className}`}
+                                                >
+                                                  {meta.label}
+                                                </span>
+                                              </td>
+                                              <td className="px-3 py-2 text-slate-600">
+                                                {formatThaiDateTime(row.completedAt)}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>

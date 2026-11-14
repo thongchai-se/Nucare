@@ -24,13 +24,16 @@ import { ExecutiveCommonIssues } from "@/components/executive/executive-common-i
 import { ExecutiveDistressHeatmap } from "@/components/executive/executive-distress-heatmap";
 import { ExecutivePageToolbar } from "@/components/executive/executive-page-toolbar";
 import { ExecutiveScreeningComparison } from "@/components/executive/executive-screening-comparison";
+import { ExecutiveScreeningOverviewCharts } from "@/components/executive/executive-screening-overview-charts";
 import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
 import { ExecutiveStatCard } from "@/components/executive/executive-stat-card";
 import { ExecutiveQuietExport } from "@/components/executive/executive-quiet-export";
 import { ExecutiveStudentLookup } from "@/components/executive/executive-student-lookup";
+import { MultiSeriesLineChart } from "@/components/executive/multi-series-line-chart";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
 import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
 import { StaffSidebarSection } from "@/components/staff-sidebar-section";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { PageHeader } from "@/components/ui/page-header";
 import { useListPagination } from "@/hooks/use-list-pagination";
@@ -267,9 +270,6 @@ const exportExecutiveCsv = (dashboard: ExecutiveDashboardResponse, yearFilter: E
 
 const getInitials = (name: string, fallback = "ผบ"): string => getNameInitials(name, fallback);
 
-const getTrendMaxValue = (trends: TrendItem[]): number =>
-  Math.max(...trends.flatMap((item) => [item.screened, item.highRisk, item.referrals, item.sos]), 1);
-
 function ExecutiveDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -442,8 +442,8 @@ function ExecutiveDashboardContent() {
 
     if (dashboardError && !dashboard) {
       return (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-8 text-center">
-          <p className="text-sm font-medium text-red-700">{dashboardError}</p>
+        <InlineAlert className="rounded-2xl p-8">
+          <p>{dashboardError}</p>
           <button
             type="button"
             onClick={() => void fetchDashboard("manual")}
@@ -451,7 +451,7 @@ function ExecutiveDashboardContent() {
           >
             <RefreshCw size={16} /> ลองใหม่
           </button>
-        </div>
+        </InlineAlert>
       );
     }
 
@@ -462,18 +462,18 @@ function ExecutiveDashboardContent() {
     return (
       <div className="space-y-4">
         {dashboardError ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-amber-900">
-              อัปเดตล่าสุดไม่สำเร็จ — กำลังแสดงข้อมูลที่โหลดไว้ก่อนหน้า
-            </p>
-            <button
-              type="button"
-              onClick={() => void fetchDashboard("manual")}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900"
-            >
-              <RefreshCw size={14} /> ลองใหม่
-            </button>
-          </div>
+          <InlineAlert tone="warning" className="sm:items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>อัปเดตล่าสุดไม่สำเร็จ — กำลังแสดงข้อมูลที่โหลดไว้ก่อนหน้า</p>
+              <button
+                type="button"
+                onClick={() => void fetchDashboard("manual")}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900"
+              >
+                <RefreshCw size={14} /> ลองใหม่
+              </button>
+            </div>
+          </InlineAlert>
         ) : null}
         {children}
       </div>
@@ -562,6 +562,8 @@ function ExecutiveDashboardContent() {
             />
             <ExecutiveCommonIssues issues={activeBucket.commonIssues} bucketLabel={activeBucket.label} />
           </div>
+
+          <ExecutiveScreeningOverviewCharts yearFilter={yearFilter} />
 
           <div className="flex justify-end">
             <ExecutiveQuietExport onClick={runSummaryExport} label="ส่งออกสรุป CSV" />
@@ -757,22 +759,10 @@ function ExecutiveDashboardContent() {
           <ExecutiveSectionShell
             icon={<TrendingUp className="text-indigo-600" size={20} />}
             title="กราฟแนวโน้ม"
-            subtitle="จำนวนการประเมิน กลุ่มเสี่ยงสูง Referral และ SOS รายเดือน"
+            subtitle="จำนวนการประเมิน กลุ่มเสี่ยงสูง Referral และ SOS รายเดือน — เส้นซ้อนคนละสี"
           >
-            <div className="mb-6 flex flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-blue-400" />
-                <span className="text-xs font-medium text-slate-600">ประเมิน</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-red-500" />
-                <span className="text-xs font-medium text-slate-600">เสี่ยงสูง</span>
-              </div>
-            </div>
-
             {(() => {
               const trends = activeBucket.trends;
-              const maxVal = getTrendMaxValue(trends);
               const hasTrendData = trends.some(
                 (item) => item.screened > 0 || item.highRisk > 0 || item.referrals > 0 || item.sos > 0
               );
@@ -786,45 +776,37 @@ function ExecutiveDashboardContent() {
                 );
               }
 
-              const chartMaxPx = 200;
-
               return (
-                <div className="overflow-x-auto pb-2">
-                  <div className="relative flex min-w-[560px] items-end justify-between gap-3 border-b border-slate-200 px-1 pt-2 sm:min-w-0 sm:gap-6">
-                    {trends.map((data) => {
-                      const screenedPx = data.screened <= 0 ? 0 : Math.max(8, Math.round((data.screened / maxVal) * chartMaxPx));
-                      const highRiskPx = data.highRisk <= 0 ? 0 : Math.max(8, Math.round((data.highRisk / maxVal) * chartMaxPx));
-
-                      return (
-                        <div
-                          key={data.month}
-                          className="relative z-10 flex min-w-[72px] flex-1 flex-col items-center justify-end gap-1.5"
-                          style={{ height: chartMaxPx + 56 }}
-                        >
-                          <div className="flex w-full items-end justify-center gap-1.5 sm:gap-2" style={{ height: chartMaxPx }}>
-                            <div
-                              aria-label={`ประเมิน ${data.screened}`}
-                              style={{ height: screenedPx }}
-                              className="w-4 rounded-t-md bg-blue-400 transition-[height] duration-500 sm:w-7"
-                            />
-                            <div
-                              aria-label={`เสี่ยงสูง ${data.highRisk}`}
-                              style={{ height: highRiskPx }}
-                              className="w-4 rounded-t-md bg-red-500 transition-[height] duration-500 sm:w-7"
-                            />
-                          </div>
-                          <span className="text-xs font-bold text-slate-600">{data.label}</span>
-                          <span className="text-[10px] tabular-nums text-slate-500">
-                            {data.screened}/{data.highRisk}
-                          </span>
-                          <span className="text-[10px] tabular-nums text-slate-400">
-                            ส่งต่อ {data.referrals} · SOS {data.sos}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <MultiSeriesLineChart
+                  labels={trends.map((item) => item.label)}
+                  series={[
+                    {
+                      id: "screened",
+                      label: "ประเมิน",
+                      color: "#60a5fa",
+                      values: trends.map((item) => item.screened),
+                    },
+                    {
+                      id: "highRisk",
+                      label: "เสี่ยงสูง",
+                      color: "#ef4444",
+                      values: trends.map((item) => item.highRisk),
+                    },
+                    {
+                      id: "referrals",
+                      label: "ส่งต่อ",
+                      color: "#d97706",
+                      values: trends.map((item) => item.referrals),
+                    },
+                    {
+                      id: "sos",
+                      label: "SOS",
+                      color: "#7c3aed",
+                      values: trends.map((item) => item.sos),
+                    },
+                  ]}
+                  yLabel="จำนวนรายเดือน"
+                />
               );
             })()}
 

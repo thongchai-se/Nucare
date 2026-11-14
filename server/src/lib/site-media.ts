@@ -6,6 +6,9 @@ import path from "node:path";
 export const SITE_MEDIA_UPLOAD_DIR = path.join(process.cwd(), "uploads", "site-media");
 export const SITE_MEDIA_PUBLIC_PREFIX = "/api/uploads/site-media";
 
+/** รายการคลิปที่เก็บแค่ลิงก์ ไม่มีไฟล์รูปในดิสก์ */
+export const SITE_MEDIA_LINK_ONLY_PATH = "__link__";
+
 const ALLOWED_MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -26,8 +29,112 @@ export function isSiteMediaSlot(value: string): value is SiteMediaSlot {
   return (
     value === SiteMediaSlot.HOME_HERO ||
     value === SiteMediaSlot.HOME_GALLERY ||
+    value === SiteMediaSlot.HOME_VIDEO ||
     value === SiteMediaSlot.STUDENT_ACTIVITY
   );
+}
+
+/** คำนวณลำดับถัดไปจากค่าสูงสุดในช่อง — รายการแรกได้ 0 */
+export function resolveNextSortOrder(maxSortOrder: number | null | undefined): number {
+  if (maxSortOrder == null || !Number.isFinite(maxSortOrder)) {
+    return 0;
+  }
+  return Math.min(9999, Math.floor(maxSortOrder) + 1);
+}
+
+/** สร้างคู่ id→sortOrder ตามลำดับที่ลากจัด (เบา ไม่ต้องคำนวณหนัก) */
+export function buildReorderSortAssignments(
+  orderedIds: string[]
+): Array<{ id: string; sortOrder: number }> {
+  return orderedIds.map((id, index) => ({ id, sortOrder: index }));
+}
+
+/** รายการที่ไม่มีไฟล์รูป (คลิปจากลิงก์) */
+export function isLinkOnlySiteMediaPath(imagePath: string | null | undefined): boolean {
+  return !imagePath || imagePath === SITE_MEDIA_LINK_ONLY_PATH;
+}
+
+/**
+ * ดึงรหัสวิดีโอ YouTube จากลิงก์ที่รองรับ
+ * (watch / youtu.be / embed / shorts)
+ */
+export function parseYoutubeVideoId(url: string | null | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+    if (host !== "youtube.com" && host !== "m.youtube.com" && host !== "youtu.be" && host !== "youtube-nocookie.com") {
+      return null;
+    }
+
+    if (host === "youtu.be") {
+      const id = parsed.pathname.split("/").filter(Boolean)[0];
+      return id && /^[\w-]{6,}$/i.test(id) ? id : null;
+    }
+
+    const fromQuery = parsed.searchParams.get("v");
+    if (fromQuery && /^[\w-]{6,}$/i.test(fromQuery)) {
+      return fromQuery;
+    }
+
+    const embedMatch = parsed.pathname.match(/\/(?:embed|shorts)\/([^/?#]+)/i);
+    if (embedMatch?.[1] && /^[\w-]{6,}$/i.test(embedMatch[1])) {
+      return embedMatch[1];
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/** ตรวจและคืนลิงก์ YouTube มาตรฐาน — ไม่ใช่ YouTube คืน null */
+export function sanitizeYoutubeWatchUrl(value: string | null | undefined): string | null {
+  const id = parseYoutubeVideoId(value);
+  if (!id) {
+    return null;
+  }
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+}
+
+/** URL ปกคลิปจาก YouTube (ใช้แสดงตัวอย่าง) */
+export function youtubePosterUrl(videoId: string): string {
+  return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+}
+
+/**
+ * ตรวจและคืนลิงก์สื่อที่ปลอดภัย — อนุญาตเฉพาะ path ในแอป หรือ http(s)
+ * คืน null ถ้าว่างหรือโปรโตคอลไม่ปลอดภัย
+ */
+export function sanitizeMediaHref(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes("\\") || trimmed.includes("\0")) {
+    return null;
+  }
+
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 /** แปลง data URL รูปเป็น buffer — ปฏิเสธชนิด/ขนาดที่ไม่ปลอดภัย */
@@ -80,6 +187,9 @@ export async function saveSiteMediaImage(buffer: Buffer, extension: string): Pro
 
 /** ลบไฟล์รูปถ้าอยู่ในโฟลเดอร์ที่อนุญาต */
 export async function deleteSiteMediaImage(imagePath: string): Promise<void> {
+  if (isLinkOnlySiteMediaPath(imagePath)) {
+    return;
+  }
   const base = path.basename(imagePath);
   if (!base || base !== imagePath || base.includes("..")) {
     return;
@@ -113,13 +223,23 @@ export function serializeSiteMediaItem(item: {
   createdAt: Date;
   updatedAt: Date;
 }) {
+  const isVideo = item.slot === SiteMediaSlot.HOME_VIDEO || isLinkOnlySiteMediaPath(item.imagePath);
+  const href = isVideo
+    ? sanitizeYoutubeWatchUrl(item.href) ?? sanitizeMediaHref(item.href)
+    : sanitizeMediaHref(item.href);
+  const youtubeId = isVideo ? parseYoutubeVideoId(href) : null;
+
   return {
     id: item.id,
     slot: item.slot,
     title: item.title,
     altText: item.altText,
-    imageUrl: toSiteMediaPublicUrl(item.imagePath),
-    href: item.href,
+    imageUrl: isLinkOnlySiteMediaPath(item.imagePath)
+      ? youtubeId
+        ? youtubePosterUrl(youtubeId)
+        : ""
+      : toSiteMediaPublicUrl(item.imagePath),
+    href,
     ctaLabel: item.ctaLabel,
     tag: item.tag,
     summary: item.summary,

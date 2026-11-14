@@ -12,6 +12,7 @@ import {
   updateMentalHealthAppointmentStatus,
   updateReferralStatus,
 } from "../controllers/mental-health.controller";
+import { getMentalHealthAssessmentHistory } from "../controllers/assessment-history.controller";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware";
 import { consultationRequestRateLimit } from "../middleware/rate-limit.middleware";
 
@@ -21,6 +22,7 @@ router.use(authenticateToken, authorizeRoles(Role.MENTAL_HEALTH));
 
 router.get("/dashboard", getMentalHealthDashboard);
 router.get("/students/:studentUserId/history", getMentalHealthStudentHistoryDetail);
+router.get("/students/:studentUserId/assessment-history", getMentalHealthAssessmentHistory);
 router.get("/referrals/:referralId/history", getMentalHealthReferralHistoryDetail);
 router.patch("/referrals/:referralId/status", updateReferralStatus);
 router.patch("/emergency-cases/:caseId/status", updateEmergencyCaseStatus);

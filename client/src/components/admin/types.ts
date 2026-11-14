@@ -16,6 +16,8 @@ export type AdminAuditLog = {
   description: string | null;
   ipAddress: string | null;
   createdAt: string;
+  targetStudentId?: string | null;
+  targetEmployeeId?: string | null;
   actor: {
     id: string;
     name: string;

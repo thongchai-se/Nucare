@@ -2,16 +2,16 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ClipboardList, FolderInput, Images, Users } from "lucide-react";
+import { ClipboardList, Images, Users } from "lucide-react";
 
-/** ทางลัดตั้งค่าแอดมินไปยังแบบประเมิน ไดเรกทอรี และจัดการผู้ใช้ */
+/** ทางลัดตั้งค่าแอดมินไปยังแบบประเมินและจัดการผู้ใช้ */
 export function SettingsView() {
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-slate-800">ตั้งค่าระบบพื้นฐาน</h2>
         <p className="mt-1 text-sm text-slate-500">
-          ทางลัดไปยังการจัดการผู้ใช้ แบบประเมิน และไดเรกทอรีภายนอก
+          ทางลัดไปยังการจัดการผู้ใช้ แบบประเมิน และภาพประชาสัมพันธ์
         </p>
       </div>
 
@@ -27,12 +27,6 @@ export function SettingsView() {
           icon={<Images className="h-5 w-5 text-sky-600" />}
           title="ภาพประชาสัมพันธ์"
           description="เพิ่ม แก้ไข ลบภาพแบนเนอร์ แกลเลอรีหน้าแรก และกิจกรรมหน้านิสิต"
-        />
-        <SettingsCard
-          href="/admin/external-directory"
-          icon={<FolderInput className="h-5 w-5 text-indigo-600" />}
-          title="ไดเรกทอรีภายนอก"
-          description="ดึงรายชื่อจากระบบไดเรกทอรีของคณะเพื่อเตรียมนำเข้า"
         />
         <SettingsCard
           href="/admin/manage-students"

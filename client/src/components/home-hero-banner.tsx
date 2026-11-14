@@ -2,8 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ImageIcon, Pause, Play } from "lucide-react";
+import { usePublicSiteMedia } from "@/hooks/use-public-site-media";
 import { homeHeroSlides, type HomeHeroSlide } from "@/lib/home-media";
-import { fetchPublicSiteMedia } from "@/lib/site-media-api";
 
 function HeroSlideVisual({
   src,
@@ -32,29 +32,38 @@ function HeroSlideVisual({
   );
 }
 
-export function HomeHeroBanner() {
-  const [slides, setSlides] = useState<HomeHeroSlide[]>(homeHeroSlides);
+function HeroBannerSkeleton() {
+  return (
+    <section
+      id="hero"
+      className="relative z-0 w-full overflow-hidden border-b border-slate-200 bg-slate-900 pt-16 sm:pt-20"
+      aria-busy="true"
+      aria-label="กำลังโหลดภาพประชาสัมพันธ์หน้าแรก"
+    >
+      <div className="relative h-[min(68vh,730px)] min-h-[470px] w-full overflow-hidden bg-slate-900 sm:min-h-[550px] md:min-h-[620px] lg:h-[min(73vh,800px)]">
+        <div className="absolute inset-0 animate-pulse bg-[radial-gradient(ellipse_at_65%_30%,rgba(56,189,248,0.12),transparent_48%),linear-gradient(145deg,#0b1f3a_0%,#163a5f_50%,#0c4a6e_100%)]" />
+      </div>
+    </section>
+  );
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const items = await fetchPublicSiteMedia("HOME_HERO");
-      if (cancelled || items.length === 0) {
-        return;
-      }
-      setSlides(
-        items.map((item) => ({
-          id: item.id,
-          src: item.imageUrl,
-          title: item.title,
-          alt: item.altText || item.title,
-        }))
-      );
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+export function HomeHeroBanner() {
+  const { items, isLoading } = usePublicSiteMedia("HOME_HERO");
+
+  const slides = useMemo<HomeHeroSlide[]>(() => {
+    if (isLoading) {
+      return [];
+    }
+    if (items.length > 0) {
+      return items.map((item) => ({
+        id: item.id,
+        src: item.imageUrl,
+        title: item.title,
+        alt: item.altText || item.title,
+      }));
+    }
+    return homeHeroSlides;
+  }, [isLoading, items]);
 
   const slideCount = slides.length;
   const canLoop = slideCount > 1;
@@ -74,7 +83,7 @@ export function HomeHeroBanner() {
   }, [canLoop, slideCount, slides]);
 
   // With clones: [lastClone, ...real, firstClone] → start on first real slide
-  const [position, setPosition] = useState(canLoop ? 1 : 0);
+  const [position, setPosition] = useState(0);
   const [withTransition, setWithTransition] = useState(true);
   const [paused, setPaused] = useState(false);
   const [interactionPaused, setInteractionPaused] = useState(false);
@@ -84,6 +93,7 @@ export function HomeHeroBanner() {
   const positionRef = useRef(position);
   const isAnimatingRef = useRef(false);
   const pendingJumpRef = useRef<number | null>(null);
+  const slidesSignature = slides.map((slide) => slide.id).join("|");
 
   positionRef.current = position;
 
@@ -94,6 +104,15 @@ export function HomeHeroBanner() {
       : position === slideCount + 1
         ? 0
         : position - 1;
+
+  useLayoutEffect(() => {
+    setPosition(canLoop ? 1 : 0);
+    setWithTransition(false);
+    isAnimatingRef.current = false;
+    pendingJumpRef.current = null;
+    const frame = window.requestAnimationFrame(() => setWithTransition(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [canLoop, slidesSignature]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -260,6 +279,10 @@ export function HomeHeroBanner() {
 
   const autoplayActive = canLoop && !paused && !reduceMotion;
   const currentSlide = slides[realIndex];
+
+  if (isLoading) {
+    return <HeroBannerSkeleton />;
+  }
 
   if (slideCount === 0) {
     return null;

@@ -190,18 +190,7 @@ export const assessmentRiskMeta: Record<
 export const getAssessmentRiskMeta = (assessment: StudentAssessmentSummary | null) =>
   assessmentRiskMeta[assessment?.riskLevel || "UNKNOWN"];
 
-export const getApiErrorMessage = (error: unknown, fallback: string): string => {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-  ) {
-    return (error as { response: { data: { message: string } } }).response.data.message;
-  }
-
-  return error instanceof Error ? error.message : fallback;
-};
+export { getApiErrorMessage } from "@/lib/api-error";
 
 export const formatThaiDateTime = (value: string | null): string => {
   if (!value) {

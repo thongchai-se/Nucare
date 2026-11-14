@@ -2,44 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ClipboardEdit, Home, MessageSquare, UserRound } from "lucide-react";
 import {
-  Bot,
-  ClipboardEdit,
-  Home,
-  MessageSquare,
-  Siren,
-  UserRound,
-} from "lucide-react";
+  STUDENT_NAV_ADVISOR,
+  STUDENT_NAV_ASSESSMENT,
+  STUDENT_NAV_HOME,
+  STUDENT_NAV_PROFILE,
+} from "@/lib/student-chrome";
 
 const studentMobileNavItems = [
   {
     href: "/student",
     icon: Home,
-    label: "หน้าหลัก",
+    label: STUDENT_NAV_HOME,
     match: "home",
   },
   {
     href: "/student/assessment",
     icon: ClipboardEdit,
-    label: "ประเมิน",
+    label: STUDENT_NAV_ASSESSMENT,
     match: "survey",
-  },
-  {
-    href: "/student/chat",
-    icon: Bot,
-    label: "แชท AI",
-    match: "chat",
   },
   {
     href: "/student/advisor",
     icon: MessageSquare,
-    label: "ที่ปรึกษา",
+    label: STUDENT_NAV_ADVISOR,
     match: "consultation",
   },
   {
     href: "/student/profile",
     icon: UserRound,
-    label: "โปรไฟล์",
+    label: STUDENT_NAV_PROFILE,
     match: "profile",
   },
 ] as const;
@@ -52,13 +45,12 @@ export function StudentMobileBottomNav() {
       aria-label="เมนูหลักนักศึกษาบนมือถือ"
       className="fixed inset-x-0 bottom-0 z-[120] border-t border-slate-200 bg-white/95 px-1.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur xl:hidden"
     >
-      <div className="mx-auto grid max-w-lg grid-cols-6 gap-0.5">
+      <div className="mx-auto grid max-w-lg grid-cols-4 gap-0.5">
         {studentMobileNavItems.map((item) => {
           const Icon = item.icon;
           const active =
             (item.match === "home" && pathname === "/student") ||
             (item.match === "survey" && pathname === "/student/assessment") ||
-            (item.match === "chat" && pathname.startsWith("/student/chat")) ||
             (item.match === "consultation" && pathname === "/student/advisor") ||
             (item.match === "profile" && pathname === "/student/profile");
 
@@ -78,13 +70,6 @@ export function StudentMobileBottomNav() {
             </Link>
           );
         })}
-        <Link
-          href="/student#emergency-help"
-          className="flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-red-50 px-0.5 py-1 text-[10px] font-bold leading-none text-red-700 transition-colors hover:bg-red-100"
-        >
-          <Siren className="h-5 w-5 shrink-0" />
-          <span className="max-w-full truncate">ช่วยเหลือ</span>
-        </Link>
       </div>
     </nav>
   );

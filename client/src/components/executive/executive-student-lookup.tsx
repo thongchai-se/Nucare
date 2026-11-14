@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Users,
 } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { useListPagination } from "@/hooks/use-list-pagination";
 import api from "@/lib/axios";
@@ -295,13 +296,16 @@ export function ExecutiveStudentLookup({ yearFilter = "ALL" }: ExecutiveStudentL
         </div>
       </div>
 
-      {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+      {error ? <InlineAlert className="mb-3">{error}</InlineAlert> : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div className="overflow-hidden rounded-xl border border-slate-100">
           <div className="max-h-[36rem] space-y-2 overflow-y-auto p-2">
             {loading ? (
-              <p className="px-2 py-6 text-center text-sm text-slate-500">กำลังโหลดรายชื่อ...</p>
+              <div className="flex flex-col items-center justify-center gap-2 px-2 py-8" role="status" aria-live="polite">
+                <span className="loader h-6 w-6 text-blue-600" aria-hidden="true" />
+                <p className="text-sm text-slate-500">กำลังโหลดรายชื่อ...</p>
+              </div>
             ) : pagination.pageItems.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-slate-500">ไม่พบนิสิตตามเงื่อนไข</p>
             ) : (
@@ -357,7 +361,10 @@ export function ExecutiveStudentLookup({ yearFilter = "ALL" }: ExecutiveStudentL
           {!selectedId ? (
             <p className="py-16 text-center text-sm text-slate-500">เลือกนิสิตทางซ้ายเพื่อดู dossier</p>
           ) : detailLoading && !dossier ? (
-            <p className="py-16 text-center text-sm text-slate-500">กำลังโหลดรายละเอียด...</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-16" role="status" aria-live="polite">
+              <span className="loader h-7 w-7 text-blue-600" aria-hidden="true" />
+              <p className="text-sm text-slate-500">กำลังโหลดรายละเอียด...</p>
+            </div>
           ) : !detail || !dossier ? (
             <p className="py-16 text-center text-sm text-slate-500">ไม่พบรายละเอียด</p>
           ) : (

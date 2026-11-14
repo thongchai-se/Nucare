@@ -8,6 +8,7 @@ import {
 import { Request, Response } from "express";
 import { z } from "zod";
 import { writeAuditLog, getRequestIpAddress } from "../lib/audit-log";
+import { formatAuditMetadata } from "../lib/audit-metadata";
 import {
   mapConsultationScheduleOffer,
   pickLatestPendingOffer,
@@ -242,7 +243,10 @@ export const createConsultationScheduleOffer = async (req: Request, res: Respons
       action: "consultation.schedule-offer.create",
       entityType: "ConsultationScheduleOffer",
       entityId: offer.id,
-      description: `${asAdvisor ? "อาจารย์" : "นิสิต"}เสนอเวลานัดสำหรับคำขอ ${existing.id}`,
+      description: formatAuditMetadata({
+        op: "propose",
+        actorRole: asAdvisor ? "advisor" : "student",
+      }),
       ipAddress: getRequestIpAddress(req),
     });
 
@@ -367,7 +371,7 @@ export const acceptConsultationScheduleOffer = async (req: Request, res: Respons
       action: "consultation.schedule-offer.accept",
       entityType: "ConsultationScheduleOffer",
       entityId: offer.id,
-      description: `ยืนยันนัดหมายคำขอ ${existing.id}`,
+      description: formatAuditMetadata({ op: "confirm" }),
       ipAddress: getRequestIpAddress(req),
     });
 

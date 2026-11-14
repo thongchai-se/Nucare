@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, X } from "lucide-react";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SECONDARY_COMPACT } from "@/lib/ui-classes";
@@ -269,7 +270,7 @@ export function WelfareView({ welfareTasks, currentUserId, onUpdateStatus }: Wel
                           placeholder="รายละเอียดสั้น ๆ"
                         />
                       </div>
-                      {formError ? <p className="text-xs font-medium text-red-600">{formError}</p> : null}
+                      {formError ? <InlineAlert className="py-2 text-xs">{formError}</InlineAlert> : null}
                     </div>
                   </div>
                   <div className="flex flex-col-reverse gap-3 px-5 py-5 sm:flex-row sm:justify-end sm:px-6">

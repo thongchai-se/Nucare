@@ -2,9 +2,9 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import {
-  AlertCircle,
   Archive,
   ClipboardList,
+  Copy,
   Loader2,
   MoreVertical,
   Pencil,
@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import type { Survey, SurveyStatus } from "@/types/survey";
 
 type SurveyListViewProps = {
@@ -30,6 +31,7 @@ type SurveyListViewProps = {
   openMenuSurveyId: string | null;
   restoringId: string | null;
   togglingSurveyId: string | null;
+  duplicatingId: string | null;
   statusLabels: Record<SurveyStatus, string>;
   formatThaiDateTime: (value: string | null) => string;
   handleCreateNew: () => void;
@@ -37,6 +39,7 @@ type SurveyListViewProps = {
   handleToggleSurveyActive: (survey: Survey, nextIsActive: boolean) => void | Promise<void>;
   handleRequestDeleteSurvey: (survey: Survey) => void | Promise<void>;
   handleRestoreSurvey: (survey: Survey) => void | Promise<void>;
+  handleDuplicateSurvey: (survey: Survey) => void | Promise<void>;
   setViewMode: Dispatch<SetStateAction<"active" | "archived">>;
   setOpenMenuSurveyId: Dispatch<SetStateAction<string | null>>;
   setServerError: Dispatch<SetStateAction<string>>;
@@ -55,6 +58,7 @@ export function SurveyListView({
   openMenuSurveyId,
   restoringId,
   togglingSurveyId,
+  duplicatingId,
   statusLabels,
   formatThaiDateTime,
   handleCreateNew,
@@ -62,6 +66,7 @@ export function SurveyListView({
   handleToggleSurveyActive,
   handleRequestDeleteSurvey,
   handleRestoreSurvey,
+  handleDuplicateSurvey,
   setViewMode,
   setOpenMenuSurveyId,
   setServerError,
@@ -90,18 +95,19 @@ export function SurveyListView({
     </div>
 
     {serverError && !editorOpen ? (
-      <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
-        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
-        <p className="flex-1 text-sm font-medium text-red-700">{serverError}</p>
-        <button
-          type="button"
-          onClick={() => setServerError("")}
-          className="rounded-lg p-1 text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
-          aria-label="ปิด"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      <InlineAlert className="rounded-2xl p-4">
+        <div className="flex items-start gap-3">
+          <p className="flex-1">{serverError}</p>
+          <button
+            type="button"
+            onClick={() => setServerError("")}
+            className="rounded-lg p-1 text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
+            aria-label="ปิด"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </InlineAlert>
     ) : null}
 
     <div className="space-y-5">
@@ -263,6 +269,23 @@ export function SurveyListView({
                           <Pencil className="h-4 w-4" />
                           แก้ไข/รายละเอียด
                         </button>
+                        {!isArchived ? (
+                          <button
+                            type="button"
+                            disabled={duplicatingId !== null}
+                            onClick={() => {
+                              void handleDuplicateSurvey(survey);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {duplicatingId === survey.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                            ทำสำเนา
+                          </button>
+                        ) : null}
                         {isArchived ? (
                           <button
                             type="button"
@@ -371,11 +394,18 @@ export function SurveyListView({
             );
           })}
 
-          {displaySurveys.length === 0 && !loadingData ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
-              {viewMode === "archived"
-                ? "ยังไม่มีแบบสอบถามที่เก็บถาวร"
-                : 'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'}
+          {displaySurveys.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
+              {loadingData ? (
+                <>
+                  <span className="loader h-4 w-4 text-blue-600" aria-hidden />
+                  กำลังโหลดแบบสอบถาม...
+                </>
+              ) : viewMode === "archived" ? (
+                "ยังไม่มีแบบสอบถามที่เก็บถาวร"
+              ) : (
+                'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'
+              )}
             </div>
           ) : null}
         </div>
@@ -503,6 +533,21 @@ export function SurveyListView({
                               </button>
                               <button
                                 type="button"
+                                disabled={duplicatingId !== null}
+                                onClick={() => {
+                                  void handleDuplicateSurvey(survey);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {duplicatingId === survey.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
+                                ทำสำเนา
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => {
                                   void handleToggleSurveyActive(survey, !survey.isActive);
                                 }}
@@ -529,12 +574,19 @@ export function SurveyListView({
                   </tr>
                 );
               })}
-              {displaySurveys.length === 0 && !loadingData ? (
+              {displaySurveys.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                    {viewMode === "archived"
-                      ? "ยังไม่มีแบบสอบถามที่เก็บถาวร"
-                      : 'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'}
+                    {loadingData ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <span className="loader h-4 w-4 text-blue-600" aria-hidden />
+                        กำลังโหลดแบบสอบถาม...
+                      </span>
+                    ) : viewMode === "archived" ? (
+                      "ยังไม่มีแบบสอบถามที่เก็บถาวร"
+                    ) : (
+                      'ยังไม่มีแบบสอบถามในระบบ กด “เพิ่มแบบสอบถาม” เพื่อเริ่มสร้าง'
+                    )}
                   </td>
                 </tr>
               ) : null}

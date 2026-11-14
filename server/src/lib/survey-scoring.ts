@@ -1,4 +1,38 @@
-import { Prisma, RiskLevel, SurveyQuestionType } from "@prisma/client";
+import { Prisma, RiskLevel, SurveyInstrumentCode, SurveyQuestionType } from "@prisma/client";
+import { z } from "zod";
+
+/**
+ * กฎคะแนนที่แอดมินกำหนดต่อเวอร์ชันแบบประเมิน (ใช้กับ CUSTOM เท่านั้น)
+ * riskCutoffs เป็นสัดส่วน 0–1 ของคะแนนเต็ม (เช่น 0.34 / 0.67); maxScore/note เก็บเพื่ออ้างอิง ไม่ใช้คำนวณ
+ */
+export const surveyScoringRulesSchema = z
+  .object({
+    maxScore: z.number().int().positive().max(100000).optional(),
+    riskCutoffs: z
+      .object({
+        medium: z.number().gt(0).lte(1),
+        high: z.number().gt(0).lte(1),
+      })
+      .strict()
+      .refine((cutoffs) => cutoffs.medium < cutoffs.high, {
+        message: "medium cutoff must be lower than high cutoff",
+      })
+      .optional(),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+export type SurveyScoringRules = z.infer<typeof surveyScoringRulesSchema>;
+
+/** แปลงค่า JSON จากฐานข้อมูลเป็นกฎคะแนนที่ผ่านการตรวจแล้ว; ค่าไม่ถูกต้องคืน null (ใช้เกณฑ์เริ่มต้น) */
+export function parseSurveyScoringRules(raw: unknown): SurveyScoringRules | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+
+  const parsed = surveyScoringRulesSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
 
 export type SurveyQuestionForScore = {
   id: string;
@@ -233,25 +267,42 @@ export const calculateSurveyResponseScore = (
   return hasScoredAnswer ? total : null;
 };
 
+const DEFAULT_RISK_CUTOFFS = { medium: 0.34, high: 0.67 } as const;
+
+/** เลือกเกณฑ์สัดส่วนความเสี่ยง: ใช้ค่าแอดมินเฉพาะ CUSTOM ที่มี riskCutoffs ถูกต้อง ไม่เช่นนั้นใช้ค่าเริ่มต้น */
+export function resolveRiskCutoffs(
+  scoringRules: SurveyScoringRules | null | undefined,
+  instrumentCode?: SurveyInstrumentCode | null
+): { medium: number; high: number } {
+  if (instrumentCode === SurveyInstrumentCode.GHQ28 || !scoringRules?.riskCutoffs) {
+    return DEFAULT_RISK_CUTOFFS;
+  }
+
+  return scoringRules.riskCutoffs;
+}
+
 export const getSurveyRiskLevel = (
   surveyTitle: string,
   score: number | null,
-  maxScore: number
+  maxScore: number,
+  scoringRules?: SurveyScoringRules | null,
+  instrumentCode?: SurveyInstrumentCode | null
 ): RiskLevel => {
   if (score === null || maxScore <= 0) {
     return RiskLevel.NORMAL;
   }
 
-  if (isGhq28SurveyTitle(surveyTitle)) {
+  if (isGhq28SurveyTitle(surveyTitle) || instrumentCode === SurveyInstrumentCode.GHQ28) {
     return getGhq28RiskLevel(score);
   }
 
+  const cutoffs = resolveRiskCutoffs(scoringRules, instrumentCode);
   const ratio = score / maxScore;
-  if (ratio >= 0.67) {
+  if (ratio >= cutoffs.high) {
     return RiskLevel.HIGH;
   }
 
-  if (ratio >= 0.34) {
+  if (ratio >= cutoffs.medium) {
     return RiskLevel.MEDIUM;
   }
 
@@ -264,7 +315,8 @@ export const getSurveyInstrumentLabel = (surveyTitle: string): string =>
 export const enrichSurveyResponseScores = (
   surveyTitle: string,
   questions: SurveyQuestionForScore[],
-  answers: SurveyAnswerForScore[]
+  answers: SurveyAnswerForScore[],
+  options?: { scoringRules?: SurveyScoringRules | null; instrumentCode?: SurveyInstrumentCode | null }
 ): {
   totalScore: number | null;
   maxScore: number;
@@ -279,7 +331,13 @@ export const enrichSurveyResponseScores = (
   const distress = isGhq28SurveyTitle(surveyTitle) ? getGhq28DistressLevel(totalScore) : null;
   const riskLevel = isGhq28SurveyTitle(surveyTitle)
     ? getGhq28RiskLevel(totalScore)
-    : getSurveyRiskLevel(surveyTitle, totalScore, maxScore);
+    : getSurveyRiskLevel(
+        surveyTitle,
+        totalScore,
+        maxScore,
+        options?.scoringRules,
+        options?.instrumentCode
+      );
 
   return {
     totalScore,
@@ -291,6 +349,12 @@ export const enrichSurveyResponseScores = (
   };
 };
 
+const STUDENT_FACING_RISK_LABEL: Record<RiskLevel, string> = {
+  [RiskLevel.NORMAL]: "ระดับปกติ",
+  [RiskLevel.MEDIUM]: "ระดับที่ควรติดตาม",
+  [RiskLevel.HIGH]: "ระดับที่ควรขอคำปรึกษา",
+};
+
 /** สรุปผลแบบประเมินที่ส่งกลับให้นิสิตดูเอง — ไม่รวมข้อมูลผู้อื่น */
 export function buildStudentFacingSurveyResult(input: {
   id: string;
@@ -298,6 +362,7 @@ export function buildStudentFacingSurveyResult(input: {
   totalScore: number | null;
   maxScore: number;
   surveyTitle: string;
+  riskLevel?: RiskLevel | null;
 }): {
   id: string;
   submittedAt: string;
@@ -310,6 +375,13 @@ export function buildStudentFacingSurveyResult(input: {
     input.totalScore != null && isGhq28SurveyTitle(input.surveyTitle)
       ? getGhq28DistressLevel(input.totalScore)
       : null;
+  const resolvedRisk =
+    input.riskLevel ??
+    (input.totalScore != null && input.maxScore > 0
+      ? getSurveyRiskLevel(input.surveyTitle, input.totalScore, input.maxScore)
+      : null);
+  const riskLabel =
+    resolvedRisk != null ? STUDENT_FACING_RISK_LABEL[resolvedRisk] : null;
 
   return {
     id: input.id,
@@ -320,6 +392,6 @@ export function buildStudentFacingSurveyResult(input: {
     totalScore: input.totalScore,
     maxScore: input.maxScore,
     distressLevel: distress?.level ?? null,
-    distressLabel: distress?.labelTh ?? null,
+    distressLabel: distress?.labelTh ?? riskLabel,
   };
 }
