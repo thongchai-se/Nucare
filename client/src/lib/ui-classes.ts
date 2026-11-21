@@ -83,6 +83,10 @@ export const UI_ACTION_PRIMARY_COMPACT =
 export const UI_ACTION_SECONDARY_COMPACT =
   "inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
 
+/** ปุ่มลบ/อันตรายในแถวตาราง */
+export const UI_ACTION_DANGER_COMPACT =
+  "inline-flex items-center justify-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60";
+
 export const UI_ACTION_SCHEDULE_COMPACT =
   "inline-flex items-center justify-center gap-1.5 rounded-full border border-[#F15A22]/25 bg-[#F15A22]/8 px-3.5 py-2 text-xs font-semibold text-[#C24712] transition-colors hover:bg-[#F15A22]/15 disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -103,14 +107,49 @@ export const STAFF_SIDEBAR_NAV_ITEM_INACTIVE =
 
 export const STAFF_SIDEBAR_ICON_SIZE = 20;
 
+/** ขอบขวาเต็มความสูงจอ (staff-sidebar-edge) + แถบบรนด์ h-16 ให้เส้นนอนต่อกับ STAFF_TOP_HEADER */
 export const STAFF_SIDEBAR_ASIDE =
-  "sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex";
+  "staff-sidebar-edge sticky top-0 hidden h-screen w-72 shrink-0 flex-col bg-white lg:flex";
 
-export const STAFF_SIDEBAR_HEADER = "flex min-h-16 items-center border-b border-slate-100 px-4 py-2.5 sm:px-5";
+export const STAFF_SIDEBAR_HEADER = "flex h-16 items-center border-b border-slate-200 px-6";
 
 export const STAFF_SIDEBAR_MOBILE_HEADER =
-  "flex h-16 items-center justify-between border-b border-slate-100 px-4";
+  "flex h-16 items-center justify-between border-b border-slate-200 px-4";
+
+export const STAFF_TOP_HEADER =
+  "sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8";
 
 export const STAFF_SIDEBAR_NAV_SCROLL = "flex-1 space-y-6 overflow-y-auto px-4 py-6";
 
 export const STAFF_SIDEBAR_MOBILE_NAV_SCROLL = "flex-1 space-y-6 overflow-y-auto px-4 py-5";
+
+/** พื้นหลังป๊อปอัป — ทึบพอโฟกัส ไม่มืดทึบเกิน */
+export const UI_DIALOG_BACKDROP = "bg-slate-900/45";
+
+/** แผงป๊อปอัป — มุม 2xl + เงาลอย */
+export const UI_DIALOG_PANEL =
+  "rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)]";
+
+/** แอนิเมชันเข้าแผง (ใช้กับ style.animation) */
+export const UI_DIALOG_PANEL_ENTER =
+  "toast-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both";
+
+/** ปุ่มปิดมุมบนขวา */
+export const UI_DIALOG_CLOSE =
+  "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60";
+
+/** ปุ่มหลักในป๊อปอัป */
+export const UI_DIALOG_PRIMARY =
+  "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0057A8] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#00468a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0057A8]/35 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto";
+
+/** ปุ่มรองในป๊อปอัป */
+export const UI_DIALOG_SECONDARY =
+  "inline-flex min-h-10 w-full items-center justify-center rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto";
+
+/** ปุ่มอันตรายในป๊อปอัป */
+export const UI_DIALOG_DANGER =
+  "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/35 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto";
+
+/** ปุ่มรองแบบมีขอบ (ยกเลิกในแถวปุ่ม) */
+export const UI_DIALOG_CANCEL =
+  "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto";

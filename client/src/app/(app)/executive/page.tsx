@@ -6,13 +6,12 @@ import {
   Activity,
   AlertTriangle,
   Building2,
-  ChevronRight,
   Clock,
   FileText,
+  GitBranch,
   LayoutDashboard,
-  Menu,
+  MessageCircle,
   RefreshCw,
-  ShieldCheck,
   Target,
   TrendingUp,
   Users,
@@ -20,6 +19,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
+import { EphemeralChatPanel } from "@/components/ephemeral-chat/ephemeral-chat-panel";
+import { StaffMessagesView } from "@/components/ephemeral-chat/staff-messages-view";
 import { ExecutiveCommonIssues } from "@/components/executive/executive-common-issues";
 import { ExecutiveDistressHeatmap } from "@/components/executive/executive-distress-heatmap";
 import { ExecutivePageToolbar } from "@/components/executive/executive-page-toolbar";
@@ -28,22 +29,25 @@ import { ExecutiveScreeningOverviewCharts } from "@/components/executive/executi
 import { ExecutiveSectionShell } from "@/components/executive/executive-section-shell";
 import { ExecutiveStatCard } from "@/components/executive/executive-stat-card";
 import { ExecutiveQuietExport } from "@/components/executive/executive-quiet-export";
+import { ExecutiveReferralCases } from "@/components/executive/executive-referral-cases";
 import { ExecutiveStudentLookup } from "@/components/executive/executive-student-lookup";
 import { MultiSeriesLineChart } from "@/components/executive/multi-series-line-chart";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
 import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
 import { StaffSidebarSection } from "@/components/staff-sidebar-section";
+import { StaffTopBar } from "@/components/staff-top-bar";
 import { InlineAlert } from "@/components/ui/inline-alert";
-import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { PageHeader } from "@/components/ui/page-header";
-import { useListPagination } from "@/hooks/use-list-pagination";
+import { useEphemeralChatUnread } from "@/hooks/use-ephemeral-chat-unread";
 import api from "@/lib/axios";
 import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
-import { EXECUTIVE_SECTION_CLASS, EXECUTIVE_STAT_LABEL_CLASS } from "@/lib/executive-ui";
+import { EXECUTIVE_STAT_LABEL_CLASS } from "@/lib/executive-ui";
 import {
   buildExecutivePath,
+  parseExecutiveActiveView,
   parseExecutiveReportsPanel,
   parseExecutiveYearFilter,
+  type ExecutiveActiveView,
   type ExecutiveReportsPanel,
 } from "@/lib/executive-year-filter";
 import { ghq28DistressMeta, ghq28DistressOrder } from "@/lib/ghq28-distress";
@@ -54,7 +58,6 @@ import {
   STAFF_SIDEBAR_MOBILE_NAV_SCROLL,
   STAFF_SIDEBAR_NAV_SCROLL,
 } from "@/lib/ui-classes";
-import { getNameInitials } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import type {
@@ -62,10 +65,7 @@ import type {
   ExecutiveOperationsStats,
   ExecutiveYearFilter,
   StudyYearBucket,
-  TrendItem,
 } from "@/types/executive";
-
-type ActiveView = "dashboard" | "reports" | "departments" | "trends" | "students";
 
 const EMPTY_OPERATIONS: ExecutiveOperationsStats = {
   avgConsultationResponseHours: null,
@@ -73,13 +73,6 @@ const EMPTY_OPERATIONS: ExecutiveOperationsStats = {
   openReferrals: 0,
   openSos: 0,
 };
-
-const isExecutiveView = (value: string | null): value is ActiveView =>
-  value === "dashboard" ||
-  value === "reports" ||
-  value === "departments" ||
-  value === "trends" ||
-  value === "students";
 
 const createEmptyBucket = (studyYear: number | null, label: string): StudyYearBucket => ({
   studyYear,
@@ -268,8 +261,6 @@ const exportExecutiveCsv = (dashboard: ExecutiveDashboardResponse, yearFilter: E
   downloadCsv(`executive-summary-${yearFilter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 };
 
-const getInitials = (name: string, fallback = "ผบ"): string => getNameInitials(name, fallback);
-
 function ExecutiveDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -278,22 +269,38 @@ function ExecutiveDashboardContent() {
   const [dashboard, setDashboard] = useState<ExecutiveDashboardResponse | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [chatPeerId, setChatPeerId] = useState<string | null>(null);
+  const { unreadCount: chatUnreadCount, refreshUnreadCount } = useEphemeralChatUnread(
+    Boolean(user && isAuthenticated)
+  );
 
-  const requestedView = searchParams.get("view");
-  const activeView: ActiveView = isExecutiveView(requestedView) ? requestedView : "dashboard";
+  const activeView: ExecutiveActiveView = parseExecutiveActiveView(searchParams.get("view"));
   const yearFilter = parseExecutiveYearFilter(searchParams.get("year"));
   const reportsPanel = parseExecutiveReportsPanel(searchParams.get("panel"));
-  const identityZoneActive =
-    activeView === "students" || (activeView === "reports" && reportsPanel !== "summary");
+  const selectedReferralCaseId = searchParams.get("caseId");
+
+  const selectedStudentId = searchParams.get("studentId");
 
   const setYearFilter = (next: ExecutiveYearFilter) => {
     router.replace(
-      buildExecutivePath(activeView, next, activeView === "reports" ? { panel: reportsPanel } : {})
+      buildExecutivePath(activeView, next, {
+        panel: activeView === "reports" ? reportsPanel : undefined,
+        caseId: activeView === "referrals" ? selectedReferralCaseId : null,
+        studentId: activeView === "students" ? selectedStudentId : null,
+      })
     );
   };
 
   const setReportsPanel = (panel: ExecutiveReportsPanel) => {
     router.replace(buildExecutivePath("reports", yearFilter, { panel }));
+  };
+
+  const setSelectedReferralCaseId = (caseId: string | null) => {
+    router.replace(buildExecutivePath("referrals", yearFilter, { caseId }));
+  };
+
+  const setSelectedStudentId = (studentId: string | null) => {
+    router.replace(buildExecutivePath("students", yearFilter, { studentId }));
   };
 
   const dashboardRef = useRef<ExecutiveDashboardResponse | null>(null);
@@ -348,15 +355,6 @@ function ExecutiveDashboardContent() {
 
   const isExecutive = useMemo(() => hasRole(user, "EXECUTIVE"), [user]);
 
-  const executiveProfile = useMemo(
-    () => ({
-      name: user?.name || "ผู้บริหาร",
-      role: "ผู้บริหาร",
-      initials: getInitials(user?.name || ""),
-    }),
-    [user?.name]
-  );
-
   const activeBucket = useMemo(
     () => (dashboard ? getActiveBucket(dashboard, yearFilter) : null),
     [dashboard, yearFilter]
@@ -370,23 +368,6 @@ function ExecutiveDashboardContent() {
   const highestWatchIndex = useMemo(() => getHighestWatchRowIndex(heatmapRows), [heatmapRows]);
   const activeOperations = activeBucket?.operations ?? dashboard?.operations ?? EMPTY_OPERATIONS;
   const departmentSections = activeBucket?.sections ?? [];
-  const departmentPagination = useListPagination(
-    departmentSections,
-    `${yearFilter}:${departmentSections.length}`,
-    { fixedRowsPerPage: 9 }
-  );
-
-  const currentViewLabel =
-    activeView === "dashboard"
-      ? "แดชบอร์ดภาพรวม"
-      : activeView === "reports"
-        ? "รายงานเชิงลึก"
-        : activeView === "departments"
-          ? "สถิติรายกลุ่ม/ตอน"
-          : activeView === "trends"
-            ? "แนวโน้มรายเดือน"
-            : "รายชื่อนิสิต";
-  const resolvedViewLabel = currentViewLabel;
 
   const runSummaryExport = () => {
     if (dashboard) {
@@ -394,10 +375,12 @@ function ExecutiveDashboardContent() {
     }
   };
 
-  const navigateTo = (view: ActiveView) => {
+  const navigateTo = (view: ExecutiveActiveView) => {
     setIsMobileMenuOpen(false);
     router.replace(
-      buildExecutivePath(view, yearFilter, view === "reports" ? { panel: reportsPanel } : {})
+      buildExecutivePath(view, yearFilter, {
+        panel: view === "reports" ? reportsPanel : undefined,
+      })
     );
   };
 
@@ -420,14 +403,41 @@ function ExecutiveDashboardContent() {
 
   const NavSections = () => (
     <>
-      <StaffSidebarSection title="เมนูหลัก">
-        <StaffSidebarNavButton active={activeView === "dashboard"} icon={<LayoutDashboard size={20} />} label="แดชบอร์ดภาพรวม" onClick={() => navigateTo("dashboard")} />
-        <StaffSidebarNavButton active={activeView === "reports"} icon={<FileText size={20} />} label="รายงานเชิงลึก" onClick={() => navigateTo("reports")} />
-        <StaffSidebarNavButton active={activeView === "students"} icon={<Users size={20} />} label="รายชื่อนิสิต" onClick={() => navigateTo("students")} />
-        <StaffSidebarNavButton active={activeView === "departments"} icon={<Building2 size={20} />} label="สถิติรายกลุ่ม/ตอน" onClick={() => navigateTo("departments")} />
-        <StaffSidebarNavButton active={activeView === "trends"} icon={<TrendingUp size={20} />} label="แนวโน้มรายเดือน" onClick={() => navigateTo("trends")} />
+      <StaffSidebarSection title="ภาพรวมและการติดตาม">
+        <StaffSidebarNavButton
+          active={activeView === "dashboard"}
+          icon={<LayoutDashboard size={20} />}
+          label="ภาพรวม"
+          onClick={() => navigateTo("dashboard")}
+        />
+        <StaffSidebarNavButton
+          active={activeView === "referrals"}
+          icon={<GitBranch size={20} />}
+          label="เคสส่งต่อ"
+          onClick={() => navigateTo("referrals")}
+        />
+        <StaffSidebarNavButton
+          active={activeView === "reports"}
+          icon={<FileText size={20} />}
+          label="รายงานคัดกรอง"
+          onClick={() => navigateTo("reports")}
+        />
       </StaffSidebarSection>
-
+      <StaffSidebarSection title="ค้นหาและติดต่อ">
+        <StaffSidebarNavButton
+          active={activeView === "students"}
+          icon={<Users size={20} />}
+          label="ค้นหานิสิต"
+          onClick={() => navigateTo("students")}
+        />
+        <StaffSidebarNavButton
+          active={activeView === "messages"}
+          badge={chatUnreadCount || undefined}
+          icon={<MessageCircle size={20} />}
+          label="ข้อความ"
+          onClick={() => navigateTo("messages")}
+        />
+      </StaffSidebarSection>
     </>
   );
 
@@ -554,6 +564,84 @@ function ExecutiveDashboardContent() {
             />
           </div>
 
+          <ExecutiveSectionShell
+            icon={<TrendingUp className="text-indigo-600" size={20} />}
+            title="แนวโน้มรายเดือน"
+            subtitle="จำนวนการประเมิน กลุ่มเสี่ยงสูง การส่งต่อ และ SOS ย้อนหลัง 6 เดือน"
+            className="w-full"
+          >
+            {(() => {
+              const trends = activeBucket.trends;
+              const hasTrendData = trends.some(
+                (item) => item.screened > 0 || item.highRisk > 0 || item.referrals > 0 || item.sos > 0
+              );
+
+              if (!hasTrendData) {
+                return (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-12 text-center">
+                    <TrendingUp className="mb-3 h-10 w-10 text-slate-300" />
+                    <p className="text-sm font-bold text-slate-600">ยังไม่มีแนวโน้มในช่วง 6 เดือนที่เลือก</p>
+                  </div>
+                );
+              }
+
+              return (
+                <MultiSeriesLineChart
+                  labels={trends.map((item) => item.label)}
+                  series={[
+                    {
+                      id: "screened",
+                      label: "ประเมิน",
+                      color: "#60a5fa",
+                      values: trends.map((item) => item.screened),
+                    },
+                    {
+                      id: "highRisk",
+                      label: "เสี่ยงสูง",
+                      color: "#ef4444",
+                      values: trends.map((item) => item.highRisk),
+                    },
+                    {
+                      id: "referrals",
+                      label: "ส่งต่อ",
+                      color: "#d97706",
+                      values: trends.map((item) => item.referrals),
+                    },
+                    {
+                      id: "sos",
+                      label: "SOS",
+                      color: "#7c3aed",
+                      values: trends.map((item) => item.sos),
+                    },
+                  ]}
+                  height={420}
+                  yLabel="จำนวนรายเดือน"
+                />
+              );
+            })()}
+
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div>
+                <h4 className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800">
+                  <AlertTriangle size={16} className="text-amber-500" /> ข้อมูลเชิงปฏิบัติการ ({activeBucket.label})
+                </h4>
+                <p className="text-sm leading-relaxed text-slate-600">
+                  เปิด Referral ค้าง {activeOperations.openReferrals.toLocaleString()} รายการ • SOS ค้าง{" "}
+                  {activeOperations.openSos.toLocaleString()} รายการ
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateTo("referrals")}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <GitBranch size={14} /> เปิดรายการเคสส่งต่อ
+              </button>
+            </div>
+          </ExecutiveSectionShell>
+
+          <ExecutiveScreeningOverviewCharts yearFilter={yearFilter} />
+
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <ExecutiveDistressHeatmap
               rows={heatmapRows}
@@ -563,11 +651,57 @@ function ExecutiveDashboardContent() {
             <ExecutiveCommonIssues issues={activeBucket.commonIssues} bucketLabel={activeBucket.label} />
           </div>
 
-          <ExecutiveScreeningOverviewCharts yearFilter={yearFilter} />
-
-          <div className="flex justify-end">
-            <ExecutiveQuietExport onClick={runSummaryExport} label="ส่งออกสรุป CSV" />
-          </div>
+          <ExecutiveSectionShell
+            icon={<Building2 className="text-blue-700" size={20} />}
+            title="สถิติรายเซค"
+            subtitle="เปรียบเทียบสัดส่วนการประเมินและความเสี่ยงสูงตามเซค (section)"
+            action={<ExecutiveQuietExport onClick={runSummaryExport} label="ส่งออก CSV" />}
+          >
+            {departmentSections.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+                <Building2 className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+                <p className="text-sm font-bold text-slate-600">ยังไม่มีข้อมูลเซคในช่วงที่เลือก</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {departmentSections.map((section) => (
+                  <div
+                    key={section.section}
+                    className="rounded-2xl border border-slate-100 bg-slate-50 p-5"
+                  >
+                    <h3 className="text-base font-semibold leading-tight text-slate-800">
+                      เซค {section.section}
+                    </h3>
+                    <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                      <Users size={16} /> {section.totalStudents.toLocaleString()} นักศึกษา
+                    </p>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white bg-white p-3">
+                        <p className={EXECUTIVE_STAT_LABEL_CLASS}>ประเมินแล้ว</p>
+                        <p className="mt-1 text-xl font-bold text-slate-800">{section.screenedPercent}%</p>
+                      </div>
+                      <div className="rounded-xl border border-white bg-white p-3">
+                        <p className={EXECUTIVE_STAT_LABEL_CLASS}>ความเสี่ยงสูง</p>
+                        <p
+                          className={`mt-1 text-xl font-bold ${
+                            section.highRiskPercent > 20
+                              ? "text-red-600"
+                              : section.highRiskPercent > 10
+                                ? "text-amber-600"
+                                : section.highRiskPercent > 0
+                                  ? "text-emerald-600"
+                                  : "text-slate-800"
+                          }`}
+                        >
+                          {section.highRiskPercent}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ExecutiveSectionShell>
         </div>
       ) : null
     );
@@ -577,7 +711,7 @@ function ExecutiveDashboardContent() {
       dashboard && activeBucket ? (
         <div className="space-y-6">
           <ExecutivePageToolbar
-            title="รายงานเชิงลึก"
+            title="รายงานคัดกรอง"
             subtitle="สรุปรวมไม่ระบุชื่อ หรือเทียบคะแนนรอบต่อรอบด้วยรหัสนักศึกษา"
             bucketLabel={activeBucket.label}
             yearFilter={yearFilter}
@@ -641,188 +775,33 @@ function ExecutiveDashboardContent() {
     renderDataState(
       dashboard && activeBucket ? (
         <div className="space-y-6">
-          <ExecutivePageToolbar
-            title="รายชื่อนิสิต"
-            subtitle="ค้นหาและกรองความเสี่ยงร่วมกับชั้นปีด้านบน"
-            bucketLabel={activeBucket.label}
-            yearFilter={yearFilter}
-            onYearFilterChange={setYearFilter}
-          />
-          <ExecutiveStudentLookup yearFilter={yearFilter} />
-        </div>
-      ) : null
-    );
-
-  const renderDepartmentsView = () =>
-    renderDataState(
-      dashboard && activeBucket ? (
-        <div className="space-y-6">
-          <ExecutivePageToolbar
-            title="สถิติรายกลุ่ม/ตอน"
-            subtitle="เปรียบเทียบสัดส่วนการประเมินและความเสี่ยงสูงตามกลุ่มเรียน"
-            bucketLabel={activeBucket.label}
-            yearFilter={yearFilter}
-            onYearFilterChange={setYearFilter}
-          />
-
-          {departmentSections.length === 0 ? (
-            <div className={`${EXECUTIVE_SECTION_CLASS} text-center`}>
-              <Building2 className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-              <p className="text-sm font-bold text-slate-600">ยังไม่มีข้อมูลตอนในช่วงที่เลือก</p>
-              <p className="mt-2 text-sm text-slate-500">ลองเปลี่ยนชั้นปี หรือกลับไปดูแดชบอร์ดภาพรวม</p>
-              <button
-                type="button"
-                onClick={() => navigateTo("dashboard")}
-                className="mt-4 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                ไปแดชบอร์ด
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="flex justify-end">
-                <ExecutiveQuietExport onClick={runSummaryExport} label="ส่งออก CSV (รวมตอน)" />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {departmentPagination.pageItems.map((section) => (
-                  <div
-                    key={section.section}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
-                  >
-                    <div>
-                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-700">
-                        <Building2 size={24} />
-                      </div>
-                      <h3 className="text-lg font-semibold leading-tight text-slate-800">ตอน {section.section}</h3>
-                      <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-                        <Users size={16} /> {section.totalStudents.toLocaleString()} นักศึกษา
-                      </p>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                          <p className={EXECUTIVE_STAT_LABEL_CLASS}>ประเมินแล้ว</p>
-                          <p className="mt-2 text-2xl font-bold text-slate-800">{section.screenedPercent}%</p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                          <p className={EXECUTIVE_STAT_LABEL_CLASS}>ความเสี่ยงสูง</p>
-                          <p
-                            className={`mt-2 text-2xl font-bold ${
-                              section.highRiskPercent > 20
-                                ? "text-red-600"
-                                : section.highRiskPercent > 10
-                                  ? "text-amber-600"
-                                  : section.highRiskPercent > 0
-                                    ? "text-emerald-600"
-                                    : "text-slate-800"
-                            }`}
-                          >
-                            {section.highRiskPercent}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {departmentPagination.total > departmentPagination.rowsPerPage ? (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <ListPaginationFooter
-                    total={departmentPagination.total}
-                    rangeStart={departmentPagination.rangeStart}
-                    rangeEnd={departmentPagination.rangeEnd}
-                    currentPage={departmentPagination.currentPage}
-                    canGoPrev={departmentPagination.canGoPrev}
-                    canGoNext={departmentPagination.canGoNext}
-                    onPrev={() => departmentPagination.setCurrentPage((prev) => Math.max(1, prev - 1))}
-                    onNext={() => departmentPagination.setCurrentPage((prev) => prev + 1)}
-                  />
-                </div>
-              ) : null}
-            </>
+          {selectedStudentId ? null : (
+            <ExecutivePageToolbar
+              title="ค้นหานิสิต"
+              subtitle="รายชื่อทั้งคณะแบบตาราง · กดดูรายละเอียด · กรองชั้นปีด้านบนได้"
+              bucketLabel={activeBucket.label}
+              yearFilter={yearFilter}
+              onYearFilterChange={setYearFilter}
+            />
           )}
-        </div>
-      ) : null
-    );
-
-  const renderTrendsView = () =>
-    renderDataState(
-      dashboard && activeBucket ? (
-        <div className="space-y-6">
-          <ExecutivePageToolbar
-            title="แนวโน้มรายเดือน"
-            subtitle="วิเคราะห์แนวโน้มการประเมินและเคสวิกฤตย้อนหลัง 6 เดือน"
-            bucketLabel={activeBucket.label}
+          <ExecutiveStudentLookup
             yearFilter={yearFilter}
             onYearFilterChange={setYearFilter}
+            selectedStudentId={selectedStudentId}
+            onSelectStudent={setSelectedStudentId}
           />
-
-          <ExecutiveSectionShell
-            icon={<TrendingUp className="text-indigo-600" size={20} />}
-            title="กราฟแนวโน้ม"
-            subtitle="จำนวนการประเมิน กลุ่มเสี่ยงสูง Referral และ SOS รายเดือน — เส้นซ้อนคนละสี"
-          >
-            {(() => {
-              const trends = activeBucket.trends;
-              const hasTrendData = trends.some(
-                (item) => item.screened > 0 || item.highRisk > 0 || item.referrals > 0 || item.sos > 0
-              );
-
-              if (!hasTrendData) {
-                return (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-12 text-center">
-                    <TrendingUp className="mb-3 h-10 w-10 text-slate-300" />
-                    <p className="text-sm font-bold text-slate-600">ยังไม่มีแนวโน้มในช่วง 6 เดือนที่เลือก</p>
-                  </div>
-                );
-              }
-
-              return (
-                <MultiSeriesLineChart
-                  labels={trends.map((item) => item.label)}
-                  series={[
-                    {
-                      id: "screened",
-                      label: "ประเมิน",
-                      color: "#60a5fa",
-                      values: trends.map((item) => item.screened),
-                    },
-                    {
-                      id: "highRisk",
-                      label: "เสี่ยงสูง",
-                      color: "#ef4444",
-                      values: trends.map((item) => item.highRisk),
-                    },
-                    {
-                      id: "referrals",
-                      label: "ส่งต่อ",
-                      color: "#d97706",
-                      values: trends.map((item) => item.referrals),
-                    },
-                    {
-                      id: "sos",
-                      label: "SOS",
-                      color: "#7c3aed",
-                      values: trends.map((item) => item.sos),
-                    },
-                  ]}
-                  yLabel="จำนวนรายเดือน"
-                />
-              );
-            })()}
-
-            <div className="mt-8 rounded-2xl border border-slate-100 bg-slate-50 p-5">
-              <h4 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
-                <AlertTriangle size={16} className="text-amber-500" /> ข้อมูลเชิงปฏิบัติการ ({activeBucket.label})
-              </h4>
-              <p className="text-sm leading-relaxed text-slate-600">
-                เปิด Referral ค้าง {activeOperations.openReferrals.toLocaleString()} รายการ • SOS ค้าง{" "}
-                {activeOperations.openSos.toLocaleString()} รายการ — นับเฉพาะช่วงชั้นปีที่เลือก
-              </p>
-            </div>
-          </ExecutiveSectionShell>
         </div>
       ) : null
     );
+
+  const renderReferralsView = () => (
+    <ExecutiveReferralCases
+      yearFilter={yearFilter}
+      onYearFilterChange={setYearFilter}
+      selectedCaseId={selectedReferralCaseId}
+      onSelectCase={setSelectedReferralCaseId}
+    />
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F4F7FB] font-sans text-slate-800">
@@ -859,70 +838,37 @@ function ExecutiveDashboardContent() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={() => setIsMobileMenuOpen((current) => !current)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden">
-              <Menu size={20} />
-            </button>
-
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                <span className="hidden sm:inline">พอร์ทัลผู้บริหาร</span>
-                <ChevronRight size={14} className="hidden sm:block" />
-                <span className="truncate font-bold text-slate-800">{resolvedViewLabel}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => void fetchDashboard("manual")}
-              disabled={dashboardLoading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
-              aria-label="รีเฟรชข้อมูล"
-            >
-              <RefreshCw size={14} className={dashboardLoading ? "animate-spin" : ""} />
-              <span className="hidden sm:inline">รีเฟรช</span>
-            </button>
-            <div
-              className={`inline-flex max-w-[9.5rem] items-center gap-1.5 truncate rounded-full border px-2 py-1 text-[10px] font-bold sm:max-w-none sm:gap-2 sm:px-3 sm:text-xs ${
-                identityZoneActive
-                  ? "border-amber-200 bg-amber-50 text-amber-800"
-                  : "border-emerald-100 bg-emerald-50 text-emerald-700"
-              }`}
-              title={identityZoneActive ? "โซนข้อมูลระบุตัวตน" : "สถิติภาพรวมไม่ระบุชื่อ"}
-            >
-              <ShieldCheck size={14} className="shrink-0" />
-              <span className="truncate">{identityZoneActive ? "ระบุตัวตน" : "ไม่ระบุชื่อ"}</span>
-            </div>
-            <div className="hidden h-6 w-px bg-slate-200 sm:block" />
-            <div className="flex items-center gap-3">
-              <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
-                <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={executiveProfile.name}>
-                  {executiveProfile.name}
-                </p>
-                <p className="mt-0.5 truncate whitespace-nowrap text-[10px] text-slate-500" title={executiveProfile.role}>
-                  {executiveProfile.role}
-                </p>
-              </div>
-              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-sm font-bold text-white shadow-sm">
-                {executiveProfile.initials}
-              </div>
-            </div>
-          </div>
-        </header>
+        <StaffTopBar onOpenMenu={() => setIsMobileMenuOpen((current) => !current)} />
 
         <main className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl pb-10">
             {activeView === "dashboard" ? renderDashboardView() : null}
+            {activeView === "referrals" ? renderReferralsView() : null}
             {activeView === "reports" ? renderReportsView() : null}
             {activeView === "students" ? renderStudentsView() : null}
-            {activeView === "departments" ? renderDepartmentsView() : null}
-            {activeView === "trends" ? renderTrendsView() : null}
+            {activeView === "messages" ? (
+              <StaffMessagesView
+                onOpenChat={(peerUserId) => setChatPeerId(peerUserId)}
+                onUnreadCountChange={() => {
+                  void refreshUnreadCount();
+                }}
+              />
+            ) : null}
           </div>
         </main>
       </div>
+
+      {user ? (
+        <EphemeralChatPanel
+          open={Boolean(chatPeerId)}
+          currentUserId={user.id}
+          peerUserId={chatPeerId}
+          onClose={() => {
+            setChatPeerId(null);
+            void refreshUnreadCount();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

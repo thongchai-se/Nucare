@@ -28,6 +28,24 @@ export type AudienceConfig = {
   rule: EligibilityRuleInput | null;
 };
 
+/** ธงว่าต้องโหลดความเสี่ยงล่าสุด / สัญญาณ wellness สำหรับกฎนี้หรือไม่ */
+export function resolveEligibilityLoadFlags(config: AudienceConfig): {
+  needPriorRisk: boolean;
+  needWellness: boolean;
+} {
+  if (config.audienceType === SurveyAudienceType.ALL_STUDENTS) {
+    return { needPriorRisk: false, needWellness: false };
+  }
+  const rule = config.rule;
+  if (!rule) {
+    return { needPriorRisk: false, needWellness: false };
+  }
+  return {
+    needPriorRisk: rule.priorRiskLevels.length > 0,
+    needWellness: rule.wellnessSignalCodes.length > 0,
+  };
+}
+
 const RISK_RANK: Record<RiskLevel, number> = {
   [RiskLevel.NORMAL]: 0,
   [RiskLevel.MEDIUM]: 1,
@@ -54,7 +72,7 @@ export function pickHigherRisk(
 /**
  * ตรวจว่าโปรไฟล์เข้าเกณฑ์กฎหรือไม่
  * มิติที่ว่าง = ไม่กรองมิตินั้น; มิติที่มีค่าต้องผ่านทุกมิติ (AND)
- * ภายในมิติสัญญาณ/ความเสี่ยง/ปี/ตอน ใช้ OR
+ * ภายในมิติสัญญาณ/ความเสี่ยง/ปี/เซค ใช้ OR
  */
 export function matchesEligibilityRule(
   profile: EligibilityStudentProfile,

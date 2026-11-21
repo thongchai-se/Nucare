@@ -329,7 +329,7 @@ function StudentAssessmentContent() {
             open: true,
             tone: "success",
             title: "ส่งแบบสอบถามสำเร็จ",
-            description: "ดูผลและเกณฑ์ได้ในหน้าต่างนี้ หรือปิดหน้าต่างเพื่อกลับไปที่รายการ",
+            description: "ส่งแล้ว ดูผลได้ในหน้านี้ หรือปิดเพื่อกลับรายการ",
           });
           void loadActiveSurveys(true);
         }}

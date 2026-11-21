@@ -1,8 +1,23 @@
 "use client";
 
 import { Flag, Send, Users } from "lucide-react";
+import {
+  RosterActionLink,
+  RosterMobileCard,
+  RosterMobileList,
+  RosterPersonCell,
+  RosterRow,
+  RosterTable,
+  RosterTd,
+} from "@/components/ui/roster-table";
 import { stripSeedMarkers } from "@/lib/history-display";
-import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SECONDARY_COMPACT, UI_BUTTON_PRIMARY } from "@/lib/ui-classes";
+import { STATUS_BADGE_COMPACT } from "@/lib/status-badge";
+import {
+  UI_ACTION_PRIMARY_COMPACT,
+  UI_ACTION_SECONDARY_COMPACT,
+  UI_STATUS_ACTIVE,
+  UI_STATUS_PENDING,
+} from "@/lib/ui-classes";
 import type { AdvisorAlertItem } from "./types";
 
 export type AcademicAdviseeSignal = {
@@ -48,9 +63,9 @@ export function AcademicSignalsView({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">สัญญาณเข้า</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          อาจารย์ท่านอื่นแจ้งเกี่ยวกับนิสิตในดูแลของคุณ — ไม่ใช่คำขอปรึกษาจากนิสิต
+        <h2 className="text-2xl font-bold text-slate-900">สัญญาณเข้า</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          ข้อสังเกตจากอาจารย์ท่านอื่นเกี่ยวกับนิสิตในดูแลของคุณ
         </p>
       </div>
 
@@ -96,8 +111,8 @@ export function AcademicSignalsView({
                     <div className="min-w-0">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
                         <span
-                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white ${
-                            alert.status === "OPEN" ? "bg-amber-600" : "bg-[#0057A8]"
+                          className={`${STATUS_BADGE_COMPACT} ${
+                            alert.status === "OPEN" ? UI_STATUS_PENDING : UI_STATUS_ACTIVE
                           }`}
                         >
                           {alert.status === "OPEN" ? "รอรับเรื่อง" : "รับเรื่องแล้ว"}
@@ -174,38 +189,96 @@ export function AcademicSignalsView({
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-5">
-          <h3 className="text-lg font-bold text-slate-800">รายชื่อที่มีบันทึกจากผู้สอน</h3>
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-4 sm:px-6">
+          <h3 className="text-base font-semibold text-slate-900">รายชื่อที่มีบันทึกจากผู้สอน</h3>
         </div>
-        {flaggedStudents.length === 0 ? (
-          <div className="px-6 py-10 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#278ACA]/10 text-[#0057A8]">
-              <Flag className="h-5 w-5" />
-            </div>
-            <p className="mt-4 text-sm font-bold text-slate-800">ยังไม่มีสัญญาณจากผู้สอน</p>
-            <p className="mt-1 text-sm text-slate-500">เมื่อผู้สอนแจ้งข้อสังเกตแนวโน้ม รายการจะปรากฏที่นี่</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {flaggedStudents.map((student) => (
-              <li
-                key={student.id}
-                className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-[#0057A8]">{student.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {student.studentId || "-"} · ปี {student.year} · บันทึก {student.behaviorRecordCount} รายการ
-                  </p>
-                </div>
-                <button type="button" onClick={() => onOpenAdvisee(student.id)} className={`${UI_BUTTON_PRIMARY} min-h-10`}>
-                  <Users className="h-4 w-4" />
+        <RosterTable
+          columns={[
+            { key: "student", label: "ชื่อ-นามสกุล", width: "36%" },
+            { key: "year", label: "ชั้นปี", width: "12%", align: "center" },
+            { key: "records", label: "บันทึก", width: "16%", align: "center" },
+            { key: "risk", label: "สถานะ", width: "18%", align: "center" },
+            { key: "actions", label: "จัดการ", width: "18%", align: "right" },
+          ]}
+          emptyMessage={
+            <span className="inline-flex flex-col items-center gap-2">
+              <Flag className="h-5 w-5 text-slate-300" />
+              ยังไม่มีสัญญาณจากผู้สอน
+            </span>
+          }
+        >
+          {flaggedStudents.map((student) => (
+            <RosterRow key={student.id}>
+              <RosterTd>
+                <RosterPersonCell name={student.name} meta={student.studentId || "-"} />
+              </RosterTd>
+              <RosterTd align="center">{student.year || "-"}</RosterTd>
+              <RosterTd align="center">{student.behaviorRecordCount}</RosterTd>
+              <RosterTd align="center">
+                <span
+                  className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${
+                    student.riskLevel === "high"
+                      ? "bg-red-100 text-red-800"
+                      : student.riskLevel === "medium"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {student.riskLevel === "high"
+                    ? "เสี่ยงสูง"
+                    : student.riskLevel === "medium"
+                      ? "ปานกลาง"
+                      : "ปกติ"}
+                </span>
+              </RosterTd>
+              <RosterTd align="right">
+                <RosterActionLink onClick={() => onOpenAdvisee(student.id)}>
+                  <Users className="h-3.5 w-3.5" />
                   เปิดประวัติ
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+                </RosterActionLink>
+              </RosterTd>
+            </RosterRow>
+          ))}
+        </RosterTable>
+        <RosterMobileList
+          emptyMessage={
+            <span className="inline-flex flex-col items-center gap-2">
+              <Flag className="h-5 w-5 text-slate-300" />
+              ยังไม่มีสัญญาณจากผู้สอน
+            </span>
+          }
+        >
+          {flaggedStudents.map((student) => (
+            <RosterMobileCard key={student.id}>
+              <RosterPersonCell
+                name={student.name}
+                meta={`${student.studentId || "-"} · ปี ${student.year}`}
+              />
+              <p className="text-sm text-slate-600">บันทึก {student.behaviorRecordCount} รายการ</p>
+              <div className="flex items-center justify-between">
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                    student.riskLevel === "high"
+                      ? "bg-red-100 text-red-800"
+                      : student.riskLevel === "medium"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {student.riskLevel === "high"
+                    ? "เสี่ยงสูง"
+                    : student.riskLevel === "medium"
+                      ? "ปานกลาง"
+                      : "ปกติ"}
+                </span>
+                <RosterActionLink onClick={() => onOpenAdvisee(student.id)}>
+                  <Users className="h-3.5 w-3.5" />
+                  เปิดประวัติ
+                </RosterActionLink>
+              </div>
+            </RosterMobileCard>
+          ))}
+        </RosterMobileList>
       </section>
     </div>
   );

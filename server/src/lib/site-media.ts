@@ -137,7 +137,35 @@ export function sanitizeMediaHref(value: string | null | undefined): string | nu
   }
 }
 
-/** แปลง data URL รูปเป็น buffer — ปฏิเสธชนิด/ขนาดที่ไม่ปลอดภัย */
+/** ตรวจ magic bytes ให้ตรงกับ MIME ที่อ้างใน data URL */
+export function matchesImageMagicBytes(mime: string, buffer: Buffer): boolean {
+  if (mime === "image/jpeg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mime === "image/png") {
+    return (
+      buffer.length >= 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    );
+  }
+  if (mime === "image/webp") {
+    return (
+      buffer.length >= 12 &&
+      buffer.toString("ascii", 0, 4) === "RIFF" &&
+      buffer.toString("ascii", 8, 12) === "WEBP"
+    );
+  }
+  return false;
+}
+
+/** แปลง data URL รูปเป็น buffer — ปฏิเสธชนิด/ขนาด/magic bytes ที่ไม่ปลอดภัย */
 export function parseImageDataUrl(dataUrl: string): ParsedDataImage | { error: string } {
   const trimmed = dataUrl.trim();
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i.exec(trimmed);
@@ -163,6 +191,9 @@ export function parseImageDataUrl(dataUrl: string): ParsedDataImage | { error: s
   }
   if (buffer.length > SITE_MEDIA_MAX_BYTES) {
     return { error: "ไฟล์ใหญ่เกิน 2 MB" };
+  }
+  if (!matchesImageMagicBytes(mime, buffer)) {
+    return { error: "เนื้อไฟล์ไม่ตรงกับชนิดรูปที่ระบุ" };
   }
 
   return { mime, extension, buffer };

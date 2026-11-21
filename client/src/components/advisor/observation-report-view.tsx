@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { BookOpen, Calendar, Flag, RefreshCw, Users, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { BookOpen, Calendar, Flag, Users, X } from "lucide-react";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { StaffModalOverlay } from "@/components/ui/staff-modal-overlay";
 import {
-  RosterCountBadge,
   RosterMobileCard,
   RosterMobileList,
   RosterPersonCell,
   RosterRow,
   RosterSearchInput,
+  RosterSelectFilter,
   RosterTable,
   RosterTableCard,
   RosterTd,
@@ -57,8 +57,6 @@ type ObservationReportViewProps = {
   search: string;
   onSearchChange: (value: string) => void;
   onOpenCompose: () => void;
-  onRefresh?: () => void;
-  refreshing?: boolean;
   statusBadgeMap: Record<ObservationStatus, string>;
   statusLabelMap: Record<ObservationStatus, string>;
   formatThaiDateTime: (value: string) => string;
@@ -101,31 +99,36 @@ export function ObservationReportView({
   search,
   onSearchChange,
   onOpenCompose,
-  onRefresh,
-  refreshing = false,
   statusBadgeMap,
   statusLabelMap,
   formatThaiDateTime,
 }: ObservationReportViewProps) {
   const detailTitleId = useId();
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | ObservationStatus>("ALL");
 
   const normalized = search.trim().toLowerCase();
-  const filtered = normalized
-    ? records.filter((record) => {
-        const haystack = [
-          record.student.name,
-          record.student.studentId || "",
-          record.category,
-          record.details,
-        ]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(normalized);
-      })
-    : records;
+  const filtered = useMemo(() => {
+    return records.filter((record) => {
+      if (statusFilter !== "ALL" && record.status !== statusFilter) {
+        return false;
+      }
+      if (!normalized) {
+        return true;
+      }
+      const haystack = [
+        record.student.name,
+        record.student.studentId || "",
+        record.category,
+        record.details,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [normalized, records, statusFilter]);
 
-  const pagination = useListPagination(filtered, search);
+  const pagination = useListPagination(filtered, `${search}:${statusFilter}`);
   const pageItems = pagination.pageItems;
 
   const selectedRecord =
@@ -159,21 +162,10 @@ export function ObservationReportView({
         <div>
           <h2 className="text-2xl font-bold text-slate-800">ข้อสังเกตที่แจ้ง</h2>
           <p className="mt-1 text-sm text-slate-500">
-            สำหรับแจ้งนิสิตของอาจารย์ท่านอื่นเท่านั้น — สัญญาณจะเข้าเมนูสัญญาณเข้าของที่ปรึกษาคนนั้น ไม่ใช่นิสิตในสังกัดตัวเอง
+            ใช้แจ้งที่ปรึกษาของนิสิตท่านอื่นเท่านั้น
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {onRefresh ? (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshing}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              รีเฟรชสถานะ
-            </button>
-          ) : null}
           <button type="button" onClick={onOpenCompose} className={`${UI_BUTTON_PRIMARY} min-h-11`}>
             <Flag className="h-4 w-4" />
             แจ้งข้อสังเกตใหม่
@@ -191,7 +183,16 @@ export function ObservationReportView({
               aria-label="ค้นหาข้อสังเกต"
             />
             <RosterToolbarEnd>
-              <RosterCountBadge count={filtered.length} />
+              <RosterSelectFilter
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "ALL" | ObservationStatus)}
+                aria-label="กรองสถานะข้อสังเกต"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                <option value="PENDING">{statusLabelMap.PENDING}</option>
+                <option value="ACKNOWLEDGED">{statusLabelMap.ACKNOWLEDGED}</option>
+                <option value="COMPLETED">{statusLabelMap.COMPLETED}</option>
+              </RosterSelectFilter>
             </RosterToolbarEnd>
           </>
         }
@@ -286,7 +287,7 @@ export function ObservationReportView({
           })}
         </RosterMobileList>
 
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}
@@ -380,7 +381,7 @@ export function ObservationReportView({
             </div>
           </div>
 
-          <div className="flex justify-end border-t border-slate-100 bg-slate-50 p-5">
+          <div className="flex justify-center border-t border-slate-100 bg-slate-50 p-5">
             <button type="button" onClick={() => setSelectedRecordId(null)} className={UI_BUTTON_PRIMARY}>
               ปิด
             </button>

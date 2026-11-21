@@ -37,6 +37,10 @@ const ROLE_PREFIX_LABEL: Record<string, string> = {
 const ACTION_LABEL_MAP: Record<string, string> = {
   "auth.login.success": "เข้าสู่ระบบสำเร็จ",
   "auth.login.failed": "เข้าสู่ระบบไม่สำเร็จ",
+  "auth.refresh.reuse-detected": "ตรวจพบการนำ refresh token กลับมาใช้",
+  "security.privilege-probe": "พยายามเข้าถึงโซนสิทธิ์สูงโดยไม่ได้รับอนุญาต",
+  "security.rate-limit": "ถูกจำกัดอัตราคำขอจากความถี่ผิดปกติ",
+  "security.authz-denied": "ปฏิเสธสิทธิ์เข้าถึงทรัพยากรอ่อนไหว",
   "auth.logout": "ออกจากระบบ",
   "auth.password-reset.request": "ขอรีเซ็ตรหัสผ่าน",
   "auth.password-reset.complete": "รีเซ็ตรหัสผ่านสำเร็จ",
@@ -61,12 +65,16 @@ const ACTION_LABEL_MAP: Record<string, string> = {
   "admin.survey.wave.open": "เปิดรอบแบบประเมิน",
   "admin.survey.wave.close": "ปิดรอบแบบประเมิน",
   "admin.survey.wave.cancel": "ยกเลิกรอบแบบประเมิน",
+  "admin.site-settings.update": "อัปเดตการตั้งค่าระบบ",
+  "admin.maintenance.toggle": "สลับโหมดปิดปรับปรุง",
+  "admin.user.password-reset": "รีเซ็ตรหัสผ่านผู้ใช้",
   "advisor.student-history.view": "เปิดดูประวัตินักศึกษา",
   "advisor.assessment-history.view": "เปิดดูประวัติผลประเมิน",
   "advisor.referral.create": "สร้างรายการส่งต่อ",
   "advisor.observation.create": "บันทึกการสังเกตการณ์",
   "advisor.consultation-request.update": "อัปเดตคำขอปรึกษา",
   "executive.student-detail.view": "เปิดดูรายละเอียดนักศึกษา",
+  "executive.referral-detail.view": "เปิดดูรายละเอียดเคสส่งต่อ",
   "executive.assessment-history.view": "เปิดดูประวัติผลประเมิน",
   "mental_health.assessment-history.view": "เปิดดูประวัติผลประเมิน",
   "mental-health.assessment-history.view": "เปิดดูประวัติผลประเมิน",
@@ -96,11 +104,16 @@ const ACTION_LABEL_MAP: Record<string, string> = {
   "student.counseling-request.create": "ขอรับคำปรึกษาจากผู้เชี่ยวชาญ",
   "student.chat.message": "สนทนากับเพื่อน AI",
   "student.chat.blocked": "ข้อความแชทถูกบล็อก",
+  "chat.ephemeral.end": "จบแชทชั่วคราว",
 };
 
 const ACTION_DETAIL_MAP: Record<string, string> = {
   "auth.login.success": "สร้างเซสชันเข้าสู่ระบบใหม่ให้ผู้ใช้งาน",
   "auth.login.failed": "การยืนยันตัวตนไม่ผ่านหรือบัญชีไม่พร้อมใช้งาน",
+  "auth.refresh.reuse-detected": "เพิกถอนเซสชันทั้งหมดหลังพบการนำโทเค็นกลับมาใช้ซ้ำ",
+  "security.privilege-probe": "บัญชีที่มีสิทธิ์ต่ำพยายามเรียก API ของแอดมินหรือผู้บริหาร",
+  "security.rate-limit": "ระบบระงับคำขอชั่วคราวหลังพบการยิงถี่ผิดปกติ",
+  "security.authz-denied": "ปฏิเสธการเข้าถึงทรัพยากรที่ต้องใช้สิทธิ์สูงกว่า",
   "auth.logout": "สิ้นสุดเซสชันของผู้ใช้งาน",
   "auth.password-reset.request": "บันทึกคำขอสำหรับตั้งรหัสผ่านใหม่",
   "auth.password-reset.complete": "ยืนยันการตั้งรหัสผ่านใหม่เรียบร้อย",
@@ -125,12 +138,16 @@ const ACTION_DETAIL_MAP: Record<string, string> = {
   "admin.survey.wave.open": "เปิดรับการตอบแบบประเมินตามรอบที่กำหนด",
   "admin.survey.wave.close": "ปิดรับการตอบแบบประเมินของรอบนี้",
   "admin.survey.wave.cancel": "ยกเลิกรอบแบบประเมินก่อนเปิดหรือระหว่างรอบ",
+  "admin.site-settings.update": "ปรับปรุงโหมดปิดปรับปรุงหรือข้อมูลติดต่อคณะ",
+  "admin.maintenance.toggle": "เปิดหรือปิดโหมดปิดปรับปรุงระบบชั่วคราว",
+  "admin.user.password-reset": "ออกรหัสผ่านชั่วคราวและบังคับเปลี่ยนเมื่อเข้าสู่ระบบครั้งถัดไป",
   "advisor.student-history.view": "เข้าถึงหน้าประวัติและข้อมูลย้อนหลังของนักศึกษา",
   "advisor.assessment-history.view": "เข้าถึงประวัติผลประเมินย้อนหลังของนักศึกษา",
   "advisor.referral.create": "สร้างคำขอส่งต่อไปยังหน่วยงานที่เกี่ยวข้อง",
   "advisor.observation.create": "บันทึกข้อสังเกตเพื่อติดตามนักศึกษา",
   "advisor.consultation-request.update": "ปรับสถานะหรือรายละเอียดคำขอปรึกษา",
   "executive.student-detail.view": "เข้าถึงข้อมูลสรุปรายละเอียดของนักศึกษา",
+  "executive.referral-detail.view": "เข้าถึงเส้นทางส่งต่อ ผู้รับเคส และบันทึกที่เกี่ยวข้อง",
   "executive.assessment-history.view": "เข้าถึงประวัติผลประเมินย้อนหลังของนักศึกษา",
   "mental_health.assessment-history.view": "เข้าถึงประวัติผลประเมินย้อนหลังของนักศึกษา",
   "mental-health.assessment-history.view": "เข้าถึงประวัติผลประเมินย้อนหลังของนักศึกษา",
@@ -160,6 +177,7 @@ const ACTION_DETAIL_MAP: Record<string, string> = {
   "student.counseling-request.create": "นักศึกษาขอรับคำปรึกษาจากผู้เชี่ยวชาญ",
   "student.chat.message": "บันทึกการสนทนากับเพื่อน AI",
   "student.chat.blocked": "ระบบบล็อกข้อความที่ไม่ผ่านเกณฑ์ความปลอดภัย",
+  "chat.ephemeral.end": "จบการสนทนาชั่วคราวและลบข้อความ",
 };
 
 const ENTITY_LABEL_MAP: Record<string, string> = {
@@ -439,7 +457,7 @@ export function resolveAuditTargetLabel(
   }
 
   if (
-    /\.(student-history|assessment-history|student-detail|referral-history)\.view$/i.test(normalized) ||
+    /\.(student-history|assessment-history|student-detail|referral-history|referral-detail)\.view$/i.test(normalized) ||
     normalized.startsWith("student.") ||
     normalized.includes("referral") ||
     normalized.includes("appointment") ||

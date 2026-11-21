@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Role } from "@prisma/client";
 import {
+  buildActiveAdminCountWhere,
+  buildUserHasRoleWhere,
   getAssignedRoles,
   hasAssignedRole,
   splitPrimaryAndAdditionalStaffRoles,
@@ -67,5 +69,20 @@ describe("splitPrimaryAndAdditionalStaffRoles", () => {
     const split = splitPrimaryAndAdditionalStaffRoles([Role.ADVISOR, Role.EXECUTIVE]);
     assert.equal(split.primaryRole, Role.EXECUTIVE);
     assert.deepEqual(split.additionalRoles, [Role.ADVISOR]);
+  });
+});
+
+describe("active admin count where", () => {
+  it("RL-09 นับแอดมินจากบทบาทหลักหรือบทบาทเพิ่มเติม", () => {
+    const where = buildActiveAdminCountWhere();
+    assert.deepEqual(where, {
+      AND: [buildUserHasRoleWhere(Role.ADMIN), { isActive: true }],
+    });
+    const roleWhere = buildUserHasRoleWhere(Role.ADMIN);
+    assert.ok(roleWhere.OR);
+    assert.equal(
+      (roleWhere.OR as object[]).some((clause) => "additionalRoles" in clause),
+      true
+    );
   });
 });

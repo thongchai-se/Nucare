@@ -29,6 +29,10 @@ export type AdvisorStudent = {
   studentId: string | null;
   name: string;
   year: string;
+  section?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  guardianPhone?: string | null;
   riskLevel: StudentRiskLevel;
   lastAssessment: string | null;
   careRecordCount: number;

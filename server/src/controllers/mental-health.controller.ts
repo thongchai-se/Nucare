@@ -23,9 +23,19 @@ import {
   serializeMentalHealthAppointment,
 } from "../lib/mental-health-appointments";
 import {
+  mapMentalHealthScheduleOffer,
+  parseFutureMentalHealthSchedule,
+  pickLatestPendingMentalHealthOffer,
+} from "../lib/mental-health-schedule-offers";
+import {
+  mergeDeclinedUserIds,
+  shouldCloseReferralAfterDeclines,
+} from "../lib/mental-health-referral-decline";
+import {
   canTransitionMentalHealthReferralStatus,
   mentalHealthReferralTransitionError,
 } from "../lib/mental-health-referral-status";
+import { scopeMentalHealthDashboardCareSessions } from "../lib/mental-health-access";
 import {
   canMutateAcceptedReferral,
   mentalHealthOwnershipDeniedMessage,
@@ -35,6 +45,7 @@ import {
   getMentalHealthStudentHistoryByReferral,
 } from "../lib/mental-health-student-history";
 import { closeReferralReceivedAlerts } from "../lib/close-referral-alerts";
+import { filterReferralAlertsForPortalTarget } from "../lib/referral-alert-portal-filter";
 import { closeSosAlertsForCase } from "../lib/notify-sos-recipients";
 import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
@@ -51,9 +62,11 @@ const studentParamSchema = z.object({
   studentUserId: z.string().trim().min(1),
 });
 
-const updateReferralStatusSchema = z.object({
-  status: z.nativeEnum(ReferralStatus),
-});
+export const updateReferralStatusSchema = z
+  .object({
+    status: z.nativeEnum(ReferralStatus),
+  })
+  .strict();
 
 const createSpecializedCareRecordSchema = z
   .object({
@@ -81,13 +94,15 @@ const appointmentParamSchema = z.object({
   appointmentId: z.string().trim().min(1),
 });
 
-const updateAppointmentStatusSchema = z.object({
-  status: z.enum([
-    MentalHealthAppointmentStatus.CANCELLED,
-    MentalHealthAppointmentStatus.COMPLETED,
-    MentalHealthAppointmentStatus.NO_SHOW,
-  ]),
-});
+export const updateAppointmentStatusSchema = z
+  .object({
+    status: z.enum([
+      MentalHealthAppointmentStatus.CANCELLED,
+      MentalHealthAppointmentStatus.COMPLETED,
+      MentalHealthAppointmentStatus.NO_SHOW,
+    ]),
+  })
+  .strict();
 
 const emergencyCaseParamSchema = z
   .object({
@@ -158,6 +173,31 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           },
         },
       },
+      mentalHealthScheduleOffers: {
+        where: {
+          status: "PENDING" as const,
+        },
+        orderBy: {
+          createdAt: "desc" as const,
+        },
+        take: 20,
+        select: {
+          id: true,
+          referralId: true,
+          proposedAt: true,
+          location: true,
+          note: true,
+          status: true,
+          createdAt: true,
+          proposedById: true,
+          proposedBy: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
       _count: {
         select: {
           specializedCareRecords: true,
@@ -165,12 +205,21 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
       },
     };
 
-    const [openReferrals, closedReferrals, emergencyCases, alerts, appointments] = await Promise.all([
-      // คิวเปิดต้องไม่ถูกตัดทิ้ง — PENDING/ACCEPTED โหลดครบ
+    const [openReferrals, closedReferrals, emergencyCases, rawAlerts, appointments] = await Promise.all([
+      // คิว PENDING ที่ยังไม่ปฏิเสธ + เคส ACCEPTED ที่ตนรับเท่านั้น (กันโชว์เคสคนอื่นแล้วประวัติ 403)
       prisma.caseReferral.findMany({
         where: {
           target: ReferralTarget.COUNSELING_CENTER,
-          status: { in: [ReferralStatus.PENDING, ReferralStatus.ACCEPTED] },
+          OR: [
+            {
+              status: ReferralStatus.ACCEPTED,
+              acceptedByUserId: userId,
+            },
+            {
+              status: ReferralStatus.PENDING,
+              declines: { none: { userId } },
+            },
+          ],
         },
         orderBy: [{ isUrgent: "desc" }, { createdAt: "desc" }],
         take: 500,
@@ -221,6 +270,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
       }),
       prisma.mentalHealthAppointment.findMany({
         where: {
+          mentalHealthUserId: userId,
           OR: [
             { status: MentalHealthAppointmentStatus.SCHEDULED },
             {
@@ -254,6 +304,12 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
       }),
     ]);
 
+    // บัญชีหลายบทบาทอาจได้รับแจ้งเคสสวัสดิการ — แดชบอร์ดทีมปรึกษาโชว์เฉพาะเคสศูนย์
+    const alerts = await filterReferralAlertsForPortalTarget(
+      rawAlerts,
+      ReferralTarget.COUNSELING_CENTER
+    );
+
     const referrals = [...openReferrals, ...closedReferrals];
     const acceptedOwnerByReferralId = await getAcceptedReferralOwners(referrals.map((referral) => referral.id));
     const latestSurveyByStudentId = await getLatestActiveSurveyResultsForStudents(
@@ -262,10 +318,27 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
 
     res.status(200).json({
       referrals: referrals.map((referral) => {
-        const latestCareRecord = referral.specializedCareRecords[0] ?? null;
+        const scopedCareSessions = scopeMentalHealthDashboardCareSessions({
+          referralStatus: referral.status,
+          acceptedByUserId: referral.acceptedByUserId,
+          actorUserId: userId,
+          sessions: referral.specializedCareRecords.map((record) => ({
+            id: record.id,
+            sessionDate: record.sessionDate,
+            summary: record.summary,
+            interventionPlan: record.interventionPlan,
+            providerName: record.mentalHealthUser.name,
+            createdAt: record.createdAt,
+          })),
+        });
+        const latestCareRecord = scopedCareSessions[0] ?? null;
         const acceptedOwner = acceptedOwnerByReferralId.get(referral.id) ?? null;
         const latestSurvey = latestSurveyByStudentId.get(referral.student.id);
         const latestAssessment = referral.student.studentAssessments[0] ?? null;
+        const scheduleOffers = referral.mentalHealthScheduleOffers.map((offer) =>
+          mapMentalHealthScheduleOffer(offer, referral.student.id)
+        );
+        const isOwnedCase = referral.acceptedByUserId === userId;
 
         return {
           id: referral.id,
@@ -277,18 +350,15 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           advisorName: referral.advisor.name,
           acceptedByUserId: referral.acceptedByUserId ?? null,
           currentOwnerName:
-            referral.acceptedBy?.name ?? acceptedOwner?.actorName ?? latestCareRecord?.mentalHealthUser.name ?? null,
+            referral.acceptedBy?.name ?? acceptedOwner?.actorName ?? null,
           currentOwnerAssignedAt: acceptedOwner?.createdAt ?? null,
-          careSessionCount: referral._count.specializedCareRecords,
+          careSessionCount: isOwnedCase ? referral._count.specializedCareRecords : 0,
           latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
-          recentCareSessions: referral.specializedCareRecords.map((record) => ({
-            id: record.id,
-            sessionDate: record.sessionDate,
-            summary: record.summary,
-            interventionPlan: record.interventionPlan,
-            providerName: record.mentalHealthUser.name,
-            createdAt: record.createdAt,
-          })),
+          latestPendingScheduleOffer:
+            pickLatestPendingMentalHealthOffer(scheduleOffers),
+          scheduleOffers:
+            isOwnedCase || referral.status === ReferralStatus.PENDING ? scheduleOffers : [],
+          recentCareSessions: scopedCareSessions,
           student: {
             id: referral.student.id,
             studentId: formatStudentIdForResponse(referral.student.studentId),
@@ -326,7 +396,7 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
   }
 };
 
-/** อัปเดตสถานะเคส SOS: รอรับ → กำลังดำเนินการ → ปิดแล้ว */
+/** อัปเดตสถานะเคส SOS: รอรับเรื่อง → กำลังดำเนินการ → ปิดแล้ว */
 export const updateEmergencyCaseStatus = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId || !hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
@@ -578,6 +648,10 @@ export const createMentalHealthAppointment = async (req: Request, res: Response)
     res.status(400).json({ message: "รูปแบบวันหรือเวลาไม่ถูกต้อง" });
     return;
   }
+  if (!parseFutureMentalHealthSchedule(scheduledAt.toISOString())) {
+    res.status(400).json({ message: "วันเวลานัดหมายต้องเป็นเวลาปัจจุบันหรืออนาคต" });
+    return;
+  }
 
   try {
     const student = await prisma.user.findFirst({
@@ -621,28 +695,40 @@ export const createMentalHealthAppointment = async (req: Request, res: Response)
       return;
     }
 
-    const appointment = await prisma.mentalHealthAppointment.create({
-      data: {
-        studentId: student.id,
-        mentalHealthUserId: userId,
-        referralId: activeReferral.id,
-        scheduledAt,
-        location: parsed.data.location,
-        note: parsed.data.note?.trim() || null,
-        status: MentalHealthAppointmentStatus.SCHEDULED,
-      },
-      include: {
-        student: {
-          select: {
-            name: true,
+    const appointment = await prisma.$transaction(async (tx) => {
+      await tx.mentalHealthScheduleOffer.updateMany({
+        where: {
+          referralId: activeReferral.id,
+          status: "PENDING",
+        },
+        data: {
+          status: "SUPERSEDED",
+        },
+      });
+
+      return tx.mentalHealthAppointment.create({
+        data: {
+          studentId: student.id,
+          mentalHealthUserId: userId,
+          referralId: activeReferral.id,
+          scheduledAt,
+          location: parsed.data.location,
+          note: parsed.data.note?.trim() || null,
+          status: MentalHealthAppointmentStatus.SCHEDULED,
+        },
+        include: {
+          student: {
+            select: {
+              name: true,
+            },
+          },
+          mentalHealthUser: {
+            select: {
+              name: true,
+            },
           },
         },
-        mentalHealthUser: {
-          select: {
-            name: true,
-          },
-        },
-      },
+      });
     });
 
     const whenLabel = appointment.scheduledAt.toLocaleString("th-TH", {
@@ -679,6 +765,7 @@ export const createMentalHealthAppointment = async (req: Request, res: Response)
       ipAddress: getRequestIpAddress(req),
     });
 
+    res.setHeader("Deprecation", "true");
     res.status(201).json({
       message: "สร้างนัดหมายสำเร็จ",
       appointment: serializeMentalHealthAppointment(appointment),
@@ -889,6 +976,161 @@ export const updateReferralStatus = async (req: Request, res: Response): Promise
       }
     }
 
+    // ปฏิเสธคิว PENDING: ซ่อนจากคนปฏิเสธก่อน — ปิดและแจ้งที่ปรึกษาเมื่อผู้เชี่ยวชาญที่ยังใช้งานปฏิเสธครบ
+    if (
+      existingReferral.status === ReferralStatus.PENDING &&
+      nextStatus === ReferralStatus.CLOSED
+    ) {
+      const outcome = await prisma.$transaction(async (tx) => {
+        const stillPending = await tx.caseReferral.findFirst({
+          where: {
+            id: existingReferral.id,
+            target: ReferralTarget.COUNSELING_CENTER,
+            status: ReferralStatus.PENDING,
+          },
+          select: { id: true },
+        });
+        if (!stillPending) {
+          return { kind: "conflict" as const };
+        }
+
+        await tx.caseReferralDecline.upsert({
+          where: {
+            referralId_userId: {
+              referralId: existingReferral.id,
+              userId,
+            },
+          },
+          create: {
+            referralId: existingReferral.id,
+            userId,
+          },
+          update: {},
+        });
+
+        const [declines, activeExperts] = await Promise.all([
+          tx.caseReferralDecline.findMany({
+            where: { referralId: existingReferral.id },
+            select: { userId: true },
+          }),
+          tx.user.findMany({
+            where: {
+              isActive: true,
+              OR: [
+                { role: Role.MENTAL_HEALTH },
+                { additionalRoles: { has: Role.MENTAL_HEALTH } },
+              ],
+            },
+            select: { id: true },
+          }),
+        ]);
+
+        const declinedUserIds = mergeDeclinedUserIds(
+          declines.map((row) => row.userId),
+          userId
+        );
+        const closeNow = shouldCloseReferralAfterDeclines({
+          activeExpertIds: activeExperts.map((row) => row.id),
+          declinedUserIds,
+        });
+
+        if (closeNow) {
+          const closed = await tx.caseReferral.updateMany({
+            where: {
+              id: existingReferral.id,
+              status: ReferralStatus.PENDING,
+            },
+            data: { status: ReferralStatus.CLOSED },
+          });
+          if (closed.count === 0) {
+            return { kind: "conflict" as const };
+          }
+          return { kind: "closed" as const, declinedUserIds };
+        }
+
+        return { kind: "hidden" as const, declinedUserIds };
+      });
+
+      if (outcome.kind === "conflict") {
+        const latest = await prisma.caseReferral.findUnique({
+          where: { id: existingReferral.id },
+          select: { status: true },
+        });
+        if (latest?.status === ReferralStatus.ACCEPTED) {
+          res.status(409).json({ message: "เคสนี้มีผู้รับแล้ว กรุณารีเฟรชรายการ" });
+          return;
+        }
+        if (latest?.status === ReferralStatus.CLOSED) {
+          res.status(409).json({ message: "เคสนี้ถูกปิดไปแล้ว กรุณารีเฟรชรายการ" });
+          return;
+        }
+        res.status(409).json({ message: "สถานะเคสเปลี่ยนไปแล้ว กรุณารีเฟรชแล้วลองใหม่" });
+        return;
+      }
+
+      const referral = await prisma.caseReferral.findUniqueOrThrow({
+        where: { id: existingReferral.id },
+        select: {
+          id: true,
+          status: true,
+          acceptedByUserId: true,
+          updatedAt: true,
+        },
+      });
+
+      if (outcome.kind === "closed") {
+        const studentLabel =
+          formatStudentIdForResponse(existingReferral.student.studentId) ||
+          existingReferral.student.name;
+        const statusLabel = "ผู้เชี่ยวชาญปฏิเสธคิวส่งต่อครบแล้ว";
+
+        await notifyUser({
+          recipientUserId: existingReferral.advisor.id,
+          recipientEmail: existingReferral.advisor.email,
+          channels: { inApp: true, email: Boolean(existingReferral.advisor.email) },
+          alert: {
+            actorUserId: userId,
+            studentId: existingReferral.student.id,
+            type: AlertType.ADVISOR_FOLLOW_UP,
+            priority: AlertPriority.MEDIUM,
+            title: statusLabel,
+            message: `${existingReferral.student.name} (${studentLabel}) · ${existingReferral.reason.slice(0, 180)}`,
+            sourceType: "CaseReferral",
+            sourceId: referral.id,
+          },
+          email: {
+            subject: `NuCare: ${statusLabel}`,
+            text: `เรียน ${existingReferral.advisor.name}\n\n${statusLabel}\nนักศึกษา: ${existingReferral.student.name} (${studentLabel})\nเหตุผลส่งต่อ: ${existingReferral.reason}\n\nเข้าสู่ระบบเพื่อติดตาม`,
+          },
+        });
+
+        await closeReferralReceivedAlerts(referral.id);
+      }
+
+      await writeAuditLog({
+        actorUserId: userId,
+        action: "mental-health.referral.update-status",
+        entityType: "CaseReferral",
+        entityId: referral.id,
+        description: formatAuditMetadata({
+          status: referral.status,
+          declineOnly: outcome.kind === "hidden",
+          declinedCount: outcome.declinedUserIds.length,
+        }),
+        ipAddress: getRequestIpAddress(req),
+      });
+
+      res.status(200).json({
+        message:
+          outcome.kind === "closed"
+            ? "ปฏิเสธคิวสำเร็จ — ที่ปรึกษาได้รับการแจ้งแล้ว"
+            : "ซ่อนคิวสำหรับคุณแล้ว รอผู้เชี่ยวชาญท่านอื่น",
+        referral,
+        declineOnly: outcome.kind === "hidden",
+      });
+      return;
+    }
+
     // กันแข่งกดรับ/ปิดพร้อมกัน: อัปเดตเฉพาะเมื่อสถานะปัจจุบันยังตรงเงื่อนไข
     const claimed = await prisma.caseReferral.updateMany({
       where: {
@@ -934,9 +1176,7 @@ export const updateReferralStatus = async (req: Request, res: Response): Promise
     const statusLabel =
       nextStatus === ReferralStatus.ACCEPTED
         ? "ผู้เชี่ยวชาญรับเคสแล้ว"
-        : existingReferral.status === ReferralStatus.PENDING
-          ? "ผู้เชี่ยวชาญปิด/ปฏิเสธคิวส่งต่อ"
-          : "ผู้เชี่ยวชาญปิดเคสแล้ว";
+        : "ผู้เชี่ยวชาญปิดเคสแล้ว";
 
     await notifyUser({
       recipientUserId: existingReferral.advisor.id,

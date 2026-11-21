@@ -1,5 +1,6 @@
 import rateLimit from "express-rate-limit";
-import { Request } from "express";
+import { Request, Response } from "express";
+import { writeRateLimitSecurityAudit } from "../lib/security-audit-write";
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -20,6 +21,8 @@ type LimiterOptions = {
   keyGenerator?: (req: Request) => string;
   skip?: (req: Request) => boolean;
   skipSuccessfulRequests?: boolean;
+  /** ขอบเขตสำหรับ audit security.rate-limit — ไม่ใส่ = ไม่เขียน audit */
+  securityScope?: string;
 };
 
 const createLimiter = (
@@ -37,6 +40,12 @@ const createLimiter = (
     skip: options?.skip,
     skipSuccessfulRequests: Boolean(options?.skipSuccessfulRequests),
     message: { message },
+    handler: (req: Request, res: Response, _next, opts) => {
+      if (options?.securityScope) {
+        void writeRateLimitSecurityAudit({ req, scope: options.securityScope });
+      }
+      res.status(opts.statusCode).json(opts.message);
+    },
   });
 
 const createAuthLimiter = (
@@ -56,7 +65,7 @@ export const apiRateLimit = createLimiter(
   parsePositiveInt(process.env.API_RATE_LIMIT_WINDOW_MS, 60 * 1000),
   parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 300),
   "มีคำขอเข้าใช้งานระบบมากเกินไป กรุณาลองใหม่อีกครั้ง",
-  { skip: isHealthCheckRequest }
+  { skip: isHealthCheckRequest, securityScope: "api" }
 );
 
 export const apiWriteRateLimit = createLimiter(
@@ -65,6 +74,7 @@ export const apiWriteRateLimit = createLimiter(
   "มีคำขอเปลี่ยนแปลงข้อมูลมากเกินไป กรุณาลองใหม่อีกครั้ง",
   {
     skip: (req) => isHealthCheckRequest(req) || isSafeReadRequest(req),
+    securityScope: "api-write",
   }
 );
 
@@ -73,27 +83,14 @@ export const loginRateLimit = createAuthLimiter(
   "ลองเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง",
   {
     skipSuccessfulRequests: true,
+    securityScope: "login",
   }
-);
-
-export const forgotPasswordRateLimit = createAuthLimiter(
-  5,
-  "คุณขอลิงก์เปลี่ยนรหัสผ่านบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง"
-);
-
-export const resetPasswordRateLimit = createAuthLimiter(
-  10,
-  "คุณเปลี่ยนรหัสผ่านบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง"
 );
 
 export const refreshRateLimit = createAuthLimiter(
   60,
-  "คำขอต่ออายุเซสชันมากเกินไป กรุณาลองใหม่อีกครั้ง"
-);
-
-export const changePasswordRateLimit = createAuthLimiter(
-  10,
-  "คุณพยายามเปลี่ยนรหัสผ่านบ่อยเกินไป กรุณาลองใหม่อีกครั้งภายหลัง"
+  "คำขอต่ออายุเซสชันมากเกินไป กรุณาลองใหม่อีกครั้ง",
+  { securityScope: "refresh" }
 );
 
 export const assessmentSubmitRateLimit = createLimiter(
@@ -134,5 +131,12 @@ export const studentChatRateLimit = createLimiter(
   parsePositiveInt(process.env.STUDENT_CHAT_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
   parsePositiveInt(process.env.STUDENT_CHAT_RATE_LIMIT_MAX, 40),
   "คุณส่งข้อความแชทบ่อยเกินไป กรุณาพักสักครู่แล้วลองใหม่",
+  { keyGenerator: authenticatedUserKey }
+);
+
+export const ephemeralChatRateLimit = createLimiter(
+  parsePositiveInt(process.env.EPHEMERAL_CHAT_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1000),
+  parsePositiveInt(process.env.EPHEMERAL_CHAT_RATE_LIMIT_MAX, 120),
+  "คุณส่งข้อความบ่อยเกินไป กรุณาพักสักครู่แล้วลองใหม่",
   { keyGenerator: authenticatedUserKey }
 );

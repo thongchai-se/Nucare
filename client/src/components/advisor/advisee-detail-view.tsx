@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ChevronRight, ClipboardList, Flag, Send } from "lucide-react";
 import { AssessmentTimelinePanel } from "@/components/assessment/assessment-timeline-panel";
+import { StudentContactPanel } from "@/components/student-contact-panel";
 import { presentClinicalNote } from "@/lib/clinical-note-display";
 import { presentHistoryText, stripSeedMarkers } from "@/lib/history-display";
 import { formatStudentIdDisplay } from "@/lib/student-id";
@@ -48,8 +49,10 @@ type AdviseeDetailViewProps = {
   onOpenReferrals: () => void;
 };
 
-function historyKindLabel(kind: AdvisorHistoryItem["kind"]): string {
-  if (kind === "CARE") return "บันทึกดูแล";
+function historyKindLabel(kind: AdvisorHistoryItem["kind"], type?: string): string {
+  if (kind === "CARE") {
+    return type?.includes("เฉพาะทาง") ? "บันทึกเฉพาะทาง" : "บันทึกดูแล";
+  }
   if (kind === "REFERRAL") return "ส่งต่อเคส";
   if (kind === "CONSULTATION") return "คำขอปรึกษา";
   return "แจ้งจากผู้สอน";
@@ -141,7 +144,7 @@ export function AdviseeDetailView({
                 referralDisabled
                   ? latestReferral?.status === "ACCEPTED"
                     ? "มีเคสที่กำลังดูแลอยู่แล้ว"
-                    : "มีเคสส่งต่อที่รอรับอยู่แล้ว"
+                    : "มีเคสส่งต่อที่รอรับเคสอยู่แล้ว"
                   : "ส่งต่อเคส"
               }
               className={`${UI_ACTION_PRIMARY_COMPACT} min-h-11 sm:text-sm`}
@@ -150,6 +153,14 @@ export function AdviseeDetailView({
               ส่งต่อเคส
             </button>
           </div>
+        </div>
+
+        <div className="border-b border-slate-100 p-4 sm:p-6">
+          <StudentContactPanel
+            email={student.email}
+            phone={student.phone}
+            guardianPhone={student.guardianPhone}
+          />
         </div>
 
         <div className="border-b border-slate-100 p-4 sm:p-6">
@@ -308,7 +319,7 @@ export function AdviseeDetailView({
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${historyKindClass(item.kind)}`}
                         >
-                          {historyKindLabel(item.kind)}
+                          {historyKindLabel(item.kind, item.type)}
                         </span>
                         {item.isUrgent ? (
                           <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">

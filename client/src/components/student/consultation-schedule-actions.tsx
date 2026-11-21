@@ -12,6 +12,7 @@ import {
   type ConsultationScheduleOfferItem,
   type StudentConsultationRequest,
 } from "@/lib/student-dashboard";
+import { scheduleDatetimeInputMin } from "@/lib/schedule-datetime";
 import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SCHEDULE_COMPACT, UI_BUTTON_PRIMARY, UI_BUTTON_GHOST } from "@/lib/ui-classes";
 
 type ConsultationScheduleActionsProps = {
@@ -64,7 +65,7 @@ export function ConsultationScheduleActions({
         `/api/student/consultation-requests/${request.id}/schedule-offers/${offer.id}/accept`
       );
       await refreshRequest();
-      onToast("ยืนยันนัดแล้ว", "นัดหมายถูกบันทึกเมื่อทั้งสองฝ่ายยอมรับ");
+      onToast("ยืนยันนัดแล้ว", "นัดถูกยืนยันแล้ว");
     } catch (error) {
       onError(getApiErrorMessage(error, "ไม่สามารถยอมรับข้อเสนอได้"));
     } finally {
@@ -98,7 +99,7 @@ export function ConsultationScheduleActions({
       onToast(
         request.status === "SCHEDULED" ? "ขอเปลี่ยนนัดแล้ว" : "ส่งข้อเสนอแล้ว",
         request.status === "SCHEDULED"
-          ? "นัดเดิมถูกพักไว้ระหว่างเจรจา — รออาจารย์ตอบรับหรือเสนอเวลาใหม่"
+          ? "ส่งข้อเสนอแล้ว รออาจารย์ตอบกลับ"
           : "รออาจารย์ตอบรับหรือเสนอเวลาใหม่"
       );
     } catch (error) {
@@ -117,7 +118,7 @@ export function ConsultationScheduleActions({
     <div className="mt-3 space-y-3">
       {wasScheduled && pendingOffer ? (
         <InlineAlert tone="warning" className="rounded-lg px-3 py-2 text-xs">
-          กำลังเจรจาวันใหม่ — นัดเดิมถูกพักไว้จนกว่าทั้งสองฝ่ายจะตกลงกัน
+          กำลังปรับวันนัดใหม่ นัดเดิมยังไม่ใช่เวลานัดสุดท้าย
         </InlineAlert>
       ) : null}
 
@@ -205,6 +206,7 @@ export function ConsultationScheduleActions({
                       id={`counter-at-${request.id}`}
                       type="datetime-local"
                       required
+                      min={scheduleDatetimeInputMin()}
                       value={proposedAtLocal}
                       onChange={(event) => setProposedAtLocal(event.target.value)}
                       disabled={busy}
@@ -213,7 +215,7 @@ export function ConsultationScheduleActions({
                   </div>
                   <div className="space-y-1">
                     <label htmlFor={`counter-loc-${request.id}`} className="text-xs font-bold text-slate-700">
-                      สถานที่ / ช่องทางที่อาจารย์เสนอ
+                      สถานที่
                     </label>
                     <input
                       id={`counter-loc-${request.id}`}
@@ -223,10 +225,10 @@ export function ConsultationScheduleActions({
                       value={location}
                       onChange={(event) => setLocation(event.target.value)}
                       disabled={busy}
-                      placeholder="ใช้ตามที่อาจารย์เสนอ หรือปรับเล็กน้อย"
+                      placeholder="เช่น ห้องพบ หรือลิงก์ออนไลน์"
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <p className="text-[11px] text-slate-400">โดยปกติอาจารย์เป็นผู้กำหนดห้อง/ลิงก์ — แก้ได้ถ้าจำเป็น</p>
+                    <p className="text-[11px] text-slate-400">ถ้ามีห้องหรือลิงก์อยู่แล้ว สามารถแก้ได้</p>
                   </div>
                   <div className="space-y-1">
                     <label htmlFor={`counter-note-${request.id}`} className="text-xs font-bold text-slate-700">
@@ -241,7 +243,7 @@ export function ConsultationScheduleActions({
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
                     <button type="button" onClick={() => setCounterOpen(false)} className={UI_BUTTON_GHOST}>
                       ยกเลิก
                     </button>

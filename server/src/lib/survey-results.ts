@@ -9,6 +9,7 @@ import {
   getSurveyRiskLevel,
   Ghq28DistressLevel,
   isGhq28SurveyTitle,
+  type SurveyQuestionForScore,
 } from "./survey-scoring";
 
 export type LatestActiveSurveyResult = {
@@ -25,6 +26,7 @@ export type LatestActiveSurveyResult = {
 
 /**
  * ดึงผลแบบประเมินล่าสุดต่อนักศึกษาจากคลื่นที่เปิด หรือผลล่าสุดข้ามคลื่นถ้าไม่มีคลื่นเปิด
+ * ใช้คะแนนใน response เป็นหลัก — โหลด answers เฉพาะแถวที่ยังไม่มีคะแนน
  */
 export const getLatestActiveSurveyResultsForStudents = async (
   studentIds: string[]
@@ -57,36 +59,99 @@ export const getLatestActiveSurveyResultsForStudents = async (
       studentId: { in: uniqueStudentIds },
       ...(openWave ? { waveId: openWave.id } : {}),
     },
-    orderBy: { submittedAt: "desc" },
-    include: {
-      answers: true,
+    orderBy: [{ studentId: "asc" }, { submittedAt: "desc" }],
+    distinct: ["studentId"],
+    select: {
+      id: true,
+      studentId: true,
+      submittedAt: true,
+      totalScore: true,
+      maxScore: true,
+      riskLevel: true,
+      instrument: true,
+      waveId: true,
+      surveyId: true,
       wave: { select: { id: true, label: true } },
       survey: {
-        include: {
-          questions: { orderBy: { order: "asc" } },
+        select: {
+          title: true,
         },
       },
     },
   });
 
+  const needsRescoreIds = responses
+    .filter((response) => response.totalScore === null || response.maxScore <= 0)
+    .map((response) => response.id);
+
+  const answersByResponseId = new Map<
+    string,
+    Array<{ questionId: string; value: unknown }>
+  >();
+  const questionsBySurveyId = new Map<string, SurveyQuestionForScore[]>();
+
+  if (openWave?.survey) {
+    questionsBySurveyId.set(openWave.surveyId, openWave.survey.questions);
+  }
+
+  if (needsRescoreIds.length > 0) {
+    const answerRows = await prisma.surveyAnswer.findMany({
+      where: { responseId: { in: needsRescoreIds } },
+      select: { responseId: true, questionId: true, value: true },
+    });
+    for (const row of answerRows) {
+      const list = answersByResponseId.get(row.responseId) ?? [];
+      list.push({ questionId: row.questionId, value: row.value });
+      answersByResponseId.set(row.responseId, list);
+    }
+
+    const surveyIdsNeedingQuestions = [
+      ...new Set(
+        responses
+          .filter((response) => needsRescoreIds.includes(response.id))
+          .map((response) => response.surveyId)
+          .filter((surveyId) => !questionsBySurveyId.has(surveyId))
+      ),
+    ];
+
+    if (surveyIdsNeedingQuestions.length > 0) {
+      const surveys = await prisma.survey.findMany({
+        where: { id: { in: surveyIdsNeedingQuestions } },
+        select: {
+          id: true,
+          questions: { orderBy: { order: "asc" } },
+        },
+      });
+      for (const survey of surveys) {
+        questionsBySurveyId.set(survey.id, survey.questions);
+      }
+    }
+  }
+
   const results = new Map<string, LatestActiveSurveyResult>();
 
   for (const response of responses) {
-    if (results.has(response.studentId)) {
-      continue;
+    const surveyTitle = openWave?.survey.title ?? response.survey.title;
+    const questions =
+      questionsBySurveyId.get(openWave?.surveyId ?? response.surveyId) ??
+      questionsBySurveyId.get(response.surveyId) ??
+      [];
+    const maxScoreFromQuestions =
+      questions.length > 0 ? calculateSurveyMaxScore(questions, surveyTitle) : 0;
+    const instrument = getSurveyInstrumentLabel(surveyTitle);
+    const responseMaxScore =
+      response.maxScore > 0 ? response.maxScore : maxScoreFromQuestions;
+
+    let totalScore = response.totalScore;
+    if (totalScore === null || response.maxScore <= 0) {
+      const answers = answersByResponseId.get(response.id) ?? [];
+      totalScore = calculateSurveyResponseScore(questions, answers, surveyTitle);
     }
 
-    const survey = openWave?.survey ?? response.survey;
-    const maxScore = calculateSurveyMaxScore(survey.questions, survey.title);
-    const instrument = getSurveyInstrumentLabel(survey.title);
-    const responseMaxScore = response.maxScore > 0 ? response.maxScore : maxScore;
-    const totalScore =
-      response.totalScore ??
-      calculateSurveyResponseScore(survey.questions, response.answers, survey.title);
-    const distress = isGhq28SurveyTitle(survey.title) ? getGhq28DistressLevel(totalScore) : null;
-    const computedRiskLevel = isGhq28SurveyTitle(survey.title)
+    const distress = isGhq28SurveyTitle(surveyTitle) ? getGhq28DistressLevel(totalScore) : null;
+    const computedRiskLevel = isGhq28SurveyTitle(surveyTitle)
       ? getGhq28RiskLevel(totalScore)
-      : getSurveyRiskLevel(survey.title, totalScore, responseMaxScore);
+      : getSurveyRiskLevel(surveyTitle, totalScore, responseMaxScore);
 
     results.set(response.studentId, {
       assessedAt: response.submittedAt,

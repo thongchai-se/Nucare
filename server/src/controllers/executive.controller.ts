@@ -1,9 +1,14 @@
-import { Role } from "@prisma/client";
+import { ReferralStatus, ReferralTarget, Role } from "@prisma/client";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { formatAuditMetadata } from "../lib/audit-metadata";
 import { buildExecutiveDashboardStats } from "../lib/executive-analytics";
+import {
+  getExecutiveReferralCaseDetail,
+  listExecutiveReferralCases,
+  parseExecutiveReferralStudyYear,
+} from "../lib/executive-referral-cases";
 import {
   buildScreeningRoundComparison,
   type StudyYearComparisonFilter,
@@ -145,6 +150,88 @@ export const listExecutiveStudents = async (req: Request, res: Response): Promis
   } catch (error) {
     console.error("List executive students error:", error);
     res.status(500).json({ message: "Failed to list students" });
+  }
+};
+
+const referralListQuerySchema = z
+  .object({
+    studyYear: z.union([z.literal("ALL"), z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR)]).optional(),
+    status: z.nativeEnum(ReferralStatus).optional(),
+    target: z.nativeEnum(ReferralTarget).optional(),
+    urgentOnly: z
+      .union([z.literal("1"), z.literal("true"), z.literal("0"), z.literal("false")])
+      .optional(),
+    search: z.string().trim().min(2).max(120).optional(),
+  })
+  .strict();
+
+const referralParamSchema = z.object({
+  referralId: z.string().trim().min(1).max(128),
+});
+
+/** รายการเคสส่งต่อทั้งคณะสำหรับผู้บริหาร (อ่านอย่างเดียว) */
+export const listExecutiveReferrals = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user?.userId || !hasAssignedRole(req.user, Role.EXECUTIVE)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedQuery = referralListQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ message: "พารามิเตอร์ไม่ถูกต้อง", errors: parsedQuery.error.flatten() });
+    return;
+  }
+
+  try {
+    const urgentRaw = parsedQuery.data.urgentOnly;
+    const payload = await listExecutiveReferralCases(prisma, {
+      studyYear: parseExecutiveReferralStudyYear(parsedQuery.data.studyYear),
+      status: parsedQuery.data.status,
+      target: parsedQuery.data.target,
+      urgentOnly: urgentRaw === "1" || urgentRaw === "true",
+      search: parsedQuery.data.search,
+    });
+    res.status(200).json(payload);
+  } catch (error) {
+    console.error("List executive referrals error:", error);
+    res.status(500).json({ message: "โหลดเคสส่งต่อไม่สำเร็จ กรุณาลองใหม่" });
+  }
+};
+
+/** เจาะลึกเคสส่งต่อ: ผู้ส่ง ปลายทาง ผู้รับ บันทึก และเส้นทางสถานะ */
+export const getExecutiveReferralDetail = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || !hasAssignedRole(req.user, Role.EXECUTIVE)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedParams = referralParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ message: "รายการส่งต่อไม่ถูกต้อง" });
+    return;
+  }
+
+  try {
+    const result = await getExecutiveReferralCaseDetail(prisma, parsedParams.data.referralId);
+    if (result === "not_found") {
+      res.status(404).json({ message: "ไม่พบรายการส่งต่อ" });
+      return;
+    }
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "executive.referral-detail.view",
+      entityType: "CaseReferral",
+      entityId: parsedParams.data.referralId,
+      description: formatAuditMetadata({ op: "view_referral_history" }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Get executive referral detail error:", error);
+    res.status(500).json({ message: "โหลดรายละเอียดเคสส่งต่อไม่สำเร็จ กรุณาลองใหม่" });
   }
 };
 

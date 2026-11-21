@@ -25,6 +25,10 @@ import {
   studentRequestChannelOptions,
 } from "../lib/consultation-channels";
 import {
+  assertStudentMayOpenChatWithStaff,
+  findOrCreateEphemeralChatSession,
+} from "../lib/ephemeral-chat/sessions";
+import {
   formatStudentCancelRequestNote,
   isStudentCancelReason,
 } from "../lib/consultation-close";
@@ -36,9 +40,14 @@ import { mergeConsultationTeacherLists } from "../lib/consultation-teachers";
 import { buildStudentCounselingRequestEmail } from "../lib/email/messages";
 import { serializeMentalHealthAppointment } from "../lib/mental-health-appointments";
 import {
+  mapMentalHealthScheduleOffer,
+  pickLatestPendingMentalHealthOffer,
+} from "../lib/mental-health-schedule-offers";
+import {
   createSosOpenedAlerts,
   listSosAlertRecipients,
 } from "../lib/notify-sos-recipients";
+import { notifyManyUsers } from "../lib/notify-batch";
 import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
 import { buildUserHasRoleWhere, hasAssignedRole } from "../lib/roles";
@@ -51,6 +60,7 @@ import {
   ACTIVE_REFERRAL_STATUSES,
   planStudentCounselingRequest,
 } from "../lib/student-counseling-request";
+import { parseStudentContactPhones } from "../lib/student-contact-phones";
 import { formatStudentIdForResponse, getUserInitials } from "../lib/user-format";
 
 const assessmentAnswerSchema = z.object({
@@ -59,10 +69,12 @@ const assessmentAnswerSchema = z.object({
   answerValue: z.string().trim().min(1).max(200),
 });
 
-const submitAssessmentSchema = z.object({
-  instrument: z.nativeEnum(AssessmentInstrument),
-  answers: z.array(assessmentAnswerSchema).min(1).max(20),
-});
+export const submitAssessmentSchema = z
+  .object({
+    instrument: z.nativeEnum(AssessmentInstrument),
+    answers: z.array(assessmentAnswerSchema).min(1).max(20),
+  })
+  .strict();
 
 const createSosSchema = z
   .object({
@@ -73,6 +85,13 @@ const createSosSchema = z
 const createCounselingRequestSchema = z
   .object({
     note: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+
+const updateStudentContactsSchema = z
+  .object({
+    phone: z.string().max(32).optional().default(""),
+    guardianPhone: z.string().max(32).optional().default(""),
   })
   .strict();
 
@@ -90,16 +109,18 @@ const listConsultationTeachersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
 });
 
-const createConsultationRequestSchema = z.object({
-  teacherId: z.string().trim().min(1),
-  topic: z.enum(consultationTopics),
-  preferredChannel: z
-    .string()
-    .trim()
-    .refine(isStudentRequestChannel, { message: "เลือกได้เฉพาะออนไลน์หรือพบตัว" })
-    .default(ConsultationPreferredChannel.IN_PERSON),
-  note: z.string().trim().max(1200).optional(),
-});
+export const createConsultationRequestSchema = z
+  .object({
+    teacherId: z.string().trim().min(1),
+    topic: z.enum(consultationTopics),
+    preferredChannel: z
+      .string()
+      .trim()
+      .refine(isStudentRequestChannel, { message: "เลือกได้เฉพาะออนไลน์หรือออนไซต์" })
+      .default(ConsultationPreferredChannel.IN_PERSON),
+    note: z.string().trim().max(1200).optional(),
+  })
+  .strict();
 
 const consultationRequestParamSchema = z.object({
   requestId: z.string().trim().min(1),
@@ -398,7 +419,43 @@ export const getStudentDashboard = async (req: Request, res: Response): Promise<
           target: ReferralTarget.COUNSELING_CENTER,
           status: { in: ACTIVE_REFERRAL_STATUSES },
         },
-        select: { id: true, status: true, reason: true, createdAt: true },
+        select: {
+          id: true,
+          status: true,
+          reason: true,
+          createdAt: true,
+          acceptedBy: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          mentalHealthScheduleOffers: {
+            where: {
+              status: ConsultationOfferStatus.PENDING,
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 20,
+            select: {
+              id: true,
+              referralId: true,
+              proposedAt: true,
+              location: true,
+              note: true,
+              status: true,
+              createdAt: true,
+              proposedById: true,
+              proposedBy: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
         orderBy: { updatedAt: "desc" },
       }),
       prisma.studentAdvisorAssignment.findFirst({
@@ -406,6 +463,11 @@ export const getStudentDashboard = async (req: Request, res: Response): Promise<
         select: { id: true },
       }),
     ]);
+
+    const mentalHealthScheduleOffers =
+      openCounselingReferral?.mentalHealthScheduleOffers.map((offer) =>
+        mapMentalHealthScheduleOffer(offer, userId)
+      ) ?? [];
 
     res.status(200).json({
       student: student
@@ -434,12 +496,17 @@ export const getStudentDashboard = async (req: Request, res: Response): Promise<
           providerName: serialized.providerName,
         };
       }),
+      mentalHealthScheduleOffers,
       openCounselingReferral: openCounselingReferral
         ? {
             id: openCounselingReferral.id,
             status: openCounselingReferral.status,
             reason: openCounselingReferral.reason,
             createdAt: openCounselingReferral.createdAt,
+            provider: openCounselingReferral.acceptedBy,
+            latestPendingScheduleOffer:
+              pickLatestPendingMentalHealthOffer(mentalHealthScheduleOffers),
+            scheduleOffers: mentalHealthScheduleOffers,
           }
         : null,
       canRequestExpertCounseling: Boolean(hasAssignedAdvisor) && !openCounselingReferral,
@@ -882,6 +949,24 @@ export const createConsultationRequest = async (req: Request, res: Response): Pr
       ipAddress: getRequestIpAddress(req),
     });
 
+    if (parsed.data.preferredChannel === ConsultationPreferredChannel.MESSAGE) {
+      try {
+        const studentBearer = {
+          id: userId,
+          role: Role.STUDENT,
+          isActive: true,
+        };
+        await assertStudentMayOpenChatWithStaff(prisma, studentBearer, teacher.id);
+        await findOrCreateEphemeralChatSession(prisma, {
+          studentId: userId,
+          staffId: teacher.id,
+          consultationRequestId: consultationRequest.id,
+        });
+      } catch (chatError) {
+        console.error("Open ephemeral chat for MESSAGE consultation failed:", chatError);
+      }
+    }
+
     res.status(201).json({
       message: "ส่งคำขอรับคำปรึกษาสำเร็จ",
       request: mapStudentConsultationRequest(consultationRequest),
@@ -1048,7 +1133,7 @@ export const cancelConsultationRequest = async (req: Request, res: Response): Pr
   }
 };
 
-/** นิสิตขอนัดผู้เชี่ยวชาญสุขภาพจิต — สร้างคิว COUNSELING_CENTER ให้ทีม MH รับงาน */
+/** นิสิตขอนัดผู้เชี่ยวชาญสุขภาพจิต — สร้างคิว COUNSELING_CENTER ให้ทีม MH รับเคส */
 export const createStudentCounselingRequest = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId || !hasAssignedRole(req.user, Role.STUDENT)) {
@@ -1135,24 +1220,24 @@ export const createStudentCounselingRequest = async (req: Request, res: Response
       note: parsed.data.note?.trim() || null,
     });
 
-    for (const mhUser of mentalHealthUsers) {
-      await notifyUser({
-        recipientUserId: mhUser.id,
-        recipientEmail: mhUser.email,
-        channels: { inApp: true, email: true },
-        alert: {
-          actorUserId: userId,
-          studentId: userId,
-          type: AlertType.REFERRAL_RECEIVED,
-          priority: AlertPriority.HIGH,
-          title: "นิสิตขอนัดผู้เชี่ยวชาญสุขภาพจิต",
-          message: plan.reason,
-          sourceType: "CaseReferral",
-          sourceId: referral.id,
-        },
-        email: emailCopy,
-      });
-    }
+    await notifyManyUsers({
+      recipients: mentalHealthUsers.map((mhUser) => ({
+        userId: mhUser.id,
+        email: mhUser.email,
+      })),
+      channels: { inApp: true, email: true },
+      alert: {
+        actorUserId: userId,
+        studentId: userId,
+        type: AlertType.REFERRAL_RECEIVED,
+        priority: AlertPriority.HIGH,
+        title: "นิสิตขอนัดผู้เชี่ยวชาญสุขภาพจิต",
+        message: plan.reason,
+        sourceType: "CaseReferral",
+        sourceId: referral.id,
+      },
+      email: emailCopy,
+    });
 
     await writeAuditLog({
       actorUserId: userId,
@@ -1226,5 +1311,69 @@ export const createSosCase = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error("Create SOS case error:", error);
     res.status(500).json({ message: "Failed to create SOS case" });
+  }
+};
+
+/** นิสิตอัปเดตเบอร์โทรตัวเองและผู้ปกครองเท่านั้น — ห้ามแก้ฟิลด์อื่นผ่าน endpoint นี้ */
+export const updateStudentContacts = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || !hasAssignedRole(req.user, Role.STUDENT)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = updateStudentContactsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "ข้อมูลไม่ถูกต้อง",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const phones = parseStudentContactPhones(parsed.data);
+  if (!phones.ok) {
+    res.status(400).json({ message: phones.message });
+    return;
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        phone: phones.value.phone,
+        guardianPhone: phones.value.guardianPhone,
+      },
+      select: {
+        id: true,
+        phone: true,
+        guardianPhone: true,
+        updatedAt: true,
+      },
+    });
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "student.contacts.update",
+      entityType: "User",
+      entityId: userId,
+      description: formatAuditMetadata({
+        phone: updated.phone ? "set" : "cleared",
+        guardianPhone: updated.guardianPhone ? "set" : "cleared",
+      }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "บันทึกเบอร์ติดต่อแล้ว",
+      contacts: {
+        phone: updated.phone,
+        guardianPhone: updated.guardianPhone,
+        updatedAt: updated.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Update student contacts error:", error);
+    res.status(500).json({ message: "ไม่สามารถบันทึกเบอร์ติดต่อได้" });
   }
 };

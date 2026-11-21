@@ -18,6 +18,7 @@ import { FacultyLogo } from "@/components/faculty-logo";
 import { facultyFullName } from "@/lib/brand";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { useAuth } from "@/context/auth.context";
+import { useEphemeralChatUnread } from "@/hooks/use-ephemeral-chat-unread";
 import type { Role, User } from "@/types/auth";
 import {
   STUDENT_LOGOUT_LABEL,
@@ -95,6 +96,9 @@ export function StudentPageShell({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profileMenuCloseTimerRef = useRef<number | null>(null);
+  const { unreadCount: chatUnreadCount } = useEphemeralChatUnread(
+    Boolean(user && isAuthenticated && user.role === "STUDENT")
+  );
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -192,13 +196,14 @@ export function StudentPageShell({
                 {studentShellNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = item.id === activePage || pathname === item.href;
+                  const showChatBadge = item.id === "advisor" && chatUnreadCount > 0;
 
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition-colors ${
+                      className={`relative inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition-colors ${
                         active
                           ? "bg-white text-blue-700 shadow-sm"
                           : "text-slate-500 hover:bg-white/70 hover:text-blue-700"
@@ -206,6 +211,11 @@ export function StudentPageShell({
                     >
                       <Icon className="h-4 w-4" />
                       {item.label}
+                      {showChatBadge ? (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                          {chatUnreadCount > 9 ? "9+" : chatUnreadCount}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}
@@ -320,7 +330,7 @@ export function StudentPageShell({
         <div className={contentClassName}>{children({ identifier, user, userInitials })}</div>
       </section>
 
-      <StudentMobileBottomNav />
+      <StudentMobileBottomNav advisorUnreadCount={chatUnreadCount} />
     </main>
   );
 }

@@ -14,7 +14,8 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { getRequestIpAddress, writeAuditLog } from "../lib/audit-log";
 import { formatAuditMetadata } from "../lib/audit-metadata";
-import { notifyUser } from "../lib/notify-user";
+import { sendAppEmail } from "../lib/email";
+import { chunkList } from "../lib/notify-batch";
 import { prisma } from "../lib/prisma";
 import { hasAssignedRole } from "../lib/roles";
 import {
@@ -36,6 +37,10 @@ import {
   deriveAssignmentStatus,
   syncSurveyActiveFromWaves,
 } from "../lib/survey-wave-lifecycle";
+import {
+  buildWaveOpenAlertCopy,
+  pickIncompleteWaveAssignees,
+} from "../lib/survey-wave-open-notify";
 
 const nullableDateSchema = z.preprocess((value) => {
   if (value === undefined || value === null || value === "") {
@@ -325,21 +330,22 @@ export const openAdminSurveyWave = async (req: Request, res: Response): Promise<
       return opened;
     });
 
-    // n = จำนวน assignment — สร้าง Alert แบบ batch แล้วค่อยส่งเมลทีละคนเมื่อเปิด EMAIL_NOTIFY_ON_WAVE_OPEN
+    // n = จำนวน assignment ที่ยังไม่ทำ — สร้าง Alert แบบ batch แล้วค่อยส่งเมลเมื่อเปิด EMAIL_NOTIFY_ON_WAVE_OPEN
     const assignees = await prisma.surveyAssignment.findMany({
       where: { waveId: updated.id },
       select: {
+        completedAt: true,
         student: {
           select: { id: true, email: true, name: true },
         },
       },
     });
-    const students = assignees
-      .map((row) => row.student)
-      .filter((student): student is { id: string; email: string | null; name: string } => Boolean(student?.id));
+    const students = pickIncompleteWaveAssignees(assignees);
 
-    const alertTitle = "มีแบบประเมินเปิดให้ทำแล้ว";
-    const alertMessage = `รอบ "${updated.label}" ของแบบประเมิน "${survey.title}" เปิดแล้ว — กรุณาเข้าสู่ระบบเพื่อทำแบบประเมิน`;
+    const { title: alertTitle, message: alertMessage } = buildWaveOpenAlertCopy({
+      surveyTitle: survey.title,
+      waveLabel: updated.label,
+    });
     if (students.length > 0) {
       await prisma.alert.createMany({
         data: students.map((student) => ({
@@ -359,19 +365,19 @@ export const openAdminSurveyWave = async (req: Request, res: Response): Promise<
     const notifyEmailOnOpen = `${process.env.EMAIL_NOTIFY_ON_WAVE_OPEN || "false"}`.toLowerCase() === "true";
     if (notifyEmailOnOpen) {
       const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:3000";
-      for (const student of students) {
-        if (!student.email) {
-          continue;
-        }
-        await notifyUser({
-          recipientUserId: student.id,
-          recipientEmail: student.email,
-          channels: { inApp: false, email: true },
-          email: {
-            subject: `NuCare: แบบประเมิน "${survey.title}" เปิดแล้ว`,
-            text: `เรียน ${student.name}\n\nรอบ "${updated.label}" ของแบบประเมิน "${survey.title}" เปิดให้ทำแล้ว\nเข้าสู่ระบบ: ${clientOrigin}/student/assessment`,
-          },
-        });
+      const withEmail = students.filter(
+        (student): student is { id: string; email: string; name: string } => Boolean(student.email)
+      );
+      for (const batch of chunkList(withEmail, 8)) {
+        await Promise.allSettled(
+          batch.map((student) =>
+            sendAppEmail({
+              to: student.email,
+              subject: `NuCare: แบบประเมิน "${survey.title}" เปิดแล้ว`,
+              text: `เรียน ${student.name}\n\nรอบ "${updated.label}" ของแบบประเมิน "${survey.title}" เปิดให้ทำแล้ว\nเข้าสู่ระบบ: ${clientOrigin}/student/assessment`,
+            })
+          )
+        );
       }
     }
     const notifiedCount = students.length;
@@ -682,7 +688,15 @@ export const listAdminSurveyWaveResponses = async (req: Request, res: Response):
     const responses = await prisma.surveyResponse.findMany({
       where: { waveId: wave.id },
       orderBy: { submittedAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        submittedAt: true,
+        totalScore: true,
+        maxScore: true,
+        scorePercent: true,
+        riskLevel: true,
+        instrument: true,
+        scoredAt: true,
         student: {
           select: {
             id: true,
@@ -690,24 +704,49 @@ export const listAdminSurveyWaveResponses = async (req: Request, res: Response):
             studentId: true,
             studyYear: true,
             section: true,
-            email: true,
           },
         },
-        answers: true,
       },
     });
 
-    const surveyQuestions = await prisma.surveyQuestion.findMany({
-      where: { surveyId: wave.surveyId },
-      orderBy: { order: "asc" },
-    });
+    const needsRescoreIds = responses
+      .filter((response) => response.totalScore === null || response.maxScore <= 0)
+      .map((response) => response.id);
+
+    const surveyQuestions =
+      needsRescoreIds.length > 0
+        ? await prisma.surveyQuestion.findMany({
+            where: { surveyId: wave.surveyId },
+            orderBy: { order: "asc" },
+          })
+        : [];
+
+    const answersByResponseId = new Map<
+      string,
+      Array<{ questionId: string; value: unknown }>
+    >();
+    if (needsRescoreIds.length > 0) {
+      const answerRows = await prisma.surveyAnswer.findMany({
+        where: { responseId: { in: needsRescoreIds } },
+        select: { responseId: true, questionId: true, value: true },
+      });
+      for (const row of answerRows) {
+        const list = answersByResponseId.get(row.responseId) ?? [];
+        list.push({ questionId: row.questionId, value: row.value });
+        answersByResponseId.set(row.responseId, list);
+      }
+    }
 
     res.status(200).json({
       wave: serializeWave({ ...wave, _count: { responses: responses.length } }),
       responses: responses.map((response) => {
         const scored =
-          response.totalScore === null
-            ? enrichSurveyResponseScores(wave.survey.title, surveyQuestions, response.answers)
+          response.totalScore === null || response.maxScore <= 0
+            ? enrichSurveyResponseScores(
+                wave.survey.title,
+                surveyQuestions,
+                answersByResponseId.get(response.id) ?? []
+              )
             : null;
         const totalScore = response.totalScore ?? scored?.totalScore ?? 0;
         const maxScore = response.maxScore || scored?.maxScore || 0;

@@ -110,26 +110,26 @@ export function SurveyPreviewModal({ open, loading, error, preview, onClose }: S
         aria-label="พรีวิวแบบสอบถามมุมมองนักศึกษา"
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 p-5">
+        <div className="relative flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-b from-sky-50/80 to-white p-5 sm:p-6">
           <div className="min-w-0">
-            <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0057A8]">
               <Eye className="h-3.5 w-3.5" />
               พรีวิวมุมมองนักศึกษา
             </p>
-            <h3 className="mt-1 truncate text-lg font-bold text-slate-900">
+            <h3 className="mt-1 truncate text-lg font-bold tracking-tight text-slate-900">
               {preview?.title || "แบบสอบถาม"}
             </h3>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-sm leading-6 text-slate-600">
               อ่านอย่างเดียว ไม่บันทึกคำตอบ — แสดงตามที่บันทึกล่าสุด และไม่แสดงคะแนนของตัวเลือก
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
             aria-label="ปิดพรีวิว"
           >
-            <X size={18} />
+            <X className="h-4 w-4" strokeWidth={2} />
           </button>
         </div>
 
@@ -175,7 +175,7 @@ export function SurveyPreviewModal({ open, loading, error, preview, onClose }: S
           ) : null}
         </div>
 
-        <div className="flex shrink-0 justify-end border-t border-slate-100 p-4">
+        <div className="flex shrink-0 justify-center border-t border-slate-100 p-4">
           <button
             type="button"
             onClick={onClose}

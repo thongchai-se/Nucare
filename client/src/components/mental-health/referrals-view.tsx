@@ -1,14 +1,15 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import {
-  RosterCountBadge,
   RosterMobileCard,
   RosterMobileList,
   RosterPersonCell,
   RosterRow,
   RosterSearchInput,
+  RosterSelectFilter,
   RosterTable,
   RosterTableCard,
   RosterTd,
@@ -108,7 +109,17 @@ export function ReferralsView({
   handleUpdateReferral,
   openCareModal,
 }: ReferralsViewProps) {
-  const pagination = useListPagination(filteredReferrals, searchQuery);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | MentalHealthReferral["status"]>("ALL");
+
+  const statusFilteredReferrals = useMemo(
+    () =>
+      statusFilter === "ALL"
+        ? filteredReferrals
+        : filteredReferrals.filter((item) => item.status === statusFilter),
+    [filteredReferrals, statusFilter]
+  );
+
+  const pagination = useListPagination(statusFilteredReferrals, `${searchQuery}:${statusFilter}`);
   const pageItems = pagination.pageItems;
 
   return (
@@ -116,7 +127,7 @@ export function ReferralsView({
       <div>
         <h2 className="text-2xl font-bold text-slate-900">รายการส่งต่อ</h2>
         <p className="mt-1 text-sm text-slate-600">
-          ดูประวัติเพื่อประเมินได้ที่เมนู “คิวรอรับ” ก่อนกดรับ — นิสิตมีเคสเปิดได้ทีละ 1 รายการ และปิด/บันทึกได้เฉพาะผู้รับเคส
+          ดูประวัติที่คิวรอรับเคสก่อนกดรับ นิสิตมีเคสเปิดได้ทีละ 1
         </p>
       </div>
 
@@ -130,7 +141,16 @@ export function ReferralsView({
               aria-label="ค้นหารายการส่งต่อ"
             />
             <RosterToolbarEnd>
-              <RosterCountBadge count={filteredReferrals.length} />
+              <RosterSelectFilter
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "ALL" | MentalHealthReferral["status"])}
+                aria-label="กรองสถานะส่งต่อ"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                <option value="PENDING">รอรับเคส</option>
+                <option value="ACCEPTED">กำลังดูแล</option>
+                <option value="CLOSED">ปิดแล้ว</option>
+              </RosterSelectFilter>
             </RosterToolbarEnd>
           </>
         }
@@ -148,7 +168,7 @@ export function ReferralsView({
           {pageItems.map((item) => {
             const risk = getRiskClasses(item.student.riskLevel);
             const statusLabel =
-              item.status === "PENDING" ? "รอรับ" : item.status === "ACCEPTED" ? "กำลังดูแล" : "ปิดแล้ว";
+              item.status === "PENDING" ? "รอรับเคส" : item.status === "ACCEPTED" ? "กำลังดูแล" : "ปิดเคสแล้ว";
             return (
               <RosterRow key={item.id}>
                 <RosterTd>
@@ -190,7 +210,7 @@ export function ReferralsView({
           {pageItems.map((item) => {
             const risk = getRiskClasses(item.student.riskLevel);
             const statusLabel =
-              item.status === "PENDING" ? "รอรับ" : item.status === "ACCEPTED" ? "กำลังดูแล" : "ปิดแล้ว";
+              item.status === "PENDING" ? "รอรับเคส" : item.status === "ACCEPTED" ? "กำลังดูแล" : "ปิดเคสแล้ว";
             return (
               <RosterMobileCard key={item.id}>
                 <div className="flex items-start justify-between gap-3">
@@ -223,7 +243,7 @@ export function ReferralsView({
           })}
         </RosterMobileList>
 
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}

@@ -121,7 +121,7 @@ export function DashboardView({
             <EmptyState
               icon={BookOpen}
               title="ยังไม่มีกลุ่มติดตาม"
-              description="เมื่อได้รับมอบหมายกลุ่มเรียน รายการจะแสดงที่นี่"
+              description="เมื่อได้รับมอบหมายนิสิตในเซค รายการจะแสดงที่นี่"
             />
           )}
         </DashboardPanel>

@@ -292,7 +292,7 @@ function StudentChatContent() {
       {error ? <InlineAlert>{error}</InlineAlert> : null}
 
       <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-        คุณกำลังคุยกับ AI ในบทบาท {activePersona.displayName} — ไม่แทนที่การปรึกษาคนจริง · ข้อความในห้องนี้อาจหายเมื่อปิดหน้าหรือรีเฟรช
+        คุยกับ {activePersona.displayName} เพื่อระบายได้ทันที ไม่ทดแทนการปรึกษาคนจริง
       </p>
 
       <section
@@ -443,7 +443,7 @@ function StudentChatContent() {
 
 export default function StudentChatPage() {
   return (
-    <StudentPageShell activePage="chat" contentClassName="mx-auto max-w-4xl space-y-6">
+    <StudentPageShell activePage="chat">
       {() => (
         <Suspense
           fallback={

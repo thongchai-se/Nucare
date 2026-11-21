@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CalendarX2,
+  MessageCircle,
   MessageSquare,
   Plus,
   Search,
@@ -14,17 +15,21 @@ import {
   X,
 } from "lucide-react";
 import { ConsultationTeacherCardRow } from "@/components/consultation-teacher-card";
+import { EphemeralChatPanel } from "@/components/ephemeral-chat/ephemeral-chat-panel";
+import type { EphemeralChatPeer, EphemeralChatSession } from "@/components/ephemeral-chat/types";
 import { RoleToast, type RoleToastTone } from "@/components/role-toast";
 import { ConsultationScheduleActions } from "@/components/student/consultation-schedule-actions";
-import { StudentCounselingRequestCard } from "@/components/student-counseling-request-card";
 import { StudentEmergencyHelpCard } from "@/components/student-emergency-help-card";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
+import { InlineLoader } from "@/components/ui/page-loader";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
+import { useAuth } from "@/context/auth.context";
 import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
 import { useListPagination } from "@/hooks/use-list-pagination";
 import api from "@/lib/axios";
+import { setVisibleInterval } from "@/lib/visible-interval";
 import {
   STUDENT_CANCEL_REASONS,
   consultationClosedBadgeClassName,
@@ -32,14 +37,22 @@ import {
   presentCloseNoteForStudent,
 } from "@/lib/consultation-close";
 import {
+  countUnreadChatPeers,
+  indexChatSessionsByPeer,
+  listUnreadChatPeers,
+  sortPeersByChatAttention,
+} from "@/lib/ephemeral-chat-attention";
+import {
   STUDENT_HOME_UPCOMING_LIMIT,
   STUDENT_LIST_PREVIEW_LIMIT,
-  countStudentActionQueue,
+  buildUpcomingAppointmentPreview,
+  countStudentDashboardActions,
   hasOpenStudentConsultation,
   listAwaitingStudentResponses,
-  listUpcomingConsultations,
   resolveAppointmentLocation,
   sanitizeStudentFacingNote,
+  splitChatPeersByCareTeam,
+  type StudentMentalHealthAppointmentPreview,
 } from "@/lib/student-consultation-inbox";
 import {
   type ConsultationTeachersResponse,
@@ -51,6 +64,7 @@ import {
   defaultPreferredChannels,
   formatThaiDateTime,
   getApiErrorMessage,
+  normalizePreferredChannelOptions,
 } from "@/lib/student-dashboard";
 
 type StudentToastState = {
@@ -61,8 +75,14 @@ type StudentToastState = {
 };
 
 function StudentAdvisorContent() {
+  const { user } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const teacherFromQuery = searchParams.get("teacher")?.trim() || "";
+  const peerFromQuery = searchParams.get("peer")?.trim() || "";
+  const openedPeerFromQueryRef = useRef<string | null>(null);
+  /** กัน ?peer= เดิมเปิดแชทซ้ำระหว่างรอ router ลบ query หลังปิด */
+  const suppressPeerAutoOpenRef = useRef(false);
   const [loadingData, setLoadingData] = useState(true);
   const [serverError, setServerError] = useState("");
   const [toast, setToast] = useState<StudentToastState>({
@@ -73,10 +93,11 @@ function StudentAdvisorContent() {
   });
   const [careTeam, setCareTeam] = useState<StudentCareTeamMember[]>([]);
   const [consultationRequests, setConsultationRequests] = useState<StudentConsultationRequest[]>([]);
+  const [mentalHealthAppointments, setMentalHealthAppointments] = useState<
+    StudentMentalHealthAppointmentPreview[]
+  >([]);
   const [consultationTeachers, setConsultationTeachers] = useState<StudentCareTeamMember[]>([]);
   const [consultationTopics, setConsultationTopics] = useState(defaultConsultationTopics);
-  const [canRequestExpertCounseling, setCanRequestExpertCounseling] = useState(true);
-  const [expertCounselingDisabledReason, setExpertCounselingDisabledReason] = useState<string | null>(null);
   const [preferredChannels, setPreferredChannels] = useState(defaultPreferredChannels);
   const [teacherSearchQuery, setTeacherSearchQuery] = useState("");
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
@@ -89,6 +110,80 @@ function StudentAdvisorContent() {
   const [didAutoOpenTeacher, setDidAutoOpenTeacher] = useState(false);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
   const [pendingCancelRequestId, setPendingCancelRequestId] = useState<string | null>(null);
+  const [chatPeerId, setChatPeerId] = useState<string | null>(null);
+  const [chatPeers, setChatPeers] = useState<EphemeralChatPeer[]>([]);
+  const [chatSessions, setChatSessions] = useState<EphemeralChatSession[]>([]);
+  const [loadingChatPeers, setLoadingChatPeers] = useState(false);
+  const chatOpen = Boolean(chatPeerId);
+
+  useEffect(() => {
+    if (!peerFromQuery) {
+      suppressPeerAutoOpenRef.current = false;
+      return;
+    }
+    if (suppressPeerAutoOpenRef.current) {
+      return;
+    }
+    if (openedPeerFromQueryRef.current === peerFromQuery) {
+      return;
+    }
+    openedPeerFromQueryRef.current = peerFromQuery;
+    setChatPeerId(peerFromQuery);
+  }, [peerFromQuery]);
+
+  /** หลังปิดแชท — ไล่ลบ ?peer= จนหมด รวมกรณี replace จากเปิดค้างหลังปิด */
+  useEffect(() => {
+    if (!suppressPeerAutoOpenRef.current || chatPeerId) {
+      return;
+    }
+    if (!peerFromQuery) {
+      suppressPeerAutoOpenRef.current = false;
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("peer");
+    const query = params.toString();
+    router.replace(query ? `/student/advisor?${query}` : "/student/advisor", {
+      scroll: false,
+    });
+  }, [chatPeerId, peerFromQuery, router, searchParams]);
+
+  /** โหลดสถานะ unread ของห้องแชทชั่วคราวเพื่อโชว์ว่ามีข้อความต้องดู */
+  const refreshChatSessions = useCallback(async () => {
+    try {
+      const response = await api.get<{ sessions: EphemeralChatSession[] }>("/api/chat/sessions");
+      setChatSessions(response.data.sessions || []);
+    } catch {
+      setChatSessions([]);
+    }
+  }, []);
+
+  /** เปิดแชทและ sync ?peer= ให้แชร์ลิงก์/รีเฟรชแล้วยังอยู่ห้องเดิม */
+  const openChatWithPeer = (peerId: string) => {
+    suppressPeerAutoOpenRef.current = false;
+    setChatPeerId(peerId);
+    openedPeerFromQueryRef.current = peerId;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("peer", peerId);
+    router.replace(`/student/advisor?${params.toString()}`, { scroll: false });
+  };
+
+  const closeChatPanel = () => {
+    setChatPeerId(null);
+    openedPeerFromQueryRef.current = null;
+    suppressPeerAutoOpenRef.current = true;
+    void refreshChatSessions();
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has("peer")) {
+      return;
+    }
+    params.delete("peer");
+    const query = params.toString();
+    // ไม่ให้ Next รีเซ็ตสกอลล์ตอนลบ ?peer=
+    router.replace(query ? `/student/advisor?${query}` : "/student/advisor", {
+      scroll: false,
+    });
+  };
 
   useEffect(() => {
     const loadAdvisorPage = async () => {
@@ -99,25 +194,12 @@ function StudentAdvisorContent() {
         const response = await api.get<{
           careTeam?: StudentCareTeamMember[];
           consultationRequests?: StudentConsultationRequest[];
-          canRequestExpertCounseling?: boolean;
-          openCounselingReferral?: { id: string; status: string } | null;
+          mentalHealthAppointments?: StudentMentalHealthAppointmentPreview[];
         }>("/api/student/dashboard");
 
         setCareTeam(response.data.careTeam || []);
         setConsultationRequests(response.data.consultationRequests || []);
-        const canRequest = response.data.canRequestExpertCounseling !== false;
-        setCanRequestExpertCounseling(canRequest);
-        if (response.data.openCounselingReferral) {
-          setExpertCounselingDisabledReason(
-            response.data.openCounselingReferral.status === "ACCEPTED"
-              ? "มีคิวผู้เชี่ยวชาญที่กำลังดูแลอยู่แล้ว"
-              : "กรุณารอสักครู่"
-          );
-        } else if (response.data.canRequestExpertCounseling === false) {
-          setExpertCounselingDisabledReason("ยังไม่มีอาจารย์ที่ปรึกษาในระบบ กรุณาติดต่องานพัฒนานิสิต");
-        } else {
-          setExpertCounselingDisabledReason(null);
-        }
+        setMentalHealthAppointments(response.data.mentalHealthAppointments || []);
       } catch (error) {
         setServerError(getApiErrorMessage(error, "ไม่สามารถโหลดข้อมูลที่ปรึกษาได้"));
       } finally {
@@ -127,6 +209,33 @@ function StudentAdvisorContent() {
 
     void loadAdvisorPage();
   }, []);
+
+  useEffect(() => {
+    const loadChatPeers = async () => {
+      setLoadingChatPeers(true);
+      try {
+        const response = await api.get<{ peers: EphemeralChatPeer[] }>("/api/chat/peers");
+        setChatPeers(response.data.peers || []);
+      } catch {
+        setChatPeers([]);
+      } finally {
+        setLoadingChatPeers(false);
+      }
+    };
+    void loadChatPeers();
+    void refreshChatSessions();
+    const clearPoll = setVisibleInterval(() => {
+      void refreshChatSessions();
+    }, 30_000);
+    const onFocus = () => {
+      void refreshChatSessions();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearPoll();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refreshChatSessions]);
 
   useEffect(() => {
     if (!consultationModalOpen) {
@@ -149,14 +258,7 @@ function StudentAdvisorContent() {
 
           setConsultationTeachers(response.data.teachers);
           setConsultationTopics(response.data.topics.length > 0 ? response.data.topics : defaultConsultationTopics);
-          const channels =
-            Object.keys(response.data.preferredChannels || {}).length > 0
-              ? response.data.preferredChannels
-              : defaultPreferredChannels;
-          const allowed = Object.fromEntries(
-            Object.entries(channels).filter(([key]) => key === "ONLINE" || key === "IN_PERSON")
-          );
-          setPreferredChannels(Object.keys(allowed).length > 0 ? allowed : defaultPreferredChannels);
+          setPreferredChannels(normalizePreferredChannelOptions(response.data.preferredChannels));
         } catch (error) {
           if (isCurrent) {
             setServerError(getApiErrorMessage(error, "ไม่สามารถค้นหาอาจารย์ได้"));
@@ -198,10 +300,14 @@ function StudentAdvisorContent() {
     careTeam.find((teacher) => teacher.id === selectedTeacherId) ||
     null;
 
-  const actionCounts = countStudentActionQueue(consultationRequests);
+  const actionCounts = countStudentDashboardActions(consultationRequests, mentalHealthAppointments);
   const awaitingResponses = listAwaitingStudentResponses(consultationRequests);
-  const upcomingConsultations = listUpcomingConsultations(consultationRequests);
-  const upcomingPreview = upcomingConsultations.slice(0, STUDENT_HOME_UPCOMING_LIMIT);
+  const upcomingPreviewBundle = buildUpcomingAppointmentPreview(
+    consultationRequests,
+    mentalHealthAppointments
+  );
+  const upcomingPreview = upcomingPreviewBundle.items;
+  const upcomingTotal = upcomingPreviewBundle.total;
   const hasOpenConsultation = hasOpenStudentConsultation(consultationRequests);
   /** ประวัติแยกจากคิวต้องตอบ — เรียงอัปเดตล่าสุด O(n log n) */
   const historyRequests = useMemo(() => {
@@ -216,13 +322,53 @@ function StudentAdvisorContent() {
     fixedRowsPerPage: STUDENT_LIST_PREVIEW_LIMIT,
   });
   const visibleHistory = historyPagination.pageItems;
+  const { chatableCareTeamIds, otherPeers } = useMemo(
+    () => splitChatPeersByCareTeam(
+      careTeam.map((member) => member.id),
+      chatPeers
+    ),
+    [careTeam, chatPeers]
+  );
+  const chatAttentionByPeerId = useMemo(
+    () => indexChatSessionsByPeer(chatSessions),
+    [chatSessions]
+  );
+  const unreadChatCount = useMemo(
+    () => countUnreadChatPeers(chatAttentionByPeerId),
+    [chatAttentionByPeerId]
+  );
+  const unreadPeerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [peerId, attention] of chatAttentionByPeerId) {
+      if (attention.unread) {
+        ids.add(peerId);
+      }
+    }
+    return ids;
+  }, [chatAttentionByPeerId]);
+  const sortedOtherPeers = useMemo(
+    () => sortPeersByChatAttention(otherPeers, chatAttentionByPeerId),
+    [otherPeers, chatAttentionByPeerId]
+  );
+  const unreadChatPeers = useMemo(
+    () => listUnreadChatPeers(chatPeers, chatAttentionByPeerId),
+    [chatPeers, chatAttentionByPeerId]
+  );
+
+  const scrollToSection = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+  };
 
   const openConsultationRequestModal = (teacherId = "") => {
     if (hasOpenConsultation) {
       setServerError("คุณมีคำขอหรือนัดที่ยังไม่ปิดอยู่แล้ว กรุณาทำให้รอบนี้เสร็จก่อนส่งคำขอใหม่");
       const target =
         document.getElementById("action-needed") || document.getElementById("consultation-history");
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      target?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
       return;
     }
     setSelectedTeacherId(teacherId);
@@ -268,7 +414,7 @@ function StudentAdvisorContent() {
         open: true,
         tone: "success",
         title: "ส่งคำขอปรึกษาสำเร็จ",
-        description: "ระบบแจ้งอาจารย์ที่เลือกแล้ว กรุณารอตอบกลับหรือนัดหมายจากอาจารย์",
+        description: "อาจารย์ที่เลือกจะได้รับแจ้งแล้ว กรุณารอตอบกลับ",
       });
     } catch (error) {
       setServerError(getApiErrorMessage(error, "ไม่สามารถส่งคำขอรับคำปรึกษาได้"));
@@ -296,7 +442,7 @@ function StudentAdvisorContent() {
         open: true,
         tone: "warning",
         title: "ส่งคำขอยกเลิกแล้ว",
-        description: "รออาจารย์ยืนยันยกเลิก — จะส่งคำขอใหม่ได้หลังอาจารย์รับทราบ",
+        description: "รออาจารย์ยืนยัน เมื่อยืนยันแล้วจึงส่งคำขอใหม่ได้",
       });
     } catch (error) {
       setServerError(getApiErrorMessage(error, "ไม่สามารถส่งคำขอยกเลิกได้"));
@@ -322,7 +468,7 @@ function StudentAdvisorContent() {
       open: true,
       tone: "success",
       title: "ส่งคำขอช่วยเหลือสำเร็จ",
-      description: "ระบบบันทึกคำขอแล้ว หากฉุกเฉินโทร 1323 ได้ทันที",
+      description: "บันทึกคำขอแล้ว หากฉุกเฉินโทร 1323 ได้ทันที",
     });
   };
 
@@ -340,7 +486,7 @@ function StudentAdvisorContent() {
         open={Boolean(pendingCancelRequestId)}
         loading={Boolean(pendingCancelRequestId && cancellingRequestId === pendingCancelRequestId)}
         title="ขอยกเลิกคำขอ"
-        description="เลือกเหตุผลสั้น ๆ แล้วส่งให้อาจารย์ยืนยัน — คิวจะเป็นสถานะยกเลิกเมื่ออาจารย์รับทราบ"
+        description="เลือกเหตุผลแล้วส่งให้อาจารย์ยืนยัน"
         confirmLabel="ส่งคำขอยกเลิก"
         cancelLabel="เก็บคำขอไว้"
         selectPlaceholder="เลือกเหตุผลที่ตรงที่สุด"
@@ -365,33 +511,45 @@ function StudentAdvisorContent() {
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_21rem]">
           <div className="bg-[linear-gradient(135deg,#f8fafc_0%,#eef6ff_58%,#ecfeff_100%)] p-5 sm:p-7 lg:p-8">
-            <div className="flex w-fit items-center gap-2 rounded-full border border-blue-100 bg-white/80 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm">
-              <Users className="h-3.5 w-3.5" />
-              ทีมดูแลและคำขอปรึกษา
-            </div>
-            <div className="mt-6 max-w-3xl">
+            <div className="max-w-3xl">
               <h1 className="font-display text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
                 ที่ปรึกษา
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                เลือกอาจารย์ ส่งคำขอปรึกษา ติดตามสถานะ และใช้ช่องทางด่วนเมื่อรู้สึกไม่ปลอดภัย
+                ขอนัดปรึกษา หรือทักถามสั้น ๆ กับทีมดูแล
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-200 bg-white lg:border-l lg:border-t-0">
-            <div className="p-5">
+            <button
+              type="button"
+              onClick={() => scrollToSection("contact-team")}
+              className="p-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 sm:p-5"
+            >
               <p className="text-xs font-semibold text-slate-500">ทีมดูแล</p>
               <p className="mt-1 text-xl font-bold tabular-nums text-slate-950">{careTeam.length}</p>
-            </div>
-            <div className="p-5">
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("action-needed")}
+              className={`p-4 text-left transition-colors hover:bg-amber-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:p-5 ${
+                actionCounts.awaitingStudent > 0 ? "bg-amber-50/50" : ""
+              }`}
+            >
               <p className="text-xs font-semibold text-slate-500">ต้องตอบ</p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-slate-950">{actionCounts.awaitingStudent}</p>
-            </div>
-            <div className="p-5">
+              <p className="mt-1 text-xl font-bold tabular-nums text-slate-950">
+                {actionCounts.awaitingStudent}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("upcoming-appointments")}
+              className="p-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300 sm:p-5"
+            >
               <p className="text-xs font-semibold text-slate-500">นัดใกล้ถึง</p>
               <p className="mt-1 text-xl font-bold tabular-nums text-slate-950">{actionCounts.upcoming}</p>
-            </div>
+            </button>
           </div>
         </div>
       </section>
@@ -403,75 +561,75 @@ function StudentAdvisorContent() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
-          <div className="space-y-6">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
-                    <Users className="h-5 w-5 text-blue-600" />
-                    ทีมดูแลของฉัน
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">เลือกอาจารย์แล้วส่งคำขอ — นัดจะตามมาเมื่ออาจารย์เสนอเวลา</p>
+          <aside className="order-1 space-y-4 lg:order-2 lg:space-y-6">
+            <StudentEmergencyHelpCard
+              id="emergency-help"
+              onConfirmSos={handleCreateSosCase}
+            />
+
+            <div
+              id="upcoming-appointments"
+              className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+                  <CalendarClock className="h-5 w-5" />
                 </div>
-                {hasOpenConsultation ? (
-                  <InlineAlert tone="warning" className="rounded-lg px-3 py-2 text-xs font-semibold">
-                    มีคำขอเปิดอยู่ · ส่งคำขอใหม่ได้เมื่อรอบนี้ปิดแล้ว
-                  </InlineAlert>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => openConsultationRequestModal()}
-                    className="inline-flex min-h-10 w-fit items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
-                  >
-                    <Plus className="h-4 w-4" />
-                    ส่งคำขอใหม่
-                  </button>
-                )}
+                <div>
+                  <h3 className="text-[15px] font-bold text-slate-900">นัดใกล้ถึง</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">ยืนยันแล้ว · ภายใน 7 วัน</p>
+                </div>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {careTeam.length > 0 ? (
-                  careTeam.map((member) => (
-                    <div key={member.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                          {member.initials}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-blue-700">
-                            {member.roleLabels.join(" / ") || "อาจารย์"}
+              {upcomingTotal > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {upcomingPreview.map((item) => {
+                    if (item.kind === "mh") {
+                      const appointment = item.appointment;
+                      return (
+                        <div
+                          key={appointment.id}
+                          className="rounded-lg border border-cyan-100 bg-cyan-50/40 px-3 py-2.5"
+                        >
+                          <p className="text-sm font-bold tabular-nums text-slate-900">
+                            {formatThaiDateTime(appointment.scheduledAt)}
                           </p>
-                          <p className="truncate text-sm font-bold text-slate-900">{member.name}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">{member.employeeId || "ไม่มีรหัสบุคลากร"}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {[appointment.location?.trim(), appointment.providerName]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
                         </div>
+                      );
+                    }
+                    const request = item.request;
+                    const location = resolveAppointmentLocation(request);
+                    return (
+                      <div key={request.id} className="rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2.5">
+                        <p className="text-sm font-bold tabular-nums text-slate-900">
+                          {formatThaiDateTime(request.scheduledAt)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {[location, request.teacher.name].filter(Boolean).join(" · ")}
+                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => openConsultationRequestModal(member.id)}
-                        disabled={hasOpenConsultation}
-                        className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                        {hasOpenConsultation ? "มีคำขอเปิดอยู่" : "ส่งคำขอปรึกษา"}
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 sm:col-span-2">
-                    ยังไม่มีข้อมูลอาจารย์ที่ปรึกษาในระบบ สามารถค้นหาอาจารย์เพื่อส่งคำขอปรึกษาได้
-                    <button
-                      type="button"
-                      onClick={() => openConsultationRequestModal()}
-                      className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50"
-                    >
-                      <Search className="h-3.5 w-3.5" />
-                      ค้นหาอาจารย์
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
+                    );
+                  })}
+                  {upcomingTotal > STUDENT_HOME_UPCOMING_LIMIT ? (
+                    <p className="text-xs text-slate-500">
+                      แสดง {STUDENT_HOME_UPCOMING_LIMIT} จาก {upcomingTotal} นัด
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-500">
+                  <CalendarX2 className="h-4 w-4" />
+                  ยังไม่มีนัดใน 7 วันข้างหน้า
+                </div>
+              )}
+            </div>
+          </aside>
 
+          <div className="order-2 space-y-6 lg:order-1">
             <section
               id="action-needed"
               className="scroll-mt-24 rounded-lg border border-amber-200 bg-white shadow-sm"
@@ -562,6 +720,249 @@ function StudentAdvisorContent() {
             </section>
 
             <section
+              id="contact-team"
+              className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+            >
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+                    <Users className="h-5 w-5 text-blue-600" />
+                    ติดต่อทีมดูแล
+                    {unreadChatCount > 0 ? (
+                      <span className="inline-flex rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
+                        {unreadChatCount > 9 ? "9+" : unreadChatCount} ข้อความใหม่
+                      </span>
+                    ) : null}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    ขอนัดได้จากปุ่มด้านล่าง หรือทักถามสั้นได้ตลอด
+                  </p>
+                </div>
+                {hasOpenConsultation ? (
+                  <InlineAlert tone="warning" className="rounded-lg px-3 py-2 text-xs font-semibold">
+                    มีคำขอที่ยังไม่ปิด — ส่งคำขอใหม่ได้เมื่อรอบนี้เสร็จ
+                  </InlineAlert>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openConsultationRequestModal()}
+                    className="inline-flex min-h-10 w-fit items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
+                  >
+                    <Plus className="h-4 w-4" />
+                    ส่งคำขอใหม่
+                  </button>
+                )}
+              </div>
+
+              {unreadChatPeers.length > 0 ? (
+                <div
+                  id="chat-needs-attention"
+                  className="mb-5 scroll-mt-24 rounded-lg border border-blue-200 bg-blue-50/70 p-3 sm:p-4"
+                >
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-blue-900">มีข้อความถึงคุณ</p>
+                    <span className="text-xs font-semibold text-blue-700">
+                      {unreadChatPeers.length} คนรอให้อ่าน
+                    </span>
+                  </div>
+                  <ul className="space-y-2">
+                    {unreadChatPeers.map((peer) => {
+                      const attention = chatAttentionByPeerId.get(peer.id);
+                      return (
+                        <li key={peer.id}>
+                          <button
+                            type="button"
+                            onClick={() => openChatWithPeer(peer.id)}
+                            className="flex w-full items-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-2.5 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
+                          >
+                            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700 ring-1 ring-blue-100">
+                              {peer.initials}
+                              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-bold text-slate-900">{peer.name}</p>
+                              <p className="truncate text-xs text-slate-500">
+                                {peer.roleLabels.join(" · ") || peer.employeeId || "บุคลากร"}
+                              </p>
+                              {attention?.previewBody ? (
+                                <p className="mt-0.5 truncate text-sm text-slate-700">
+                                  {attention.previewBody}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-xs font-bold text-blue-700">เปิด</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {careTeam.length > 0 ? (
+                  careTeam.map((member) => {
+                    const canChat = chatableCareTeamIds.has(member.id);
+                    const hasUnreadChat = unreadPeerIds.has(member.id);
+                    return (
+                      <div
+                        key={member.id}
+                        className={`rounded-lg border p-4 ${
+                          hasUnreadChat
+                            ? "border-blue-200 bg-blue-50/40"
+                            : "border-slate-200 bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                            {member.initials}
+                            {hasUnreadChat ? (
+                              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                            ) : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-blue-700">
+                              {member.roleLabels.join(" / ") || "อาจารย์"}
+                            </p>
+                            <p className="truncate text-sm font-bold text-slate-900">{member.name}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {member.employeeId || "ไม่มีรหัสบุคลากร"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`mt-4 grid gap-2 ${canChat ? "grid-cols-2" : "grid-cols-1"}`}>
+                          <button
+                            type="button"
+                            onClick={() => openConsultationRequestModal(member.id)}
+                            disabled={hasOpenConsultation}
+                            className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-2 py-2 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <CalendarClock className="h-4 w-4" />
+                            {hasOpenConsultation ? "มีคำขอเปิดอยู่" : "ขอปรึกษา"}
+                          </button>
+                          {canChat ? (
+                            <button
+                              type="button"
+                              onClick={() => openChatWithPeer(member.id)}
+                              className={`relative inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-bold transition-colors ${
+                                hasUnreadChat
+                                  ? "border-blue-600 bg-white text-blue-800 ring-2 ring-blue-100"
+                                  : "border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+                              }`}
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                              {hasUnreadChat ? "มีข้อความ" : "ทักหา"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 sm:col-span-2">
+                    ยังไม่มีข้อมูลอาจารย์ที่ปรึกษาในระบบ สามารถค้นหาอาจารย์เพื่อส่งคำขอปรึกษาได้
+                    <button
+                      type="button"
+                      onClick={() => openConsultationRequestModal()}
+                      className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50"
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      ค้นหาอาจารย์
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div id="quick-chat" className="mt-5 scroll-mt-24 border-t border-slate-100 pt-5">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900">ทักหาคนอื่นในทีม</h3>
+                  {sortedOtherPeers.some((peer) => unreadPeerIds.has(peer.id)) ? (
+                    <span className="rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                      มีข้อความใหม่
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mb-3 text-xs text-slate-500">
+                  ทักถามบุคลากรอื่นได้ที่นี่ ข้อความจะถูกลบทุกวัน
+                </p>
+                {loadingChatPeers ? (
+                  <InlineLoader label="กำลังโหลดรายชื่อ" className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-6" />
+                ) : sortedOtherPeers.length > 0 ? (
+                  <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+                    {sortedOtherPeers.map((peer) => {
+                      const attention = chatAttentionByPeerId.get(peer.id);
+                      const unread = Boolean(attention?.unread);
+                      return (
+                        <li key={peer.id}>
+                          <button
+                            type="button"
+                            onClick={() => openChatWithPeer(peer.id)}
+                            className={`flex w-full items-start gap-3 px-3 py-3 text-left transition hover:bg-slate-50 ${
+                              unread ? "bg-blue-50/40" : ""
+                            }`}
+                          >
+                            <div
+                              className={`relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-1 ${
+                                unread
+                                  ? "bg-blue-50 text-blue-700 ring-blue-100"
+                                  : "bg-slate-50 text-slate-600 ring-slate-100"
+                              }`}
+                            >
+                              {peer.initials}
+                              {unread ? (
+                                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                              ) : null}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`truncate text-sm ${
+                                  unread ? "font-bold text-slate-900" : "font-semibold text-slate-900"
+                                }`}
+                              >
+                                {peer.name}
+                              </p>
+                              <p className="truncate text-xs text-slate-500">
+                                {peer.roleLabels.join(" · ") || peer.employeeId || "บุคลากร"}
+                              </p>
+                              {attention?.previewBody ? (
+                                <p
+                                  className={`mt-0.5 truncate text-sm ${
+                                    unread ? "font-medium text-slate-800" : "text-slate-500"
+                                  }`}
+                                >
+                                  {attention.previewBody}
+                                </p>
+                              ) : null}
+                            </div>
+                            {unread ? (
+                              <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-bold text-white">
+                                ใหม่
+                              </span>
+                            ) : (
+                              <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
+                                <Send className="h-3 w-3" />
+                                ทักหา
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : chatPeers.length > 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                    ทักหาทีมดูแลได้จากปุ่มบนการ์ดด้านบน
+                  </p>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    ยังไม่มีผู้ที่ทักหาได้ในตอนนี้
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section
               id="consultation-history"
               className="scroll-mt-24 rounded-lg border border-slate-200 bg-white shadow-sm"
             >
@@ -570,7 +971,7 @@ function StudentAdvisorContent() {
                   <MessageSquare className="h-5 w-5 text-blue-600" />
                   ประวัติคำขอปรึกษา
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">คำขอที่กำลังดำเนินการและที่ปิดแล้ว — แยกจากคิวต้องตอบด้านบน</p>
+                <p className="mt-1 text-sm text-slate-500">คำขอที่กำลังดำเนินการและที่ปิดแล้ว</p>
               </div>
 
               {historyRequests.length > 0 ? (
@@ -667,19 +1068,21 @@ function StudentAdvisorContent() {
                           }
                         />
                         {canStudentCancelConsultation(request.status) ? (
-                          <button
-                            type="button"
-                            disabled={cancellingRequestId === request.id}
-                            onClick={() => void handleCancelConsultationRequest(request.id)}
-                            className="mt-3 text-xs font-semibold text-slate-500 underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-60"
-                          >
-                            {cancellingRequestId === request.id ? "กำลังส่งคำขอยกเลิก..." : "ยกเลิก"}
-                          </button>
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              disabled={cancellingRequestId === request.id}
+                              onClick={() => void handleCancelConsultationRequest(request.id)}
+                              className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-60"
+                            >
+                              {cancellingRequestId === request.id ? "กำลังส่งคำขอยกเลิก..." : "ยกเลิก"}
+                            </button>
+                          </div>
                         ) : null}
                       </div>
                     );
                   })}
-                  {historyPagination.total > historyPagination.rowsPerPage ? (
+                  {historyPagination.total > 0 ? (
                     <ListPaginationFooter
                       total={historyPagination.total}
                       rangeStart={historyPagination.rangeStart}
@@ -703,69 +1106,6 @@ function StudentAdvisorContent() {
               )}
             </section>
           </div>
-
-          <aside className="space-y-6">
-            <StudentEmergencyHelpCard
-              id="emergency-help"
-              onConfirmSos={handleCreateSosCase}
-            />
-
-            <StudentCounselingRequestCard
-              id="expert-counseling"
-              disabled={!canRequestExpertCounseling}
-              disabledReason={expertCounselingDisabledReason}
-              onSubmitted={() => {
-                setCanRequestExpertCounseling(false);
-                setExpertCounselingDisabledReason("มีคำขอพบผู้เชี่ยวชาญรอรับอยู่แล้ว");
-                setToast({
-                  open: true,
-                  tone: "success",
-                  title: "ส่งคำขอแล้ว",
-                  description: "ทีมสุขภาพจิตได้รับการแจ้งแล้ว จะติดต่อนัดหมาย",
-                });
-              }}
-            />
-
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
-                  <CalendarClock className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-[15px] font-bold text-slate-900">นัดใกล้ถึง</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">ยืนยันแล้ว · ภายใน 7 วัน</p>
-                </div>
-              </div>
-              {upcomingConsultations.length > 0 ? (
-                <div className="mt-4 space-y-2">
-                  {upcomingPreview.map((request) => {
-                    const location = resolveAppointmentLocation(request);
-                    return (
-                      <div key={request.id} className="rounded-lg border border-cyan-100 bg-cyan-50/40 px-3 py-2.5">
-                        <p className="text-sm font-bold tabular-nums text-slate-900">
-                          {formatThaiDateTime(request.scheduledAt)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {request.topic}
-                          {location ? ` · ${location}` : ""}
-                        </p>
-                      </div>
-                    );
-                  })}
-                  {upcomingConsultations.length > STUDENT_HOME_UPCOMING_LIMIT ? (
-                    <p className="text-xs text-slate-500">
-                      แสดง {STUDENT_HOME_UPCOMING_LIMIT} จาก {upcomingConsultations.length} นัด
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-500">
-                  <CalendarX2 className="h-4 w-4" />
-                  ยังไม่มีนัดใน 7 วันข้างหน้า
-                </div>
-              )}
-            </div>
-          </aside>
         </div>
       )}
 
@@ -864,7 +1204,7 @@ function StudentAdvisorContent() {
                 <div>
                   <p className="mb-2 text-sm font-bold text-slate-800">รูปแบบที่สะดวก</p>
                   <p className="mb-3 text-xs text-slate-500">
-                    เลือกแค่ออนไลน์หรือพบตัว — อาจารย์จะแจ้งห้อง/ลิงก์เมื่อเสนอนัด
+                    เลือกแค่ออนไลน์หรือออนไซต์ — อาจารย์จะแจ้งห้อง/ลิงก์เมื่อเสนอนัด
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(preferredChannels).map(([value, label]) => {
@@ -936,6 +1276,18 @@ function StudentAdvisorContent() {
           </div>,
           document.body
         )}
+
+      {user ? (
+        <EphemeralChatPanel
+          open={chatOpen}
+          currentUserId={user.id}
+          peerUserId={chatPeerId}
+          peers={chatPeers}
+          unreadPeerIds={unreadPeerIds}
+          onSelectPeer={openChatWithPeer}
+          onClose={closeChatPanel}
+        />
+      ) : null}
     </>
   );
 }

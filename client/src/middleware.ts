@@ -63,8 +63,6 @@ export const config = {
     "/executive/:path*",
     "/mental-health/:path*",
     "/student-development/:path*",
-    "/change-password",
-    "/change-password/:path*",
     "/dashboard",
     "/dashboard/:path*",
   ],

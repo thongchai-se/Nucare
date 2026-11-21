@@ -39,7 +39,7 @@ const listQuerySchema = z.object({
 const createReferralBodySchema = z
   .object({
     target: z.nativeEnum(ReferralTarget),
-    reason: z.string().trim().min(20).max(4000),
+    reason: z.string().trim().min(1).max(4000),
     isUrgent: z.boolean().optional(),
   })
   .strict();

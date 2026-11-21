@@ -9,7 +9,19 @@ import {
 const USER_AGENT_MAX_LENGTH = 300;
 const PATH_MAX_LENGTH = 500;
 
-const SKIP_TRAFFIC_LOG_PATHS = new Set(["/api/health", "/"]);
+const SKIP_TRAFFIC_LOG_PATHS = new Set(["/api/health", "/", "/api/auth/session"]);
+
+/** path prefix ที่โพลบ่อย — ไม่เขียน traffic log เพื่อลด write บนเซิร์ฟเวอร์จำกัด */
+const SKIP_TRAFFIC_LOG_PREFIXES = ["/api/chat/"] as const;
+
+/** ตรวจว่า path นี้ควรข้ามการเขียน traffic log หรือไม่ */
+export const shouldSkipTrafficLogPath = (path: string): boolean => {
+  const normalized = sanitizeTrafficPath(path);
+  if (SKIP_TRAFFIC_LOG_PATHS.has(normalized)) {
+    return true;
+  }
+  return SKIP_TRAFFIC_LOG_PREFIXES.some((prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix));
+};
 
 type WriteTrafficLogInput = {
   method: string;
@@ -114,7 +126,7 @@ export const trafficLogMiddleware = (req: Request, res: Response, next: () => vo
 
   res.on("finish", () => {
     const path = sanitizeTrafficPath(req.originalUrl || req.url || req.path || "/");
-    if (SKIP_TRAFFIC_LOG_PATHS.has(path)) {
+    if (shouldSkipTrafficLogPath(path)) {
       return;
     }
 

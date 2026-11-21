@@ -12,6 +12,7 @@ import {
   isStudentEligibleForAudience,
   matchesEligibilityRule,
   pickHigherRisk,
+  resolveEligibilityLoadFlags,
   type EligibilityStudentProfile,
 } from "./survey-eligibility";
 
@@ -91,6 +92,45 @@ describe("matchesEligibilityRule", () => {
         sections: [],
       }),
       true
+    );
+  });
+});
+
+describe("resolveEligibilityLoadFlags", () => {
+  it("ELF-01 ALL_STUDENTS ไม่โหลดความเสี่ยงหรือ wellness", () => {
+    assert.deepEqual(
+      resolveEligibilityLoadFlags({
+        audienceType: SurveyAudienceType.ALL_STUDENTS,
+        rule: null,
+      }),
+      { needPriorRisk: false, needWellness: false }
+    );
+  });
+
+  it("ELF-02 RULE_BASED โหลดเฉพาะมิติที่มีในกฎ", () => {
+    assert.deepEqual(
+      resolveEligibilityLoadFlags({
+        audienceType: SurveyAudienceType.RULE_BASED,
+        rule: {
+          priorRiskLevels: [RiskLevel.HIGH],
+          wellnessSignalCodes: [],
+          studyYears: [1],
+          sections: [],
+        },
+      }),
+      { needPriorRisk: true, needWellness: false }
+    );
+    assert.deepEqual(
+      resolveEligibilityLoadFlags({
+        audienceType: SurveyAudienceType.RULE_BASED,
+        rule: {
+          priorRiskLevels: [],
+          wellnessSignalCodes: [WellnessTrendSignalCode.ACADEMIC_STRESS],
+          studyYears: [],
+          sections: [],
+        },
+      }),
+      { needPriorRisk: false, needWellness: true }
     );
   });
 });

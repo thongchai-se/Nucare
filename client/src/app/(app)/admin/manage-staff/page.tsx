@@ -3,15 +3,27 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, ShieldAlert, X } from "lucide-react";
+import { Pencil, Plus, ShieldAlert, X } from "lucide-react";
 import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { useAuth } from "@/context/auth.context";
 import { AdminShell } from "@/components/admin-shell";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleToast } from "@/components/role-toast";
+import { AppDialogShell } from "@/components/ui/app-dialog-shell";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
+import {
+  RosterSearchInput,
+  RosterSelectFilter,
+  RosterToolbarEnd,
+} from "@/components/ui/roster-table";
+import {
+  UI_ACTION_PRIMARY_COMPACT,
+  UI_DIALOG_CANCEL,
+  UI_DIALOG_DANGER,
+} from "@/lib/ui-classes";
 import type { Role } from "@/types/auth";
 
 type UserStatus = "active" | "inactive";
@@ -150,6 +162,7 @@ export default function ManageStaffPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | UserStatus>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -174,6 +187,8 @@ export default function ManageStaffPage() {
   const [successMessage, setSuccessMessage] = useState("บันทึกข้อมูลสำเร็จ");
   const [successTemporaryPassword, setSuccessTemporaryPassword] = useState("");
   const [pendingDeleteUser, setPendingDeleteUser] = useState<ManagedUser | null>(null);
+  const [pendingGrantAdmin, setPendingGrantAdmin] = useState(false);
+  const [adminGrantConfirmText, setAdminGrantConfirmText] = useState("");
 
   const primaryFormRole = useMemo<StaffRole>(() => normalizeStaffRoles(formRoles)[0] || "ADVISOR", [formRoles]);
 
@@ -278,6 +293,9 @@ export default function ManageStaffPage() {
       if (!matchesRole) {
         return false;
       }
+      if (statusFilter !== "ALL" && managedUser.status !== statusFilter) {
+        return false;
+      }
 
       if (!keyword) {
         return true;
@@ -290,13 +308,13 @@ export default function ManageStaffPage() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [roleFilter, searchKeyword, users]);
+  }, [roleFilter, searchKeyword, statusFilter, users]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredUsers.length / rowsPerPage)), [filteredUsers.length, rowsPerPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [roleFilter, searchKeyword]);
+  }, [roleFilter, searchKeyword, statusFilter]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -465,16 +483,14 @@ export default function ManageStaffPage() {
     };
   };
 
-  const saveUser = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setServerError("");
-
+  const performSaveUser = async () => {
     const validated = validateForm();
     if (!validated) {
       return;
     }
 
     setSubmitting(true);
+    setServerError("");
 
     const payload = {
       employeeId: modalMode === "add" ? undefined : validated.employeeId,
@@ -498,6 +514,8 @@ export default function ManageStaffPage() {
         showSuccess(response.data.message || "อัปเดตข้อมูลสำเร็จ");
       }
 
+      setPendingGrantAdmin(false);
+      setAdminGrantConfirmText("");
       closeModal();
       await fetchUsers();
     } catch (error) {
@@ -512,6 +530,29 @@ export default function ManageStaffPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const saveUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setServerError("");
+
+    const validated = validateForm();
+    if (!validated) {
+      return;
+    }
+
+    const nextRoles = normalizeStaffRoles(formRoles);
+    const willHaveAdmin = nextRoles.includes("ADMIN");
+    const hadAdmin =
+      modalMode === "edit" && Boolean(editingManagedUser?.roles.includes("ADMIN"));
+
+    if (willHaveAdmin && !hadAdmin) {
+      setAdminGrantConfirmText("");
+      setPendingGrantAdmin(true);
+      return;
+    }
+
+    await performSaveUser();
   };
 
   const handleDeleteUser = (managedUser: ManagedUser) => {
@@ -622,6 +663,64 @@ export default function ManageStaffPage() {
         }}
       />
 
+      {pendingGrantAdmin ? (
+        <AppDialogShell
+          labelledBy="grant-admin-title"
+          describedBy="grant-admin-description"
+          panelClassName="max-w-md"
+          zIndexClassName="z-[10001]"
+          onBackdropClick={
+            submitting
+              ? undefined
+              : () => {
+                  setPendingGrantAdmin(false);
+                  setAdminGrantConfirmText("");
+                }
+          }
+        >
+          <div className="relative px-6 pb-6 pt-8 sm:px-8">
+            <h2 id="grant-admin-title" className="text-lg font-bold text-slate-900">
+              ยืนยันมอบสิทธิ์ผู้ดูแลระบบ
+            </h2>
+            <p id="grant-admin-description" className="mt-3 text-sm leading-6 text-slate-600">
+              บัญชีนี้จะจัดการผู้ใช้ แบบสอบถาม และตั้งค่าระบบได้ทั้งหมด พิมพ์{" "}
+              <span className="font-semibold text-slate-900">ADMIN</span> เพื่อยืนยัน
+            </p>
+            <input
+              value={adminGrantConfirmText}
+              onChange={(event) => setAdminGrantConfirmText(event.target.value)}
+              className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#0057A8] focus:ring-2 focus:ring-[#0057A8]/30"
+              placeholder="พิมพ์ ADMIN"
+              autoComplete="off"
+              disabled={submitting}
+            />
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse sm:justify-center">
+              <button
+                type="button"
+                className={UI_DIALOG_DANGER}
+                disabled={submitting || adminGrantConfirmText.trim() !== "ADMIN"}
+                onClick={() => {
+                  void performSaveUser();
+                }}
+              >
+                <ConfirmSubmitLabel busy={submitting}>มอบสิทธิ์ ADMIN</ConfirmSubmitLabel>
+              </button>
+              <button
+                type="button"
+                className={UI_DIALOG_CANCEL}
+                disabled={submitting}
+                onClick={() => {
+                  setPendingGrantAdmin(false);
+                  setAdminGrantConfirmText("");
+                }}
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </AppDialogShell>
+      ) : null}
+
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
@@ -649,29 +748,36 @@ export default function ManageStaffPage() {
         {serverError ? <InlineAlert className="p-4">{serverError}</InlineAlert> : null}
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 md:flex-row">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="ค้นหาชื่อ, อีเมล, หรือรหัสพนักงาน..."
-                className="block w-full rounded-xl border border-slate-200 bg-white p-2.5 pl-10 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <select
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 outline-none transition focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">ทุกบทบาทบุคลากร</option>
-              {roleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 md:flex-row md:items-center">
+            <RosterSearchInput
+              value={searchKeyword}
+              onChange={setSearchKeyword}
+              placeholder="ค้นหาชื่อ, อีเมล, หรือรหัสพนักงาน..."
+              aria-label="ค้นหาบุคลากร"
+            />
+            <RosterToolbarEnd>
+              <RosterSelectFilter
+                value={roleFilter}
+                onChange={(value) => setRoleFilter(value as RoleFilter)}
+                aria-label="กรองบทบาท"
+              >
+                <option value="ALL">ทุกบทบาท</option>
+                {roleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </RosterSelectFilter>
+              <RosterSelectFilter
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "ALL" | UserStatus)}
+                aria-label="กรองสถานะ"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                <option value="active">ใช้งาน</option>
+                <option value="inactive">ระงับ</option>
+              </RosterSelectFilter>
+            </RosterToolbarEnd>
           </div>
 
           <div className="overflow-hidden">
@@ -689,7 +795,6 @@ export default function ManageStaffPage() {
                 </div>
               )}
               {!loadingUsers && paginatedUsers.map((managedUser, index) => {
-                const isDeleting = deletingId === managedUser.id;
                 return (
                   <div key={managedUser.id} className="min-h-[152px] space-y-3 px-4 py-4">
                     <div className="flex items-center justify-between">
@@ -722,23 +827,14 @@ export default function ManageStaffPage() {
                         <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${managedUser.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
                         {managedUser.status === "active" ? "ใช้งาน" : "ระงับ"}
                       </span>
-                      <div className="flex gap-4">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(managedUser)}
-                          className="text-sm font-medium text-blue-600 hover:text-blue-800"
-                        >
-                          แก้ไข
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() => handleDeleteUser(managedUser)}
-                          className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
-                        >
-                          {isDeleting ? "กำลังลบ..." : "ลบ"}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(managedUser)}
+                        className={UI_ACTION_PRIMARY_COMPACT}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        แก้ไข
+                      </button>
                     </div>
                   </div>
                 );
@@ -785,7 +881,6 @@ export default function ManageStaffPage() {
 
                   {!loadingUsers &&
                     paginatedUsers.map((managedUser, index) => {
-                    const isDeleting = deletingId === managedUser.id;
                     return (
                       <tr key={managedUser.id} className="transition-colors hover:bg-slate-50">
                         <td className="px-6 py-4 text-center text-slate-500">{startItemIndex + index + 1}</td>
@@ -815,17 +910,10 @@ export default function ManageStaffPage() {
                           <button
                             type="button"
                             onClick={() => openEditModal(managedUser)}
-                            className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-800"
+                            className={UI_ACTION_PRIMARY_COMPACT}
                           >
+                            <Pencil className="h-3.5 w-3.5" />
                             แก้ไข
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isDeleting}
-                            onClick={() => handleDeleteUser(managedUser)}
-                            className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
-                          >
-                            {isDeleting ? "กำลังลบ..." : "ลบ"}
                           </button>
                         </td>
                       </tr>
@@ -836,34 +924,16 @@ export default function ManageStaffPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <span className="text-sm tabular-nums text-slate-500">
-              แสดง <span className="font-medium text-slate-800">{filteredUsers.length === 0 ? 0 : startItemIndex + 1}</span>-
-              <span className="font-medium text-slate-800">{endItemIndex}</span> จาก
-              <span className="font-medium text-slate-800"> {filteredUsers.length}</span> รายการ
-            </span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                disabled={!canGoPrev}
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-              >
-                ก่อนหน้า
-              </button>
-              <button type="button" className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white">
-                {currentPage}
-              </button>
-              <button
-                type="button"
-                disabled={!canGoNext}
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
+          <ListPaginationFooter
+            total={filteredUsers.length}
+            rangeStart={filteredUsers.length === 0 ? 0 : startItemIndex + 1}
+            rangeEnd={endItemIndex}
+            currentPage={currentPage}
+            canGoPrev={canGoPrev}
+            canGoNext={canGoNext}
+            onPrev={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+          />
         </div>
       </div>
 
@@ -1024,23 +1094,25 @@ export default function ManageStaffPage() {
             </div>
 
             {modalMode === "edit" && editingManagedUser ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 lg:col-span-2">
-                <p className="text-sm font-semibold text-red-800">Danger Zone</p>
-                <p className="mt-1 text-xs leading-5 text-red-700">
-                  ปุ่มลบถูกย้ายมาไว้ท้ายฟอร์ม เพื่อให้ตรวจข้อมูลให้ครบก่อนตัดสินใจลบบัญชีบุคลากร
-                </p>
-                <button
-                  type="button"
-                  disabled={deletingId === editingManagedUser.id}
-                  onClick={() => handleDeleteUser(editingManagedUser)}
-                  className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีบุคลากร"}
-                </button>
+              <div className="space-y-3 lg:col-span-2">
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm font-semibold text-red-800">Danger Zone</p>
+                  <p className="mt-1 text-xs leading-5 text-red-700">
+                    ปุ่มลบถูกย้ายมาไว้ท้ายฟอร์ม เพื่อให้ตรวจข้อมูลให้ครบก่อนตัดสินใจลบบัญชีบุคลากร
+                  </p>
+                  <button
+                    type="button"
+                    disabled={deletingId === editingManagedUser.id}
+                    onClick={() => handleDeleteUser(editingManagedUser)}
+                    className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีบุคลากร"}
+                  </button>
+                </div>
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-3 pt-2 lg:col-span-2">
+            <div className="flex justify-center gap-3 pt-2 lg:col-span-2">
               <button type="button" onClick={closeModal} className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50">
                 ยกเลิก
               </button>

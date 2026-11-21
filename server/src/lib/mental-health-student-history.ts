@@ -6,7 +6,6 @@ import {
   Role,
   type PrismaClient,
 } from "@prisma/client";
-import { canAccessStudent } from "./access-control";
 import { stripSeedMarkers } from "./history-display";
 import {
   aggregateConsultationsByTeacher,
@@ -16,9 +15,14 @@ import {
   type ExecutiveConsultationByTeacher,
   type ExecutiveDossierActivityItem,
 } from "./executive-student-dossier";
+import {
+  resolveMentalHealthStudentAccess,
+  type MentalHealthAccessLevel,
+} from "./mental-health-access";
 import { serializeMentalHealthAppointment } from "./mental-health-appointments";
 import {
   getSensitiveStudentCard,
+  loadSensitiveStudentCardById,
   type SensitiveStudentCard,
 } from "./sensitive-student-detail";
 import { normalizeRiskLevel } from "./user-format";
@@ -134,11 +138,34 @@ export function mergeMentalHealthHistoryActivity(input: {
 }
 
 type MentalHealthHistoryOptions = {
-  /** รวมบันทึกลับ — เปิดเฉพาะเมื่อมีเคส ACCEPTED แล้ว */
-  includeConfidentialNotes?: boolean;
+  /** บังคับระดับสิทธิ์เมื่อโหลดผ่าน referral ที่ตรวจแล้ว */
+  accessLevel?: MentalHealthAccessLevel;
 };
 
-/** โหลดประวัติจาก referral ของศูนย์ให้คำปรึกษา — ใช้ได้ทั้งคิวรอรับและเคสที่รับแล้ว */
+/** คิว triage / เคส clinical ได้ดูประวัติคัดกรอง — none ไม่ได้ */
+export function includesScreeningHistory(accessLevel: MentalHealthAccessLevel): boolean {
+  return accessLevel === "triage" || accessLevel === "clinical";
+}
+
+/** เนื้อหาบันทึกผู้เชี่ยวชาญ (summary/plan/บันทึกลับ) เฉพาะเจ้าของเคส */
+export function includesClinicalCareContent(accessLevel: MentalHealthAccessLevel): boolean {
+  return accessLevel === "clinical";
+}
+
+/**
+ * การ์ดนิสิตตอนคิว triage — เปิดคะแนน/ความเสี่ยงให้ตัดสินใจรับเคส
+ * แต่ยังไม่เปิดช่องทางติดต่อจนกว่าจะรับเคส
+ */
+export function shapeTriageStudentCard(card: SensitiveStudentCard): SensitiveStudentCard {
+  return {
+    ...card,
+    phone: null,
+    guardianPhone: null,
+    email: null,
+  };
+}
+
+/** โหลดประวัติจาก referral ของศูนย์ให้คำปรึกษา — คิวยังไม่รับ = triage, รับเอง = clinical */
 export async function getMentalHealthStudentHistoryByReferral(
   db: PrismaClient,
   actorUserId: string,
@@ -153,6 +180,12 @@ export async function getMentalHealthStudentHistoryByReferral(
       id: true,
       studentId: true,
       status: true,
+      acceptedByUserId: true,
+      declines: {
+        where: { userId: actorUserId },
+        select: { userId: true },
+        take: 1,
+      },
     },
   });
 
@@ -160,8 +193,25 @@ export async function getMentalHealthStudentHistoryByReferral(
     return "not_found";
   }
 
+  let accessLevel: MentalHealthAccessLevel = "none";
+  if (
+    referral.status === ReferralStatus.ACCEPTED &&
+    referral.acceptedByUserId === actorUserId
+  ) {
+    accessLevel = "clinical";
+  } else if (
+    referral.status === ReferralStatus.PENDING &&
+    referral.declines.length === 0
+  ) {
+    accessLevel = "triage";
+  }
+
+  if (accessLevel === "none") {
+    return "forbidden";
+  }
+
   return getMentalHealthStudentHistory(db, actorUserId, referral.studentId, {
-    includeConfidentialNotes: referral.status === ReferralStatus.ACCEPTED,
+    accessLevel,
   });
 }
 
@@ -172,38 +222,17 @@ export async function getMentalHealthStudentHistory(
   studentUserId: string,
   options: MentalHealthHistoryOptions = {}
 ): Promise<"forbidden" | "not_found" | MentalHealthStudentHistoryPayload> {
-  const allowed = await canAccessStudent(Role.MENTAL_HEALTH, actorUserId, studentUserId);
-  if (!allowed) {
+  const accessLevel =
+    options.accessLevel ??
+    (await resolveMentalHealthStudentAccess(db, actorUserId, studentUserId));
+  if (accessLevel === "none") {
     return "forbidden";
   }
 
-  const studentExists = await db.user.findFirst({
-    where: { id: studentUserId, role: Role.STUDENT },
-    select: { id: true, isActive: true },
-  });
-  if (!studentExists) {
-    return "not_found";
-  }
-
-  // ต้องมีคิว/เคสศูนย์ให้คำปรึกษาที่ยังเปิด — กันดึงประวัตินิสิตที่ไม่เกี่ยว
-  const openCounseling = await db.caseReferral.findMany({
-    where: {
-      studentId: studentUserId,
-      target: ReferralTarget.COUNSELING_CENTER,
-      status: { in: [ReferralStatus.PENDING, ReferralStatus.ACCEPTED] },
-    },
-    select: { id: true, status: true },
-    take: 5,
-  });
-  if (openCounseling.length === 0) {
-    return "forbidden";
-  }
-
-  const includeConfidentialNotes =
-    options.includeConfidentialNotes ??
-    openCounseling.some((row) => row.status === ReferralStatus.ACCEPTED);
-
-  const card = await getSensitiveStudentCard(db, Role.MENTAL_HEALTH, actorUserId, studentUserId);
+  // ถ้า accessLevel มาจาก referral ที่ตรวจแล้ว — โหลดการ์ดตรง ๆ ไม่ซ้ำ canAccessStudent
+  const card = options.accessLevel
+    ? await loadSensitiveStudentCardById(db, studentUserId)
+    : await getSensitiveStudentCard(db, Role.MENTAL_HEALTH, actorUserId, studentUserId);
   if (card === "forbidden" || card === "not_found") {
     return card;
   }
@@ -220,21 +249,24 @@ export async function getMentalHealthStudentHistory(
     legacyAssessments,
     assessmentTimeline,
   ] = await Promise.all([
-    db.specializedCareRecord.findMany({
-      where: { studentId: studentUserId },
-      select: {
-        id: true,
-        sessionDate: true,
-        summary: true,
-        interventionPlan: true,
-        ...(includeConfidentialNotes ? { confidentialNotes: true } : {}),
-        referralId: true,
-        createdAt: true,
-        mentalHealthUser: { select: { name: true } },
-      },
-      orderBy: [{ sessionDate: "desc" }, { createdAt: "desc" }],
-      take: 40,
-    }),
+    includesClinicalCareContent(accessLevel)
+      ? db.specializedCareRecord.findMany({
+          where: { studentId: studentUserId },
+          select: {
+            id: true,
+            sessionDate: true,
+            summary: true,
+            interventionPlan: true,
+            confidentialNotes: true,
+            referralId: true,
+            createdAt: true,
+            mentalHealthUser: { select: { name: true } },
+          },
+          orderBy: [{ sessionDate: "desc" }, { createdAt: "desc" }],
+          take: 40,
+        })
+      : Promise.resolve([]),
+    // คิว triage ก็เห็นนัดของนิสิตได้ (ตัด note) เพื่อประกอบการรับเคส
     db.mentalHealthAppointment.findMany({
       where: { studentId: studentUserId },
       select: {
@@ -341,26 +373,27 @@ export async function getMentalHealthStudentHistory(
     buildStudentAssessmentTimeline({ studentId: studentUserId }, db),
   ]);
 
-  const careSessions: MentalHealthCareSessionHistory[] = specializedCare.map((row) => ({
-    id: row.id,
-    sessionDate: row.sessionDate.toISOString(),
-    summary: stripSeedMarkers(row.summary) || row.summary,
-    interventionPlan: stripSeedMarkers(row.interventionPlan) || row.interventionPlan,
-    confidentialNotes: includeConfidentialNotes
-      ? (() => {
-          const notes = (row as { confidentialNotes?: string | null }).confidentialNotes ?? null;
-          return notes ? stripSeedMarkers(notes) || notes : null;
-        })()
-      : null,
-    providerName: row.mentalHealthUser.name,
-    referralId: row.referralId,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  const careSessions: MentalHealthCareSessionHistory[] = includesClinicalCareContent(accessLevel)
+    ? specializedCare.map((row) => {
+        const notes = row.confidentialNotes ?? null;
+        return {
+          id: row.id,
+          sessionDate: row.sessionDate.toISOString(),
+          summary: stripSeedMarkers(row.summary) || row.summary,
+          interventionPlan: stripSeedMarkers(row.interventionPlan) || row.interventionPlan,
+          confidentialNotes: notes ? stripSeedMarkers(notes) || notes : null,
+          providerName: row.mentalHealthUser.name,
+          referralId: row.referralId,
+          createdAt: row.createdAt.toISOString(),
+        };
+      })
+    : [];
 
   const appointmentItems: MentalHealthAppointmentHistoryItem[] = appointments.map((row) => {
     const dto = serializeMentalHealthAppointment(row);
     return {
       ...dto,
+      note: includesClinicalCareContent(accessLevel) ? dto.note : "",
       status: row.status,
       providerName: dto.providerName,
       referralId: row.referralId,
@@ -388,7 +421,7 @@ export async function getMentalHealthStudentHistory(
   const emergencyRows = emergencies.map((row) => ({
     id: row.id,
     status: row.status as EmergencyCaseStatus,
-    summary: row.summary,
+    summary: includesClinicalCareContent(accessLevel) ? row.summary : "",
     openedAt: row.openedAt,
     resolvedAt: row.resolvedAt,
   }));
@@ -409,24 +442,28 @@ export async function getMentalHealthStudentHistory(
     instructorName: row.instructor.name,
   }));
 
-  const assessmentRows = [
-    ...surveyResponses.map((row) => ({
-      id: row.id,
-      assessedAt: row.submittedAt,
-      score: row.totalScore,
-      instrument: row.instrument || row.survey.title,
-      riskLevel: row.riskLevel,
-    })),
-    ...legacyAssessments.map((row) => ({
-      id: row.id,
-      assessedAt: row.assessedAt,
-      score: row.totalScore,
-      instrument: row.instrument,
-      riskLevel: row.riskLevel,
-    })),
-  ]
-    .sort((left, right) => right.assessedAt.getTime() - left.assessedAt.getTime())
-    .slice(0, 8);
+  const assessmentRows = includesScreeningHistory(accessLevel)
+    ? [
+        ...surveyResponses.map((row) => ({
+          id: row.id,
+          assessedAt: row.submittedAt,
+          score: row.totalScore,
+          instrument: row.instrument || row.survey.title,
+          riskLevel: row.riskLevel,
+        })),
+        ...legacyAssessments.map((row) => ({
+          id: row.id,
+          assessedAt: row.assessedAt,
+          score: row.totalScore,
+          instrument: row.instrument,
+          riskLevel: row.riskLevel,
+        })),
+      ]
+        .sort((left, right) => right.assessedAt.getTime() - left.assessedAt.getTime())
+        .slice(0, 8)
+    : [];
+
+  const triageStudent = accessLevel === "triage" ? shapeTriageStudentCard(card) : card;
 
   const baseActivity = buildExecutiveActivityTimeline({
     consultations: consultationRows,
@@ -439,7 +476,7 @@ export async function getMentalHealthStudentHistory(
   });
 
   return {
-    student: card,
+    student: triageStudent,
     careSessions,
     appointments: appointmentItems,
     consultationByTeacher: aggregateConsultationsByTeacher(consultationRows),
@@ -452,7 +489,7 @@ export async function getMentalHealthStudentHistory(
       instrument: row.instrument,
       riskLevel: normalizeRiskLevel(row.riskLevel),
     })),
-    assessmentTimeline,
+    assessmentTimeline: includesScreeningHistory(accessLevel) ? assessmentTimeline : [],
     activity: mergeMentalHealthHistoryActivity({
       baseActivity,
       careSessions,

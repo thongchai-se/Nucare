@@ -9,6 +9,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
+import { StudentContactPanel } from "@/components/student-contact-panel";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { useListPagination } from "@/hooks/use-list-pagination";
@@ -21,6 +22,7 @@ import {
 import { presentClinicalNote } from "@/lib/clinical-note-display";
 import { stripSeedMarkers } from "@/lib/history-display";
 import { getNameInitials } from "@/lib/name-prefix";
+import { STATUS_BADGE_COMPACT, URGENT_BADGE_CLASS } from "@/lib/status-badge";
 import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SECONDARY_COMPACT } from "@/lib/ui-classes";
 import type { MentalHealthCase, RiskClasses } from "./types";
 
@@ -32,6 +34,9 @@ type StudentHistoryResponse = {
     name: string;
     studentId: string | null;
     year: string;
+    email?: string | null;
+    phone?: string | null;
+    guardianPhone?: string | null;
     riskLevel: MentalHealthCase["riskLevel"];
     latestScore: number | null;
     latestInstrument: string | null;
@@ -115,6 +120,8 @@ type CasesViewProps = {
   openAppointmentModal: (item?: MentalHealthCase) => void;
   onAcceptCase: (referralId: string) => void | Promise<void>;
   onCloseCase: (referralId: string) => void | Promise<void>;
+  /** เปิดแผงคุยสั้นกับนิสิต */
+  onOpenChat?: (studentId: string) => void;
   busyReferralId?: string | null;
   initialReferralId?: string | null;
 };
@@ -124,10 +131,10 @@ const workspaceCopy: Record<
   { title: string; subtitle: string; listTitle: string; emptyList: string; emptyDetail: string }
 > = {
   queue: {
-    title: "คิวรอรับ",
-    subtitle: "ดูเหตุผลและประวัติแล้วกดรับ — งานต่อทำที่เมนูเคสที่ดูแล",
-    listTitle: "คิวรอรับ",
-    emptyList: "ยังไม่มีคิวรอรับในตอนนี้",
+    title: "คิวรอรับเคส",
+    subtitle: "ดูเหตุผลและประวัติแล้วกดรับ",
+    listTitle: "คิวรอรับเคส",
+    emptyList: "ยังไม่มีคิวรอรับเคสในตอนนี้",
     emptyDetail: "เลือกคิวทางซ้ายเพื่อดูประวัติและรับเคส",
   },
   cases: {
@@ -164,6 +171,7 @@ export function CasesView({
   openAppointmentModal,
   onAcceptCase,
   onCloseCase,
+  onOpenChat,
   busyReferralId = null,
   initialReferralId = null,
 }: CasesViewProps) {
@@ -341,7 +349,7 @@ export function CasesView({
               <p className="px-3 py-10 text-center text-sm text-slate-600">{copy.emptyList}</p>
             ) : null}
           </div>
-          {pagination.total > pagination.rowsPerPage ? (
+          {pagination.total > 0 ? (
             <ListPaginationFooter
               total={pagination.total}
               rangeStart={pagination.rangeStart}
@@ -351,6 +359,7 @@ export function CasesView({
               canGoNext={pagination.canGoNext}
               onPrev={() => pagination.setCurrentPage((prev) => Math.max(1, prev - 1))}
               onNext={() => pagination.setCurrentPage((prev) => prev + 1)}
+              showSummary={false}
             />
           ) : null}
         </section>
@@ -375,9 +384,7 @@ export function CasesView({
                           </span>
                         ) : null}
                         {selectedCase.isUrgent ? (
-                          <span className="rounded-md bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                            เร่งด่วน
-                          </span>
+                          <span className={`${STATUS_BADGE_COMPACT} ${URGENT_BADGE_CLASS}`}>ด่วน</span>
                         ) : null}
                       </div>
                       <p className="mt-1 text-sm text-slate-600">
@@ -415,6 +422,15 @@ export function CasesView({
                       </>
                     ) : (
                       <>
+                        {onOpenChat ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenChat(selectedCase.studentId)}
+                            className={`${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
+                          >
+                            คุยสั้น
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => openCareModal(selectedCase)}
@@ -452,6 +468,13 @@ export function CasesView({
                   {stripSeedMarkers(selectedCase.reason) || selectedCase.reason}
                 </p>
               </div>
+
+              <StudentContactPanel
+                email={history?.student.email}
+                phone={history?.student.phone}
+                guardianPhone={history?.student.guardianPhone}
+                compact
+              />
 
               {!isQueue ? (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -532,8 +555,8 @@ export function CasesView({
                     history.careSessions.length === 0 ? (
                       isQueue ? (
                         <EmptyBlock
-                          title="ยังไม่มีบันทึกผลการปรึกษา"
-                          description="รับเคสก่อน จึงจะบันทึกผลการพบได้"
+                          title="ยังไม่มีบันทึกผลการปรึกษาที่เปิดได้"
+                          description="ดูภาพรวมและไทม์ไลน์คัดกรองได้ตอนนี้ — เนื้อหาบันทึกคลินิกจะเปิดหลังรับเคส"
                         />
                       ) : (
                       <EmptyBlock

@@ -37,15 +37,15 @@ describe("history-display", () => {
     assert.equal(referralHistoryStatusLabel(ReferralStatus.ACCEPTED), "กำลังดูแล");
     assert.equal(behaviorSeverityLabel(BehaviorSeverity.MEDIUM), "ปานกลาง");
     assert.equal(formatBehaviorHistoryOutcome("HIGH"), "ความเร่งด่วน: สูง");
-    assert.equal(formatReferralHistoryOutcome("PENDING"), "สถานะ: รอผู้เชี่ยวชาญรับเคส");
+    assert.equal(formatReferralHistoryOutcome("PENDING"), "สถานะ: รอรับเคส");
   });
 
   it("HD-03 จัดรูปคำขอปรึกษาให้อ่านง่าย ไม่โชว์ ISO", () => {
     const action = formatConsultationHistoryAction({
-      channelLabel: "พบตัว / ที่คณะ",
+      channelLabel: "ออนไซต์",
       note: "[WALKTHROUGH] นิสิตขอเปลี่ยนนัด — รออาจารย์ตอบ",
     });
-    assert.match(action, /ช่องทาง: พบตัว/);
+    assert.match(action, /ช่องทาง: ออนไซต์/);
     assert.doesNotMatch(action, /WALKTHROUGH/);
     assert.match(action, /นิสิตขอเปลี่ยนนัด/);
 

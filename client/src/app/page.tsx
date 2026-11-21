@@ -6,21 +6,20 @@ import { useRouter } from "next/navigation";
 import { facultyFullName } from "@/lib/brand";
 import {
   ArrowRight,
-  BookOpen,
   ChevronDown,
   ClipboardCheck,
   ClipboardEdit,
-  Headphones,
   HeartHandshake,
   LayoutDashboard,
   LogOut,
   LogIn,
   Menu,
-  Music,
+  MessageCircle,
   Phone,
   PhoneCall,
   ShieldCheck,
   User,
+  Users,
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
@@ -33,12 +32,35 @@ import { PUBLIC_NAV_ITEMS, PUBLIC_NAV_LABELS } from "@/components/public-nav-con
 import { getNameInitials } from "@/lib/name-prefix";
 import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
 
-const HEAL_RESOURCE_LINKS = {
-  podcast: "https://dmh-elibrary.org/items/show/945",
-  article: "https://dmh-elibrary.org/items/show/2130",
-  playlist: "https://www.youtube.com/results?search_query=%E0%B9%80%E0%B8%AA%E0%B8%B5%E0%B8%A2%E0%B8%87%E0%B8%98%E0%B8%A3%E0%B8%A3%E0%B8%A1%E0%B8%8A%E0%B8%B2%E0%B8%95%E0%B8%B4%E0%B8%9C%E0%B9%88%E0%B8%AD%E0%B8%99",
-  all: "https://dmh-elibrary.org/",
-} as const;
+const STUDENT_PATHWAYS = [
+  {
+    id: "assessment",
+    href: "/student/assessment",
+    icon: ClipboardEdit,
+    iconWrap: "bg-blue-50 text-blue-700",
+    title: "ทำแบบประเมิน",
+    description: "ใช้เวลาไม่กี่นาที เพื่อดูระดับความเสี่ยงและให้ทีมดูแลติดตามต่อได้",
+    action: "เริ่มทำแบบประเมิน",
+  },
+  {
+    id: "chat",
+    href: "/student/chat",
+    icon: MessageCircle,
+    iconWrap: "bg-cyan-50 text-cyan-700",
+    title: "คุยกับเพื่อนในระบบ",
+    description: "ระบายกับพี่ต้นหรือพี่เมย์ได้ทันที เมื่ออยากมีคนฟังโดยไม่ต้องนัดหมาย",
+    action: "เริ่มคุย",
+  },
+  {
+    id: "advisor",
+    href: "/student/advisor",
+    icon: Users,
+    iconWrap: "bg-emerald-50 text-emerald-700",
+    title: "ติดต่ออาจารย์ที่ปรึกษา",
+    description: "ส่งคำขอปรึกษา หรือคุยสั้นกับทีมดูแลเมื่อต้องการความช่วยเหลือจากคนจริง",
+    action: "ไปหน้าที่ปรึกษา",
+  },
+] as const;
 
 const getUserInitials = (name: string): string => getNameInitials(name, "NU");
 
@@ -48,8 +70,8 @@ const getAuthPopupViewFromUrl = (): AuthPopupView | null => {
   }
 
   const auth = new URLSearchParams(window.location.search).get("auth");
-  if (auth === "login" || auth === "forgot") {
-    return auth;
+  if (auth === "login") {
+    return "login";
   }
 
   return null;
@@ -115,18 +137,29 @@ export default function HomePage() {
     syncAuthPopupQuery(view);
   };
 
-  const handleFacultyEmergencyClick = () => {
+  /** พานักศึกษาไปฟีเจอร์จริง หรือเปิดล็อกอินพร้อม next สำหรับผู้เยี่ยมชม */
+  const goToStudentFeature = (nextPath: string) => {
     if (isAuthenticated && isStudentUser) {
-      router.push("/student/advisor#emergency-help");
+      router.push(nextPath);
       return;
     }
+
+    if (isAuthenticated) {
+      router.push(roleHomePath);
+      return;
+    }
+
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.set("auth", "login");
-      url.searchParams.set("next", "/student/advisor");
+      url.searchParams.set("next", nextPath);
       window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
     }
     openAuthPopup("login");
+  };
+
+  const handleFacultyEmergencyClick = () => {
+    goToStudentFeature("/student/advisor#emergency-help");
   };
 
   const closeAuthPopup = () => {
@@ -428,8 +461,8 @@ export default function HomePage() {
                   <span className="text-blue-600"> Safe Zone ของคุณ</span>
                 </h2>
                 <p className="mb-8 text-center text-sm leading-relaxed text-slate-600 sm:text-base lg:text-left">
-                  การเรียนพยาบาลเต็มไปด้วยแรงกดดัน เราเข้าใจว่าบางวันอาจเหนื่อย กังวล หรือรู้สึกโดดเดี่ยว Nucare
-                  ช่วยให้คุณสำรวจสุขภาพใจอย่างเป็นส่วนตัว และเชื่อมต่อความช่วยเหลือที่อ่อนโยนได้ทันที
+                  การเรียนพยาบาลมีทั้งความกดดันและความเหนื่อยล้า Nucare เป็นพื้นที่ส่วนตัวให้เช็คสุขภาพใจ
+                  คุยระบายได้ทันที และเชื่อมต่อไปยังทีมดูแลของคณะเมื่อต้องการ
                 </p>
 
                 <ul className="space-y-5">
@@ -438,9 +471,20 @@ export default function HomePage() {
                       <ShieldCheck className="h-5 w-5 sm:h-4 sm:w-4" />
                     </div>
                     <div>
-                      <strong className="mb-0.5 block text-sm text-slate-800 sm:text-base">เป็นความลับ 100%</strong>
+                      <strong className="mb-0.5 block text-sm text-slate-800 sm:text-base">ข้อมูลเป็นความลับ</strong>
                       <span className="block text-xs leading-relaxed text-slate-500 sm:text-sm">
-                        ข้อมูลของคุณถูกเก็บรักษาอย่างปลอดภัย และเข้าถึงได้เฉพาะผู้ดูแลที่เกี่ยวข้องเท่านั้น
+                        เก็บรักษาอย่างปลอดภัย และเปิดให้เฉพาะผู้ดูแลที่เกี่ยวข้องตามบทบาทเท่านั้น
+                      </span>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:border-transparent sm:bg-transparent sm:p-0">
+                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-100 text-cyan-700 sm:h-8 sm:w-8 sm:bg-cyan-50">
+                      <MessageCircle className="h-5 w-5 sm:h-4 sm:w-4" />
+                    </div>
+                    <div>
+                      <strong className="mb-0.5 block text-sm text-slate-800 sm:text-base">คุยระบายได้ทันที</strong>
+                      <span className="block text-xs leading-relaxed text-slate-500 sm:text-sm">
+                        มีเพื่อนในระบบให้คุยเมื่ออยากมีคนฟัง โดยไม่ต้องรอคิวนัดหมาย
                       </span>
                     </div>
                   </li>
@@ -449,9 +493,9 @@ export default function HomePage() {
                       <HeartHandshake className="h-5 w-5 sm:h-4 sm:w-4" />
                     </div>
                     <div>
-                      <strong className="mb-0.5 block text-sm text-slate-800 sm:text-base">มีคนพร้อมรับฟังเสมอ</strong>
+                      <strong className="mb-0.5 block text-sm text-slate-800 sm:text-base">มีทีมดูแลพร้อมช่วย</strong>
                       <span className="block text-xs leading-relaxed text-slate-500 sm:text-sm">
-                        ทีมอาจารย์ที่ปรึกษาและผู้เชี่ยวชาญพร้อมช่วยเหลือ โดยไม่ตัดสินและเคารพความเป็นตัวคุณ
+                        อาจารย์ที่ปรึกษาและทีมสุขภาพจิตของคณะพร้อมรับเรื่องต่อเมื่อต้องการคนจริง
                       </span>
                     </div>
                   </li>
@@ -462,13 +506,21 @@ export default function HomePage() {
                 <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
                 <div className="pointer-events-none absolute -bottom-16 -left-12 h-40 w-40 rounded-full bg-cyan-300/10 blur-2xl" />
                 <h3 className="relative z-10 mb-3 text-center text-xl font-bold sm:text-left sm:text-2xl">เช็คสุขภาพใจ (9Q)</h3>
-                <p className="relative z-10 mb-8 text-center text-sm leading-relaxed text-blue-200 sm:text-left sm:text-base">
-                  ใช้เวลาเพียง 3 นาที ทำแบบประเมินสั้นๆ เพื่อดูระดับความเสี่ยง และให้ระบบช่วยออกแบบการดูแลที่เหมาะกับคุณ
+                <p className="relative z-10 mb-8 text-center text-sm leading-relaxed text-blue-100 sm:text-left sm:text-base">
+                  ใช้เวลาประมาณ 3 นาที ทำแบบประเมินสั้นๆ เพื่อดูระดับความเสี่ยง และให้ทีมดูแลติดตามต่อได้เมื่อจำเป็น
                 </p>
                 {showGuestActions ? (
                   <button
                     type="button"
-                    onClick={() => openAuthPopup("login")}
+                    onClick={() => goToStudentFeature("/student/assessment")}
+                    className="relative z-10 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-bold text-blue-900 transition-colors hover:bg-slate-50 sm:py-4 sm:text-[15px]"
+                  >
+                    <ClipboardEdit className="h-4 w-4 sm:h-5 sm:w-5" /> เริ่มทำแบบประเมิน
+                  </button>
+                ) : isStudentUser ? (
+                  <button
+                    type="button"
+                    onClick={() => goToStudentFeature("/student/assessment")}
                     className="relative z-10 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-bold text-blue-900 transition-colors hover:bg-slate-50 sm:py-4 sm:text-[15px]"
                   >
                     <ClipboardEdit className="h-4 w-4 sm:h-5 sm:w-5" /> เริ่มทำแบบประเมิน
@@ -486,78 +538,40 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section id="resources" className="relative z-0 bg-slate-50 py-16 sm:py-20">
+        <section id="pathways" className="relative z-0 bg-slate-50 py-16 sm:py-20">
           <div className="mx-auto max-w-[102rem] px-4 sm:px-6 lg:px-8">
             <div className="mb-10 text-center sm:mb-12">
-              <h2 className="mb-3 text-2xl font-bold text-slate-900 sm:text-3xl">ฮีลใจตัวเองเบื้องต้น</h2>
-              <p className="px-2 text-sm text-slate-500 sm:text-base">คอนเทนต์สั้นๆ เพื่อเติมพลังใจในวันที่เหนื่อยล้า</p>
+              <h2 className="mb-3 text-2xl font-bold text-slate-900 sm:text-3xl">เริ่มดูแลใจได้จากตรงนี้</h2>
+              <p className="mx-auto max-w-2xl px-2 text-sm text-slate-500 sm:text-base">
+                แบบประเมิน คุยกับเพื่อนในระบบ หรือติดต่ออาจารย์ที่ปรึกษา — เลือกทางที่ใช่สำหรับวันนี้
+              </p>
             </div>
 
-            <div className="mx-auto grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 md:grid-cols-3">
-              <a
-                href={HEAL_RESOURCE_LINKS.podcast}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md sm:p-6"
-              >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 sm:mb-5 sm:h-12 sm:w-12">
-                  <Headphones className="h-5 w-5 sm:h-6 sm:w-6" />
-                </div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-[11px]">Podcast</span>
-                <h3 className="mb-2 text-base font-bold leading-tight text-slate-800 group-hover:text-blue-700 sm:mb-3 sm:text-lg">
-                  คลิปเสียงฝึกหายใจคลายเครียด
-                </h3>
-                <p className="mt-auto flex items-center gap-1 pt-3 text-xs font-medium text-slate-500 sm:pt-4 sm:text-sm">
-                  ฟังตอนนี้ <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
-                </p>
-              </a>
-
-              <a
-                href={HEAL_RESOURCE_LINKS.article}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md sm:p-6"
-              >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:mb-5 sm:h-12 sm:w-12">
-                  <BookOpen className="h-5 w-5 sm:h-6 sm:w-6" />
-                </div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-[11px]">Article</span>
-                <h3 className="mb-2 text-base font-bold leading-tight text-slate-800 group-hover:text-blue-700 sm:mb-3 sm:text-lg">
-                  เทคนิคหายใจลดความกังวลก่อนเข้าห้องสอบ
-                </h3>
-                <p className="mt-auto flex items-center gap-1 pt-3 text-xs font-medium text-slate-500 sm:pt-4 sm:text-sm">
-                  อ่านบทความ <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
-                </p>
-              </a>
-
-              <a
-                href={HEAL_RESOURCE_LINKS.playlist}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group hidden h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:-translate-y-1 hover:border-blue-300 hover:shadow-md md:flex sm:p-6"
-              >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 sm:mb-5 sm:h-12 sm:w-12">
-                  <Music className="h-5 w-5 sm:h-6 sm:w-6" />
-                </div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-[11px]">Playlist</span>
-                <h3 className="mb-2 text-base font-bold leading-tight text-slate-800 group-hover:text-blue-700 sm:mb-3 sm:text-lg">
-                  เสียงธรรมชาติบำบัด ช่วยให้นอนหลับสบาย
-                </h3>
-                <p className="mt-auto flex items-center gap-1 pt-3 text-xs font-medium text-slate-500 sm:pt-4 sm:text-sm">
-                  ฟังเพลย์ลิสต์ <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4" />
-                </p>
-              </a>
-            </div>
-
-            <div className="mt-8 text-center sm:mt-10">
-              <a
-                href={HEAL_RESOURCE_LINKS.all}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block p-2 text-sm font-bold text-blue-600 underline transition-colors hover:text-blue-800"
-              >
-                ดูเนื้อหาฮีลใจทั้งหมด
-              </a>
+            <div className="mx-auto grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+              {STUDENT_PATHWAYS.map((pathway) => {
+                const Icon = pathway.icon;
+                return (
+                  <button
+                    key={pathway.id}
+                    type="button"
+                    onClick={() => goToStudentFeature(pathway.href)}
+                    className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 text-left transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 sm:p-6"
+                  >
+                    <div
+                      className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl sm:mb-5 sm:h-12 sm:w-12 ${pathway.iconWrap}`}
+                    >
+                      <Icon className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
+                    </div>
+                    <h3 className="mb-2 text-base font-bold leading-tight text-slate-800 group-hover:text-blue-700 sm:mb-3 sm:text-lg">
+                      {pathway.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-slate-500">{pathway.description}</p>
+                    <span className="mt-auto flex items-center gap-1 pt-4 text-sm font-semibold text-blue-700">
+                      {pathway.action} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>

@@ -155,7 +155,7 @@ export function AppointmentsView({
               </div>
             ) : null}
           </div>
-          {appointmentPagination.total > appointmentPagination.rowsPerPage ? (
+          {appointmentPagination.total > 0 ? (
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
               <ListPaginationFooter
                 total={appointmentPagination.total}
@@ -207,7 +207,7 @@ export function AppointmentsView({
               </div>
             ) : null}
           </div>
-          {waitingPagination.total > waitingPagination.rowsPerPage ? (
+          {waitingPagination.total > 0 ? (
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
               <ListPaginationFooter
                 total={waitingPagination.total}
@@ -241,7 +241,7 @@ export function AppointmentsView({
             {showHistory ? "ซ่อน" : "ดูประวัติ"}
           </button>
         </div>
-        <p className="mt-2 text-sm text-slate-600">พบแล้ว · ไม่มาตามนัด · ยกเลิก — แยกไว้ไม่ให้ปนกับนัดที่รอพบ</p>
+        <p className="mt-2 text-sm text-slate-600">นัดที่พบแล้ว ไม่มาตามนัด หรือยกเลิก</p>
 
         {showHistory ? (
           <div className="mt-4 space-y-3">
@@ -272,7 +272,7 @@ export function AppointmentsView({
                 ยังไม่มีประวัตินัด
               </div>
             ) : null}
-            {historyPagination.total > historyPagination.rowsPerPage ? (
+            {historyPagination.total > 0 ? (
               <div className="overflow-hidden rounded-2xl border border-slate-200">
                 <ListPaginationFooter
                   total={historyPagination.total}

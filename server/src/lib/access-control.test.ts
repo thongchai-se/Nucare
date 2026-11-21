@@ -25,14 +25,36 @@ describe("isAdvisorRole", () => {
 });
 
 describe("canAccessStudent", () => {
-  it("AC-02 allows ADMIN and MENTAL_HEALTH without assignment lookup", async () => {
+  it("AC-02 allows ADMIN without assignment lookup; MH needs counseling access", async () => {
     const store = createStore({
       findActiveAdvisorAssignment: async () => {
-        throw new Error("should not query assignments for admin/mh");
+        throw new Error("should not query assignments for admin");
       },
+      resolveMentalHealthStudentAccess: async () => "none",
     });
     assert.equal(await canAccessStudent(Role.ADMIN, "admin-1", "student-1", store), true);
-    assert.equal(await canAccessStudent(Role.MENTAL_HEALTH, "mh-1", "student-1", store), true);
+    assert.equal(await canAccessStudent(Role.MENTAL_HEALTH, "mh-1", "student-1", store), false);
+  });
+
+  it("AC-02b MENTAL_HEALTH allowed only when access level is triage or clinical", async () => {
+    assert.equal(
+      await canAccessStudent(
+        Role.MENTAL_HEALTH,
+        "mh-1",
+        "student-1",
+        createStore({ resolveMentalHealthStudentAccess: async () => "triage" })
+      ),
+      true
+    );
+    assert.equal(
+      await canAccessStudent(
+        Role.MENTAL_HEALTH,
+        "mh-1",
+        "student-1",
+        createStore({ resolveMentalHealthStudentAccess: async () => "clinical" })
+      ),
+      true
+    );
   });
 
   it("AC-03 allows ADVISOR only when an active assignment exists", async () => {
@@ -118,9 +140,27 @@ describe("getStudentScopeWhere", () => {
     });
   });
 
-  it("AC-09 mental health sees all active students", async () => {
-    const where = await getStudentScopeWhere(Role.MENTAL_HEALTH, "mh-1", createStore());
+  it("AC-09 mental health scopes to accessible counseling students only", async () => {
+    const where = await getStudentScopeWhere(
+      Role.MENTAL_HEALTH,
+      "mh-1",
+      createStore({ listMentalHealthStudentIds: async () => ["s1", "s2"] })
+    );
     assert.deepEqual(where, {
+      id: { in: ["s1", "s2"] },
+      role: Role.STUDENT,
+      isActive: true,
+    });
+  });
+
+  it("AC-09b mental health with empty counseling scope uses sentinel", async () => {
+    const where = await getStudentScopeWhere(
+      Role.MENTAL_HEALTH,
+      "mh-empty",
+      createStore({ listMentalHealthStudentIds: async () => [] })
+    );
+    assert.deepEqual(where, {
+      id: { in: ["__no_student_scope__"] },
       role: Role.STUDENT,
       isActive: true,
     });

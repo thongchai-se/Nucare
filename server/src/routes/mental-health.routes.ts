@@ -13,6 +13,10 @@ import {
   updateReferralStatus,
 } from "../controllers/mental-health.controller";
 import { getMentalHealthAssessmentHistory } from "../controllers/assessment-history.controller";
+import {
+  acceptStudentMentalHealthScheduleOffer,
+  createMentalHealthScheduleOffer,
+} from "../controllers/mental-health-schedule.controller";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware";
 import { consultationRequestRateLimit } from "../middleware/rate-limit.middleware";
 
@@ -25,6 +29,16 @@ router.get("/students/:studentUserId/history", getMentalHealthStudentHistoryDeta
 router.get("/students/:studentUserId/assessment-history", getMentalHealthAssessmentHistory);
 router.get("/referrals/:referralId/history", getMentalHealthReferralHistoryDetail);
 router.patch("/referrals/:referralId/status", updateReferralStatus);
+router.post(
+  "/referrals/:referralId/schedule-offers",
+  consultationRequestRateLimit,
+  createMentalHealthScheduleOffer
+);
+router.post(
+  "/referrals/:referralId/schedule-offers/:offerId/accept",
+  consultationRequestRateLimit,
+  acceptStudentMentalHealthScheduleOffer
+);
 router.patch("/emergency-cases/:caseId/status", updateEmergencyCaseStatus);
 router.post("/care-records", createSpecializedCareRecord);
 router.post("/appointments", consultationRequestRateLimit, createMentalHealthAppointment);

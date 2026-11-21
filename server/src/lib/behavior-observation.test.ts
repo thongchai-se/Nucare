@@ -8,7 +8,7 @@ import {
 
 describe("behavior observation limits", () => {
   it("keeps student search bounded for advisor directory lookups", () => {
-    assert.equal(OBSERVATION_STUDENT_SEARCH_MAX, 50);
+    assert.equal(OBSERVATION_STUDENT_SEARCH_MAX, 20);
     assert.ok(OBSERVATION_STUDENT_SEARCH_MAX <= 100);
   });
 

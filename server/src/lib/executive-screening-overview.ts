@@ -272,6 +272,7 @@ export async function buildExecutiveScreeningOverview(input?: {
   const requestedInstrument = input?.instrumentCode?.trim() || SurveyInstrumentCode.GHQ28;
   const now = new Date();
 
+  // โหลดเมตาคลื่นก่อน — ดึง responses เฉพาะคลื่นของเครื่องมือที่เลือก
   const waves = await prisma.surveyWave.findMany({
     where: {
       survey: {
@@ -290,17 +291,6 @@ export async function buildExecutiveScreeningOverview(input?: {
       assignments: {
         select: {
           completedAt: true,
-        },
-      },
-      responses: {
-        select: {
-          totalScore: true,
-          riskLevel: true,
-          student: {
-            select: {
-              studyYear: true,
-            },
-          },
         },
       },
     },
@@ -357,6 +347,35 @@ export async function buildExecutiveScreeningOverview(input?: {
     return wave.surveyId === requestedInstrument;
   });
 
+  const instrumentWaveIds = instrumentWaves.map((wave) => wave.id);
+  const responseRows =
+    instrumentWaveIds.length === 0
+      ? []
+      : await prisma.surveyResponse.findMany({
+          where: { waveId: { in: instrumentWaveIds } },
+          select: {
+            waveId: true,
+            totalScore: true,
+            riskLevel: true,
+            student: {
+              select: {
+                studyYear: true,
+              },
+            },
+          },
+        });
+
+  const responsesByWaveId = new Map<string, ResponseFixture[]>();
+  for (const row of responseRows) {
+    const list = responsesByWaveId.get(row.waveId) ?? [];
+    list.push({
+      totalScore: row.totalScore,
+      riskLevel: row.riskLevel,
+      studyYear: row.student.studyYear,
+    });
+    responsesByWaveId.set(row.waveId, list);
+  }
+
   const rounds = instrumentWaves.map((wave) =>
     buildScreeningOverviewRoundPoint(
       {
@@ -369,11 +388,7 @@ export async function buildExecutiveScreeningOverview(input?: {
         surveyTitle: wave.survey.title,
         instrumentCode: resolveEffectiveInstrumentCode(wave.survey),
         assignments: wave.assignments,
-        responses: wave.responses.map((response) => ({
-          totalScore: response.totalScore,
-          riskLevel: response.riskLevel,
-          studyYear: response.student.studyYear,
-        })),
+        responses: responsesByWaveId.get(wave.id) ?? [],
       },
       now
     )

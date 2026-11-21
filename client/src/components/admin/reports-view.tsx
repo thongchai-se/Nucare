@@ -36,12 +36,11 @@ type ReportsViewProps = {
   loading: boolean;
   summary: AdminReportsSummary | null;
   error: string | null;
-  onRefresh: () => void;
   onOpenAudit: () => void;
 };
 
 /** หน้ารายงานแอดมิน: สถิติแบบไม่ระบุตัวตนและลิงก์ไป audit/แบบประเมิน */
-export function ReportsView({ loading, summary, error, onRefresh, onOpenAudit }: ReportsViewProps) {
+export function ReportsView({ loading, summary, error, onOpenAudit }: ReportsViewProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -51,13 +50,6 @@ export function ReportsView({ loading, summary, error, onRefresh, onOpenAudit }:
             สรุปภาพรวมแบบไม่ระบุตัวตน เชื่อมกับ audit export และหน้าแบบประเมิน
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
-        >
-          รีเฟรชสรุป
-        </button>
       </div>
 
       {error ? <InlineAlert className="rounded-2xl">{error}</InlineAlert> : null}

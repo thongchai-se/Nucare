@@ -23,8 +23,16 @@ describe("isActiveReferralStatus", () => {
   });
 
   it("conflict message matches status", () => {
-    assert.match(activeReferralConflictMessage(ReferralStatus.PENDING), /รอรับ/);
+    assert.match(activeReferralConflictMessage(ReferralStatus.PENDING), /รอรับเคส/);
     assert.match(activeReferralConflictMessage(ReferralStatus.ACCEPTED), /กำลังดูแล/);
+    assert.match(
+      activeReferralConflictMessage(ReferralStatus.PENDING, ReferralTarget.STUDENT_DEVELOPMENT),
+      /รอประสานงาน/
+    );
+    assert.match(
+      activeReferralConflictMessage(ReferralStatus.ACCEPTED, ReferralTarget.STUDENT_DEVELOPMENT),
+      /กำลังประสานงาน/
+    );
   });
 });
 

@@ -1,0 +1,255 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
+import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import api from "@/lib/axios";
+import { getApiErrorMessage } from "@/lib/api-error";
+import { formatThaiDateTime } from "@/lib/student-dashboard";
+import { scheduleDatetimeInputMin } from "@/lib/schedule-datetime";
+import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SCHEDULE_COMPACT, UI_BUTTON_PRIMARY, UI_BUTTON_GHOST } from "@/lib/ui-classes";
+
+export type StudentMentalHealthScheduleOffer = {
+  id: string;
+  referralId: string;
+  proposedAt: string;
+  location: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  proposedById: string;
+  proposedByName: string;
+  proposedByRole: "MENTAL_HEALTH" | "STUDENT";
+  waitingOn: "MENTAL_HEALTH" | "STUDENT" | null;
+};
+
+export type StudentOpenCounselingReferral = {
+  id: string;
+  status: string;
+  reason: string;
+  createdAt: string;
+  provider: { id: string; name: string } | null;
+  latestPendingScheduleOffer: StudentMentalHealthScheduleOffer | null;
+  scheduleOffers: StudentMentalHealthScheduleOffer[];
+};
+
+type MentalHealthScheduleActionsProps = {
+  referral: StudentOpenCounselingReferral;
+  onUpdated: (referral: StudentOpenCounselingReferral) => void;
+  onError: (message: string) => void;
+  onToast: (title: string, description?: string) => void;
+};
+
+/** ยอมรับ/ขอเปลี่ยนนัดกับผู้เชี่ยวชาญ — รูปแบบเดียวกับตกลงนัดที่ปรึกษา */
+export function MentalHealthScheduleActions({
+  referral,
+  onUpdated,
+  onError,
+  onToast,
+}: MentalHealthScheduleActionsProps) {
+  const [busy, setBusy] = useState(false);
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [proposedAtLocal, setProposedAtLocal] = useState("");
+  const [location, setLocation] = useState("");
+  const [note, setNote] = useState("");
+
+  const pendingOffer = referral.latestPendingScheduleOffer;
+  const waitingOnStudent = Boolean(pendingOffer && pendingOffer.waitingOn === "STUDENT");
+  const waitingOnExpert = Boolean(pendingOffer && pendingOffer.waitingOn === "MENTAL_HEALTH");
+
+  if (referral.status !== "ACCEPTED") {
+    return null;
+  }
+
+  const refreshReferral = async () => {
+    const response = await api.get<{
+      openCounselingReferral: StudentOpenCounselingReferral | null;
+    }>("/api/student/dashboard");
+    if (response.data.openCounselingReferral) {
+      onUpdated(response.data.openCounselingReferral);
+    }
+  };
+
+  const handleAccept = async (offer: StudentMentalHealthScheduleOffer) => {
+    setBusy(true);
+    onError("");
+    try {
+      await api.post(
+        `/api/student/mental-health-referrals/${referral.id}/schedule-offers/${offer.id}/accept`
+      );
+      await refreshReferral();
+      onToast("ยืนยันนัดแล้ว", "นัดถูกบันทึกแล้ว");
+    } catch (error) {
+      onError(getApiErrorMessage(error, "ไม่สามารถยอมรับข้อเสนอได้"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCounterSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!proposedAtLocal.trim() || !location.trim()) {
+      onError("กรุณาใส่วันเวลาและสถานที่");
+      return;
+    }
+    const proposedAt = new Date(proposedAtLocal);
+    if (Number.isNaN(proposedAt.getTime())) {
+      onError("วันเวลานัดไม่ถูกต้อง");
+      return;
+    }
+
+    setBusy(true);
+    onError("");
+    try {
+      await api.post(`/api/student/mental-health-referrals/${referral.id}/schedule-offers`, {
+        proposedAt: proposedAt.toISOString(),
+        location: location.trim(),
+        note: note.trim() || undefined,
+      });
+      await refreshReferral();
+      setCounterOpen(false);
+      setProposedAtLocal("");
+      setNote("");
+      onToast("ส่งข้อเสนอแล้ว", "รอผู้เชี่ยวชาญตอบ");
+    } catch (error) {
+      onError(getApiErrorMessage(error, "ไม่สามารถส่งข้อเสนอได้"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-3">
+      {pendingOffer ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <p className="font-semibold text-slate-800">
+            ข้อเสนอจาก {pendingOffer.proposedByRole === "MENTAL_HEALTH" ? pendingOffer.proposedByName : "คุณ"}
+          </p>
+          <p className="mt-1">
+            {formatThaiDateTime(pendingOffer.proposedAt)} · {pendingOffer.location}
+          </p>
+          {pendingOffer.note ? <p className="mt-1 line-clamp-3 text-slate-500">{pendingOffer.note}</p> : null}
+          <p className="mt-1 font-medium text-[#C24712]">
+            {waitingOnStudent
+              ? "รอคุณยอมรับหรือขอเปลี่ยน"
+              : waitingOnExpert
+                ? "รอผู้เชี่ยวชาญตอบกลับ"
+                : "รออีกฝ่ายตอบกลับ"}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs font-medium text-slate-500">รอผู้เชี่ยวชาญเสนอนัด</p>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {waitingOnStudent && pendingOffer ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleAccept(pendingOffer)}
+            className={UI_ACTION_PRIMARY_COMPACT}
+          >
+            <ConfirmSubmitLabel busy={busy}>ยอมรับข้อเสนอ</ConfirmSubmitLabel>
+          </button>
+        ) : null}
+
+        {waitingOnStudent || waitingOnExpert ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setLocation(pendingOffer?.location || "");
+              setCounterOpen(true);
+            }}
+            className={UI_ACTION_SCHEDULE_COMPACT}
+          >
+            {waitingOnExpert ? "แก้ไขข้อเสนอ" : "ขอเปลี่ยนวัน/ที่"}
+          </button>
+        ) : null}
+      </div>
+
+      {counterOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[10000] grid place-items-center bg-slate-900/50 p-4">
+              <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">
+                      {waitingOnExpert ? "แก้ไขข้อเสนอ" : "ขอเปลี่ยนวัน/สถานที่"}
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">ส่งข้อเสนอให้ผู้เชี่ยวชาญพิจารณา</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCounterOpen(false)}
+                    className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100"
+                    aria-label="ปิด"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <form onSubmit={handleCounterSubmit} className="space-y-4 p-5">
+                  <div className="space-y-1">
+                    <label htmlFor={`mh-counter-at-${referral.id}`} className="text-xs font-bold text-slate-700">
+                      วันเวลาที่สะดวก
+                    </label>
+                    <input
+                      id={`mh-counter-at-${referral.id}`}
+                      type="datetime-local"
+                      required
+                      min={scheduleDatetimeInputMin()}
+                      value={proposedAtLocal}
+                      onChange={(event) => setProposedAtLocal(event.target.value)}
+                      disabled={busy}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor={`mh-counter-loc-${referral.id}`} className="text-xs font-bold text-slate-700">
+                      สถานที่
+                    </label>
+                    <input
+                      id={`mh-counter-loc-${referral.id}`}
+                      type="text"
+                      required
+                      maxLength={200}
+                      value={location}
+                      onChange={(event) => setLocation(event.target.value)}
+                      disabled={busy}
+                      placeholder="เช่น ห้อง 9525 หรือออนไลน์"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor={`mh-counter-note-${referral.id}`} className="text-xs font-bold text-slate-700">
+                      หมายเหตุ (ถ้ามี)
+                    </label>
+                    <textarea
+                      id={`mh-counter-note-${referral.id}`}
+                      rows={3}
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                      disabled={busy}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
+                    <button type="button" onClick={() => setCounterOpen(false)} className={UI_BUTTON_GHOST}>
+                      ยกเลิก
+                    </button>
+                    <button type="submit" disabled={busy} className={UI_BUTTON_PRIMARY}>
+                      <ConfirmSubmitLabel busy={busy}>
+                        {busy ? "กำลังส่ง..." : "ส่งข้อเสนอ"}
+                      </ConfirmSubmitLabel>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+}

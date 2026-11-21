@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { canAccessStudent } from "./access-control";
 import { stripSeedMarkers } from "./history-display";
+import { referralTargetLabel } from "./referral-labels";
 import {
   getSensitiveStudentCard,
   type SensitiveStudentCard,
@@ -59,6 +60,14 @@ export type ExecutiveAssessmentSnapshot = {
   riskLevel: ReturnType<typeof normalizeRiskLevel>;
 };
 
+export type ExecutiveSpecializedCareNote = {
+  id: string;
+  sessionDate: string;
+  summary: string;
+  interventionPlan: string;
+  providerName: string;
+};
+
 export type ExecutiveStudentDossierPayload = {
   student: SensitiveStudentCard;
   consultationByTeacher: ExecutiveConsultationByTeacher[];
@@ -90,6 +99,8 @@ export type ExecutiveStudentDossierPayload = {
     }>;
   };
   assessments: ExecutiveAssessmentSnapshot[];
+  /** บันทึกเฉพาะทาง (summary/plan) — ไม่รวมหมายเหตุคลินิกลับ */
+  specializedCareNotes: ExecutiveSpecializedCareNote[];
   activity: ExecutiveDossierActivityItem[];
 };
 
@@ -143,17 +154,6 @@ type AssessmentAggRow = {
   riskLevel: RiskLevel;
 };
 
-const referralTargetLabel = (target: ReferralTarget): string => {
-  switch (target) {
-    case ReferralTarget.COUNSELING_CENTER:
-      return "ศูนย์ให้คำปรึกษา / สุขภาพจิต";
-    case ReferralTarget.STUDENT_DEVELOPMENT:
-      return "พัฒนานักศึกษา";
-    default:
-      return target;
-  }
-};
-
 const consultationStatusLabel = (status: ConsultationRequestStatus): string => {
   switch (status) {
     case ConsultationRequestStatus.PENDING:
@@ -176,11 +176,11 @@ const consultationStatusLabel = (status: ConsultationRequestStatus): string => {
 const referralStatusLabel = (status: ReferralStatus): string => {
   switch (status) {
     case ReferralStatus.PENDING:
-      return "รอรับ";
+      return "รอรับเคส";
     case ReferralStatus.ACCEPTED:
-      return "รับแล้ว";
+      return "กำลังดูแล";
     case ReferralStatus.CLOSED:
-      return "ปิดแล้ว";
+      return "ปิดเคสแล้ว";
     default:
       return status;
   }
@@ -411,8 +411,16 @@ export async function getExecutiveStudentDossier(
     return "forbidden";
   }
 
-  const [consultations, referrals, cares, behaviors, emergencies, surveyResponses, legacyAssessments] =
-    await Promise.all([
+  const [
+    consultations,
+    referrals,
+    cares,
+    specializedCares,
+    behaviors,
+    emergencies,
+    surveyResponses,
+    legacyAssessments,
+  ] = await Promise.all([
       db.consultationRequest.findMany({
         where: { studentId: studentUserId },
         select: {
@@ -449,6 +457,18 @@ export async function getExecutiveStudentDossier(
           advisor: { select: { name: true } },
         },
         orderBy: { careDate: "desc" },
+        take: 30,
+      }),
+      db.specializedCareRecord.findMany({
+        where: { studentId: studentUserId },
+        select: {
+          id: true,
+          sessionDate: true,
+          summary: true,
+          interventionPlan: true,
+          mentalHealthUser: { select: { name: true } },
+        },
+        orderBy: { sessionDate: "desc" },
         take: 30,
       }),
       db.behaviorRecord.findMany({
@@ -528,12 +548,30 @@ export async function getExecutiveStudentDossier(
     resolvedAt: row.resolvedAt,
   }));
 
-  const careRows: CareAggRow[] = cares.map((row) => ({
+  const careRows: CareAggRow[] = [
+    ...cares.map((row) => ({
+      id: row.id,
+      careDate: row.careDate,
+      careType: row.careType,
+      topic: row.topic,
+      advisorName: row.advisor.name,
+    })),
+    ...specializedCares.map((row) => ({
+      id: row.id,
+      careDate: row.sessionDate,
+      careType: "บันทึกเฉพาะทาง",
+      topic: "มีบันทึกเฉพาะทาง (เนื้อหาจำกัดสิทธิ์)",
+      advisorName: row.mentalHealthUser.name,
+    })),
+  ];
+
+  /** ผู้บริหารเห็นเฉพาะ metadata — ไม่ส่ง summary/plan คลินิกเต็ม */
+  const specializedCareNotes: ExecutiveSpecializedCareNote[] = specializedCares.map((row) => ({
     id: row.id,
-    careDate: row.careDate,
-    careType: row.careType,
-    topic: row.topic,
-    advisorName: row.advisor.name,
+    sessionDate: row.sessionDate.toISOString(),
+    summary: "มีบันทึกเฉพาะทาง (เนื้อหาจำกัดสิทธิ์)",
+    interventionPlan: "",
+    providerName: row.mentalHealthUser.name,
   }));
 
   const behaviorRows: BehaviorAggRow[] = behaviors.map((row) => ({
@@ -577,6 +615,7 @@ export async function getExecutiveStudentDossier(
       instrument: row.instrument,
       riskLevel: normalizeRiskLevel(row.riskLevel),
     })),
+    specializedCareNotes,
     activity: buildExecutiveActivityTimeline({
       consultations: consultationRows,
       referrals: referralRows,

@@ -6,7 +6,7 @@ import {
 } from "./student-development-pending";
 
 describe("student-development pending screening", () => {
-  it("SDP-01 มี assignment คลื่นเปิดถือว่าค้างแม้เคยประเมินแล้ว", () => {
+  it("SDP-01 มี assignment คลื่นเปิดที่ยังไม่ทำ ถือว่าค้าง", () => {
     assert.equal(
       isStudentDevelopmentPendingAssessment({
         surveyAssignments: [{ id: "a1" }],
@@ -17,14 +17,14 @@ describe("student-development pending screening", () => {
     );
   });
 
-  it("SDP-02 ไม่มีผลประเมินเลยถือว่าค้าง", () => {
+  it("SDP-02 ไม่มี assignment เปิด ไม่ถือว่าค้าง แม้ยังไม่มีผลประเมิน", () => {
     assert.equal(
       isStudentDevelopmentPendingAssessment({
         surveyAssignments: [],
         surveyResponses: [],
         studentAssessments: [],
       }),
-      true
+      false
     );
   });
 

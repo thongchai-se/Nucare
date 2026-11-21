@@ -13,17 +13,20 @@ import {
 } from "./consultation-channels";
 
 describe("consultation-channels", () => {
-  it("จำกัดช่องทางที่นิสิตเลือกได้แค่ออนไลน์กับพบตัว", () => {
-    assert.deepEqual(Object.keys(studentRequestChannelOptions()).sort(), ["IN_PERSON", "ONLINE"]);
+  it("จำกัดช่องทางที่นิสิตเลือกได้แค่ออนไลน์และออนไซต์", () => {
+    assert.deepEqual(Object.keys(studentRequestChannelOptions()).sort(), [
+      "IN_PERSON",
+      "ONLINE",
+    ]);
     assert.equal(isStudentRequestChannel("ONLINE"), true);
     assert.equal(isStudentRequestChannel("IN_PERSON"), true);
-    assert.equal(isStudentRequestChannel("PHONE"), false);
     assert.equal(isStudentRequestChannel("MESSAGE"), false);
+    assert.equal(isStudentRequestChannel("PHONE"), false);
   });
 
   it("ป้ายและ placeholder สถานที่ตามช่องทาง", () => {
     assert.equal(consultationChannelLabel(ConsultationPreferredChannel.ONLINE), "ออนไลน์");
-    assert.equal(consultationChannelLabel(ConsultationPreferredChannel.IN_PERSON), "พบตัว / ที่คณะ");
+    assert.equal(consultationChannelLabel(ConsultationPreferredChannel.IN_PERSON), "ออนไซต์");
     assert.match(
       scheduleLocationPlaceholder(ConsultationPreferredChannel.ONLINE),
       /Teams|Zoom/
@@ -49,5 +52,19 @@ describe("consultation-channels", () => {
     assert.equal(canAdvisorDirectCancelConsultation(ConsultationRequestStatus.SCHEDULED), false);
     assert.equal(canAdvisorCloseCompletedConsultation(ConsultationRequestStatus.SCHEDULED), true);
     assert.equal(canAdvisorCloseCompletedConsultation(ConsultationRequestStatus.PENDING), false);
+    assert.equal(
+      canAdvisorCloseCompletedConsultation(
+        ConsultationRequestStatus.ACCEPTED,
+        ConsultationPreferredChannel.MESSAGE
+      ),
+      true
+    );
+    assert.equal(
+      canAdvisorCloseCompletedConsultation(
+        ConsultationRequestStatus.PENDING,
+        ConsultationPreferredChannel.MESSAGE
+      ),
+      false
+    );
   });
 });

@@ -12,6 +12,7 @@ import {
   countEligibleStudents,
   filterEligibleStudentIds,
   isStudentEligibleForAudience,
+  resolveEligibilityLoadFlags,
   type AudienceConfig,
   type EligibilityRuleInput,
 } from "./survey-eligibility";
@@ -44,8 +45,19 @@ export function toEligibilityRuleInput(rule: {
   };
 }
 
-/** โหลดโปรไฟล์นักศึกษาทั้งหมดแบบ batch สำหรับประเมินสิทธิ์ — O(n) */
-export async function loadAllStudentEligibilityProfiles(db: Tx = prisma) {
+type LoadEligibilityProfilesOptions = {
+  needPriorRisk?: boolean;
+  needWellness?: boolean;
+};
+
+/** โหลดโปรไฟล์นักศึกษาแบบ batch — ดึงความเสี่ยงล่าสุดต่อคนเท่านั้นเมื่อกฎต้องการ */
+export async function loadAllStudentEligibilityProfiles(
+  db: Tx = prisma,
+  options: LoadEligibilityProfilesOptions = {}
+) {
+  const needPriorRisk = options.needPriorRisk ?? true;
+  const needWellness = options.needWellness ?? true;
+
   const students = await db.user.findMany({
     where: {
       role: Role.STUDENT,
@@ -65,31 +77,39 @@ export async function loadAllStudentEligibilityProfiles(db: Tx = prisma) {
   const studentIds = students.map((student) => student.id);
 
   const [surveyRisks, assessmentRisks, wellness] = await Promise.all([
-    db.surveyResponse.findMany({
-      where: { studentId: { in: studentIds } },
-      select: {
-        studentId: true,
-        riskLevel: true,
-        submittedAt: true,
-      },
-      orderBy: { submittedAt: "desc" },
-    }),
-    db.studentAssessment.findMany({
-      where: { studentId: { in: studentIds } },
-      select: {
-        studentId: true,
-        riskLevel: true,
-        assessedAt: true,
-      },
-      orderBy: { assessedAt: "desc" },
-    }),
-    db.studentWellnessTrendSummary.findMany({
-      where: { studentId: { in: studentIds } },
-      select: {
-        studentId: true,
-        signalCode: true,
-      },
-    }),
+    needPriorRisk
+      ? db.surveyResponse.findMany({
+          where: { studentId: { in: studentIds } },
+          select: {
+            studentId: true,
+            riskLevel: true,
+            submittedAt: true,
+          },
+          orderBy: [{ studentId: "asc" }, { submittedAt: "desc" }],
+          distinct: ["studentId"],
+        })
+      : Promise.resolve([]),
+    needPriorRisk
+      ? db.studentAssessment.findMany({
+          where: { studentId: { in: studentIds } },
+          select: {
+            studentId: true,
+            riskLevel: true,
+            assessedAt: true,
+          },
+          orderBy: [{ studentId: "asc" }, { assessedAt: "desc" }],
+          distinct: ["studentId"],
+        })
+      : Promise.resolve([]),
+    needWellness
+      ? db.studentWellnessTrendSummary.findMany({
+          where: { studentId: { in: studentIds } },
+          select: {
+            studentId: true,
+            signalCode: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   return buildEligibilityProfiles({
@@ -113,7 +133,11 @@ export async function previewEligibilityCount(input: {
   audienceType: SurveyAudienceType;
   rule: EligibilityRuleInput | null;
 }): Promise<number> {
-  const profiles = await loadAllStudentEligibilityProfiles();
+  const flags = resolveEligibilityLoadFlags({
+    audienceType: input.audienceType,
+    rule: input.rule,
+  });
+  const profiles = await loadAllStudentEligibilityProfiles(prisma, flags);
   return countEligibleStudents(profiles, {
     audienceType: input.audienceType,
     rule: input.rule,
@@ -128,7 +152,11 @@ export async function syncWaveAssignments(input: {
   db?: Tx;
 }): Promise<{ assignedCount: number }> {
   const db = input.db ?? prisma;
-  const profiles = await loadAllStudentEligibilityProfiles(db);
+  const flags = resolveEligibilityLoadFlags({
+    audienceType: input.audienceType,
+    rule: input.rule,
+  });
+  const profiles = await loadAllStudentEligibilityProfiles(db, flags);
   const eligibleIds = filterEligibleStudentIds(profiles, {
     audienceType: input.audienceType,
     rule: input.rule,

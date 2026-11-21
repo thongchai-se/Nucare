@@ -812,7 +812,7 @@ export default function ImportStaffPage() {
 
       if (mergedCreated.length > 0) {
         setServerNotice(
-          "ดาวน์โหลดไฟล์รหัสผ่านชั่วคราวแล้ว — ส่งให้ผู้ใช้ครั้งเดียวและแนะนำให้เปลี่ยนรหัสผ่านทันที"
+          "ดาวน์โหลดไฟล์รหัสผ่านชั่วคราวแล้ว — ส่งให้ผู้ใช้ครั้งเดียวและเก็บรักษาเป็นความลับ"
         );
       }
       setSuccessImportedCount(totalCreated);
@@ -872,11 +872,11 @@ export default function ImportStaffPage() {
       userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
-        className={`fixed inset-0 z-[220] flex items-center justify-center overflow-hidden bg-slate-950/35 p-3 transition-all duration-300 ease-out sm:p-4 ${
+        className={`fixed inset-0 z-[220] flex items-center justify-center overflow-hidden bg-slate-900/45 p-4 transition-all duration-300 ease-out sm:p-6 ${
           showImportSuccessModal ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
         }`}
       >
-        <div className="flex flex-col items-center gap-5 rounded-[2rem] border border-gray-100 bg-white/95 px-10 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-5 rounded-2xl bg-white px-10 py-8 text-center shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)]">
           <svg
             key={successAnimationKey}
             className="checkmark"
@@ -930,7 +930,7 @@ export default function ImportStaffPage() {
                     </InlineAlert>
                     <InlineAlert tone="success" className="mb-4 rounded-lg px-3 py-2">
                       บัญชีบุคลากรใหม่จะได้ <span className="font-semibold">รหัสผ่านชั่วคราวแบบสุ่ม</span> ในผลลัพธ์หลังนำเข้า
-                      และระบบจะบังคับเปลี่ยนรหัสผ่านเมื่อเข้าสู่ระบบครั้งแรก
+                      (ใช้เข้าสู่ระบบจนกว่าจะเชื่อม SSO)
                     </InlineAlert>
 
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs sm:hidden">
@@ -1029,7 +1029,7 @@ export default function ImportStaffPage() {
                   )}
                 </div>
 
-                <div className="mt-8 flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
+                <div className="mt-8 flex flex-col-reverse items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                   <button
                     type="button"
                     onClick={removeFile}
@@ -1234,7 +1234,7 @@ export default function ImportStaffPage() {
                 </table>
               </div>
 
-              <div className="flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-col-reverse items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                 <button
                   type="button"
                   onClick={removeFile}

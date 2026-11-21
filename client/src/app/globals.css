@@ -71,14 +71,17 @@
 }
 
 .loader {
-    
-    
     border-radius: 50%;
     display: inline-block;
     border-top: 3px solid currentColor;
     border-right: 3px solid transparent;
     box-sizing: border-box;
     animation: rotation 1s linear infinite;
+}
+
+/* ขอบขวาแถบเมนู staff — เต็มความสูงจอจากบนสุดถึงล่าง */
+.staff-sidebar-edge {
+  border-right: 1px solid #e2e8f0; /* slate-200 */
 }
 
 @keyframes hero-rise {
@@ -139,4 +142,5 @@
     filter: blur(0);
   }
 }
+
 

@@ -15,10 +15,11 @@ export interface User {
   email: string | null;
   studyYear: number | null;
   section: string | null;
+  phone: string | null;
+  guardianPhone: string | null;
   role: Role;
   roles: Role[];
   image: string | null;
-  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -255,6 +255,7 @@ export function ExecutiveScreeningOverviewCharts({ yearFilter }: ExecutiveScreen
           <MultiSeriesLineChart
             labels={data?.series.labels ?? []}
             series={chartSeries}
+            height={400}
             yLabel={overlayMode === "metrics" ? "เมตริกภาพรวม" : metricLabel}
             emptyMessage="ยังไม่มีรอบประเมินของเครื่องมือนี้ — เมื่อเปิดรอบและมีคำตอบ กราฟจะแสดงที่นี่"
           />

@@ -170,6 +170,8 @@ docker ps --format '{{.Names}}\t{{.Ports}}'
 
 ## 7) Backup ฐานข้อมูล
 
+รายละเอียดครบ (ความถี่, ปิดปรับปรุง, แอดมิน 2 คน, survey backup): ดู [faculty-backup-runbook.md](./faculty-backup-runbook.md)
+
 ```bash
 mkdir -p backups
 docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml exec -T db \

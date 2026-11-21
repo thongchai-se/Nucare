@@ -46,7 +46,7 @@ const CONSULTATION_STATUS_LABEL: Record<string, string> = {
 };
 
 const REFERRAL_STATUS_LABEL: Record<string, string> = {
-  PENDING: "รอผู้เชี่ยวชาญรับเคส",
+  PENDING: "รอรับเคส",
   ACCEPTED: "กำลังดูแล",
   CLOSED: "ปิดเคสแล้ว",
 };

@@ -1,6 +1,6 @@
 import { ConsultationPreferredChannel, ConsultationRequestStatus } from "@prisma/client";
 
-/** ช่องทางที่นิสิตเลือกตอนส่งคำขอ — แค่ออนไลน์หรือพบตัว */
+/** ช่องทางที่นิสิตเลือกตอนส่งคำขอ — แค่ออนไลน์หรือออนไซต์ (ทักสั้นแยกเมนูข้อความ) */
 export const STUDENT_REQUEST_CHANNELS = [
   ConsultationPreferredChannel.ONLINE,
   ConsultationPreferredChannel.IN_PERSON,
@@ -10,12 +10,12 @@ export type StudentRequestChannel = (typeof STUDENT_REQUEST_CHANNELS)[number];
 
 const channelLabels: Record<ConsultationPreferredChannel, string> = {
   ONLINE: "ออนไลน์",
-  IN_PERSON: "พบตัว / ที่คณะ",
+  IN_PERSON: "ออนไซต์",
   PHONE: "โทรศัพท์",
   MESSAGE: "ข้อความในระบบ",
 };
 
-/** ป้ายช่องทางสำหรับแสดงผล (รองรับค่าเก่าในฐานข้อมูล) */
+/** ป้ายช่องทางสำหรับแสดงผล (รองรับค่าเก่าในฐานข้อมูล รวม MESSAGE) */
 export function consultationChannelLabel(channel: ConsultationPreferredChannel): string {
   return channelLabels[channel];
 }
@@ -40,6 +40,10 @@ export function isStudentRequestChannel(value: string): value is StudentRequestC
 export function scheduleLocationPlaceholder(channel: ConsultationPreferredChannel): string {
   if (channel === ConsultationPreferredChannel.ONLINE) {
     return "เช่น Microsoft Teams / Zoom พร้อมลิงก์";
+  }
+  if (channel === ConsultationPreferredChannel.MESSAGE) {
+    // ค่าเก่าในฐานข้อมูล — ไม่เปิดเลือกใหม่แล้ว
+    return "แชทในระบบ NUCare (ไม่ต้องกรอกลิงก์)";
   }
   return "เช่น ห้องที่ปรึกษาชั้น 2";
 }
@@ -71,7 +75,19 @@ export function canAdvisorDirectCancelConsultation(status: ConsultationRequestSt
   );
 }
 
-/** อาจารย์ปิดเคสหลังคุยจบได้เมื่อมีนัดยืนยันแล้ว */
-export function canAdvisorCloseCompletedConsultation(status: ConsultationRequestStatus): boolean {
+/**
+ * อาจารย์ปิดเคสหลังคุยจบได้เมื่อมีนัดยืนยันแล้ว
+ * — ช่องข้อความในระบบปิดได้ตั้งแต่ ACCEPTED (ไม่บังคับนัด)
+ */
+export function canAdvisorCloseCompletedConsultation(
+  status: ConsultationRequestStatus,
+  channel?: ConsultationPreferredChannel
+): boolean {
+  if (channel === ConsultationPreferredChannel.MESSAGE) {
+    return (
+      status === ConsultationRequestStatus.ACCEPTED ||
+      status === ConsultationRequestStatus.SCHEDULED
+    );
+  }
   return status === ConsultationRequestStatus.SCHEDULED;
 }

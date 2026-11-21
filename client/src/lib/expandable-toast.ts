@@ -60,14 +60,54 @@ export function resolveExpandableToastContent(input: {
   };
 }
 
+const TOAST_TITLE_SEPARATORS = [" — ", " – ", " - ", " · "] as const;
+
+/** แยกหัวข้อสั้นกับรายละเอียดถ้าข้อความยาวมีตัวคั่น */
+export function splitToastTitleAndDetail(message: string): {
+  title: string;
+  description?: string;
+} {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return { title: "ดำเนินการสำเร็จ" };
+  }
+
+  for (const separator of TOAST_TITLE_SEPARATORS) {
+    const index = trimmed.indexOf(separator);
+    if (index <= 0) {
+      continue;
+    }
+    const title = trimmed.slice(0, index).trim();
+    const description = trimmed.slice(index + separator.length).trim();
+    if (title && description) {
+      return { title, description };
+    }
+  }
+
+  // หัวข้อยาวเกิน ~28 ตัวอักษรโดยไม่มีตัวคั่น — ตัดที่ช่องว่างใกล้ ๆ
+  if (trimmed.length > 28) {
+    const slice = trimmed.slice(0, 28);
+    const breakAt = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("·"));
+    if (breakAt >= 12) {
+      return {
+        title: trimmed.slice(0, breakAt).trim(),
+        description: trimmed.slice(breakAt).trim(),
+      };
+    }
+  }
+
+  return { title: trimmed };
+}
+
 /**
- * แปลงข้อความผลลัพธ์เป็นหัวข้อ toast — ใช้ข้อความการกระทำเป็นหัวข้อโดยตรง
- * ไม่ห่อด้วยคำกลาง ๆ อย่าง «อัปเดตข้อมูลแล้ว» / «มีข้อมูลอัปเดต»
+ * แปลงข้อความผลลัพธ์เป็นหัวข้อ toast สั้น ๆ — รายละเอียดยาวไปไว้ใต้หัวข้อให้กดขยาย
  */
 export function resolveActionToastPresentation(input: {
   message: string;
   tone?: ExpandableToastTone;
   errorTitle?: string;
+  title?: string;
+  description?: string;
 }): {
   title: string;
   description?: string;
@@ -84,8 +124,20 @@ export function resolveActionToastPresentation(input: {
     };
   }
 
+  if (input.title?.trim()) {
+    const title = input.title.trim();
+    const description = input.description?.trim();
+    return {
+      title,
+      ...(description && description !== title ? { description } : {}),
+      tone,
+    };
+  }
+
+  const split = splitToastTitleAndDetail(message || "ดำเนินการสำเร็จ");
   return {
-    title: message || "ดำเนินการสำเร็จ",
+    title: split.title,
+    ...(split.description ? { description: split.description } : {}),
     tone,
   };
 }
@@ -102,7 +154,7 @@ export function consultationStatusToastMessage(status: string): string {
     case "CANCELLED":
       return "ยกเลิกคำขอปรึกษาแล้ว";
     case "CANCEL_REQUESTED":
-      return "บันทึกคำขอยกเลิกจากนิสิตแล้ว";
+      return "รับคำขอยกเลิกจากนิสิตแล้ว";
     case "PENDING":
       return "ส่งคำขอปรึกษาแล้ว";
     default:

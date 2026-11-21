@@ -12,8 +12,9 @@ function installDomStub() {
     left: "",
     right: "",
     width: "",
+    overscrollBehavior: "",
   };
-  const htmlStyle: StyleBag = { overflow: "" };
+  const htmlStyle: StyleBag = { overflow: "", overscrollBehavior: "" };
 
   const windowStub = {
     scrollY: 120,
@@ -21,6 +22,10 @@ function installDomStub() {
     scrollTo(x: number, y: number) {
       windowStub.scrollY = y;
       void x;
+    },
+    requestAnimationFrame(cb: FrameRequestCallback) {
+      cb(0);
+      return 1;
     },
   };
 
@@ -50,19 +55,20 @@ describe("body scroll lock", () => {
     installDomStub();
   });
 
-  it("BSL-01 ล็อกครั้งแรกตั้ง position fixed และนับจำนวน", () => {
+  it("BSL-01 ล็อกด้วย overflow hidden โดยไม่ใช้ position fixed", () => {
     assert.equal(getBodyScrollLockCountForTests(), 0);
     const release = acquireBodyScrollLock();
     assert.equal(getBodyScrollLockCountForTests(), 1);
-    assert.equal(document.body.style.position, "fixed");
     assert.equal(document.body.style.overflow, "hidden");
-    assert.equal(document.body.style.top, "-120px");
-    assert.equal(document.body.style.paddingRight, "");
     assert.equal(document.documentElement.style.overflow, "hidden");
+    assert.equal(document.body.style.position, "");
+    assert.equal(document.body.style.top, "");
+    assert.equal(document.body.style.paddingRight, "");
+    assert.equal(window.scrollY, 120);
     release();
     assert.equal(getBodyScrollLockCountForTests(), 0);
-    assert.equal(document.body.style.position, "");
     assert.equal(document.body.style.overflow, "");
+    assert.equal(document.documentElement.style.overflow, "");
     assert.equal(window.scrollY, 120);
   });
 
@@ -79,10 +85,10 @@ describe("body scroll lock", () => {
     assert.equal(getBodyScrollLockCountForTests(), 2);
     first();
     assert.equal(getBodyScrollLockCountForTests(), 1);
-    assert.equal(document.body.style.position, "fixed");
+    assert.equal(document.body.style.overflow, "hidden");
     second();
     assert.equal(getBodyScrollLockCountForTests(), 0);
-    assert.equal(document.body.style.position, "");
+    assert.equal(document.body.style.overflow, "");
   });
 
   it("BSL-03 เรียกปลดซ้ำไม่ทำให้ล็อกติดลบ", () => {
@@ -90,6 +96,6 @@ describe("body scroll lock", () => {
     release();
     release();
     assert.equal(getBodyScrollLockCountForTests(), 0);
-    assert.equal(document.body.style.position, "");
+    assert.equal(document.body.style.overflow, "");
   });
 });

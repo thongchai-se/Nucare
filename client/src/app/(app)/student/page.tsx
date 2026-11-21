@@ -10,7 +10,6 @@ import {
   ClipboardEdit,
   Contact,
   FileSpreadsheet,
-  HeartPulse,
   Home,
   LogOut,
   Menu,
@@ -30,7 +29,12 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { StudentEmergencyHelpCard } from "@/components/student-emergency-help-card";
 import { StudentMobileBottomNav } from "@/components/student-mobile-bottom-nav";
 import { ConsultationScheduleActions } from "@/components/student/consultation-schedule-actions";
+import {
+  MentalHealthScheduleActions,
+  type StudentOpenCounselingReferral,
+} from "@/components/student/mental-health-schedule-actions";
 import { StudentDevCarousel } from "@/components/student/student-dev-carousel";
+import { StudentAssessmentReminderPopup } from "@/components/student/student-home-alerts";
 import api from "@/lib/axios";
 import {
   STUDENT_LOGOUT_LABEL,
@@ -41,13 +45,17 @@ import {
 } from "@/lib/student-chrome";
 import {
   STUDENT_HOME_UPCOMING_LIMIT,
+  buildUpcomingAppointmentPreview,
   hasOpenStudentConsultation,
   listAwaitingStudentResponses,
-  listUpcomingConsultations,
-  listUpcomingTimedAppointments,
   resolveAppointmentLocation,
 } from "@/lib/student-consultation-inbox";
 import type { ConsultationScheduleOfferItem } from "@/lib/student-dashboard";
+import {
+  resolveAssessmentReminderPopup,
+  type PendingSurveyForPopup,
+  type StudentHomeAlertDto,
+} from "@/lib/student-home-alerts";
 import type { ActiveStudentSurveyResult, StudentFacingSurvey, Survey } from "@/types/survey";
 
 type DashboardSurvey = Survey | StudentFacingSurvey;
@@ -166,6 +174,12 @@ export default function StudentDashboardPage() {
   const [careTeam, setCareTeam] = useState<StudentCareTeamMember[]>([]);
   const [consultationRequests, setConsultationRequests] = useState<StudentConsultationRequest[]>([]);
   const [mentalHealthAppointments, setMentalHealthAppointments] = useState<StudentMentalHealthAppointment[]>([]);
+  const [openCounselingReferral, setOpenCounselingReferral] =
+    useState<StudentOpenCounselingReferral | null>(null);
+  const [assessmentReminderSurveys, setAssessmentReminderSurveys] = useState<
+    PendingSurveyForPopup[]
+  >([]);
+  const [assessmentReminderDismissed, setAssessmentReminderDismissed] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profileMenuCloseTimerRef = useRef<number | null>(null);
 
@@ -257,12 +271,15 @@ export default function StudentDashboardPage() {
             careTeam?: StudentCareTeamMember[];
             consultationRequests?: StudentConsultationRequest[];
             mentalHealthAppointments?: StudentMentalHealthAppointment[];
+            openCounselingReferral?: StudentOpenCounselingReferral | null;
+            alerts?: StudentHomeAlertDto[];
           }>("/api/student/dashboard"),
           api.get<ActiveStudentSurveyResponse>("/api/student/surveys/active"),
         ]);
         setCareTeam(response.data.careTeam || []);
         setConsultationRequests(response.data.consultationRequests || []);
         setMentalHealthAppointments(response.data.mentalHealthAppointments || []);
+        setOpenCounselingReferral(response.data.openCounselingReferral ?? null);
         // surveys[] ที่ค้างทำ (ว่างเมื่อทำครบแล้ว) — ใช้รายการแรกเป็น CTA และรองรับ API เดิมที่ส่งแค่ survey เดี่ยว
         const surveyPayload = surveyResponse.data;
         const pendingSurveys = surveyPayload.hasSubmitted
@@ -272,6 +289,26 @@ export default function StudentDashboardPage() {
         setPendingSurveyCount(pendingSurveys.length);
         setHasSubmittedActiveSurvey(pendingSurveys.length === 0 && surveyPayload.hasSubmitted);
         setActiveSurveySubmittedAt(surveyResponse.data.response?.submittedAt || null);
+
+        const pendingForPopup: PendingSurveyForPopup[] = pendingSurveys.map((survey) => ({
+          id: survey.id,
+          title: survey.title,
+          waveLabel: "waveLabel" in survey ? survey.waveLabel : null,
+        }));
+        const popup = resolveAssessmentReminderPopup({
+          pendingSurveys: pendingForPopup,
+          alerts: response.data.alerts || [],
+        });
+        setAssessmentReminderSurveys(popup.show ? popup.pendingSurveys : []);
+        setAssessmentReminderDismissed(false);
+
+        if (popup.alertsToAcknowledge.length > 0) {
+          await Promise.allSettled(
+            popup.alertsToAcknowledge.map((alert) =>
+              api.patch(`/api/alerts/${alert.id}/acknowledge`)
+            )
+          );
+        }
       } catch (error) {
         setStudentServerError(getApiErrorMessage(error, "ไม่สามารถโหลดข้อมูลนักศึกษาได้"));
       }
@@ -323,13 +360,17 @@ export default function StudentDashboardPage() {
     .join("")
     .toUpperCase() || "NU";
   const awaitingResponses = listAwaitingStudentResponses(consultationRequests);
-  const upcomingConsultations = listUpcomingConsultations(consultationRequests);
-  const upcomingMentalHealth = listUpcomingTimedAppointments(mentalHealthAppointments);
-  const upcomingPreview = [
-    ...upcomingMentalHealth.map((appointment) => ({ kind: "mh" as const, appointment })),
-    ...upcomingConsultations.map((request) => ({ kind: "consult" as const, request })),
-  ].slice(0, STUDENT_HOME_UPCOMING_LIMIT);
-  const upcomingTotal = upcomingMentalHealth.length + upcomingConsultations.length;
+  const mhAwaitingOffer =
+    openCounselingReferral?.latestPendingScheduleOffer?.waitingOn === "STUDENT"
+      ? openCounselingReferral
+      : null;
+  const actionNeededCount = awaitingResponses.length + (mhAwaitingOffer ? 1 : 0);
+  const upcomingPreviewBundle = buildUpcomingAppointmentPreview(
+    consultationRequests,
+    mentalHealthAppointments
+  );
+  const upcomingPreview = upcomingPreviewBundle.items;
+  const upcomingTotal = upcomingPreviewBundle.total;
   const hasUpcomingAppointments = upcomingTotal > 0;
   const hasOpenConsultation = hasOpenStudentConsultation(consultationRequests);
 
@@ -362,7 +403,7 @@ export default function StudentDashboardPage() {
       open: true,
       tone: "success",
       title: "ส่งคำขอช่วยเหลือสำเร็จ",
-      description: "ระบบบันทึกคำขอแล้ว หากฉุกเฉินโทร 1323 ได้ทันที",
+      description: "บันทึกคำขอแล้ว หากฉุกเฉินโทร 1323 ได้ทันที",
     });
   };
 
@@ -536,6 +577,13 @@ export default function StudentDashboardPage() {
         <div className="mx-auto max-w-7xl space-y-6">
           <StudentDevCarousel />
 
+          {assessmentReminderSurveys.length > 0 && !assessmentReminderDismissed ? (
+            <StudentAssessmentReminderPopup
+              pendingSurveys={assessmentReminderSurveys}
+              onClose={() => setAssessmentReminderDismissed(true)}
+            />
+          ) : null}
+
           {activeSurvey && !hasSubmittedActiveSurvey ? (
             <section id="orientation-survey" className="scroll-mt-24">
               <div className="flex min-h-32 flex-col justify-between gap-4 rounded-[1.35rem] border border-blue-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:gap-5 sm:p-6">
@@ -584,15 +632,46 @@ export default function StudentDashboardPage() {
                       <h2 className="text-[15px] font-bold text-slate-900 sm:text-base">ต้องตอบจากคุณ</h2>
                       <p className="mt-1 text-sm text-slate-500">ข้อเสนอนัดที่รอคุณยืนยันหรือขอเปลี่ยน</p>
                     </div>
-                    {awaitingResponses.length > 0 ? (
+                    {actionNeededCount > 0 ? (
                       <span className="inline-flex w-fit items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">
-                        {awaitingResponses.length} รายการ
+                        {actionNeededCount} รายการ
                       </span>
                     ) : null}
                   </div>
 
-                  {awaitingResponses.length > 0 ? (
+                  {actionNeededCount > 0 ? (
                     <div className="space-y-3">
+                      {mhAwaitingOffer ? (
+                        <div
+                          id={`mh-referral-${mhAwaitingOffer.id}`}
+                          className="rounded-xl border border-amber-100 bg-amber-50/40 px-4 py-3"
+                        >
+                          <p className="text-sm font-bold tabular-nums text-slate-900">
+                            {formatThaiDateTime(mhAwaitingOffer.latestPendingScheduleOffer!.proposedAt)}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {[
+                              mhAwaitingOffer.latestPendingScheduleOffer?.location,
+                              mhAwaitingOffer.provider?.name,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                          <MentalHealthScheduleActions
+                            referral={mhAwaitingOffer}
+                            onUpdated={(updated) => setOpenCounselingReferral(updated)}
+                            onError={setStudentServerError}
+                            onToast={(title, description) =>
+                              setStudentToast({
+                                open: true,
+                                tone: "success",
+                                title,
+                                description: description || "",
+                              })
+                            }
+                          />
+                        </div>
+                      ) : null}
                       {awaitingResponses.map((request) => {
                         const offer = request.latestPendingOffer;
                         return (
@@ -605,8 +684,7 @@ export default function StudentDashboardPage() {
                               {offer ? formatThaiDateTime(offer.proposedAt) : "—"}
                             </p>
                             <p className="mt-0.5 text-xs text-slate-500">
-                              {request.topic}
-                              {offer?.location ? ` · ${offer.location}` : ""} · {request.teacher.name}
+                              {[offer?.location, request.teacher.name].filter(Boolean).join(" · ")}
                             </p>
                             <ConsultationScheduleActions
                               request={request}
@@ -675,8 +753,9 @@ export default function StudentDashboardPage() {
                                 {formatThaiDateTime(appointment.scheduledAt)}
                               </p>
                               <p className="mt-0.5 text-xs text-slate-500">
-                                ทีมสุขภาพจิต · {appointment.providerName}
-                                {appointment.location ? ` · ${appointment.location}` : ""}
+                                {[appointment.location?.trim(), appointment.providerName]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </p>
                             </div>
                           );
@@ -692,8 +771,7 @@ export default function StudentDashboardPage() {
                               {formatThaiDateTime(request.scheduledAt)}
                             </p>
                             <p className="mt-0.5 text-xs text-slate-500">
-                              {request.topic}
-                              {location ? ` · ${location}` : ""} · {request.teacher.name}
+                              {[location, request.teacher.name].filter(Boolean).join(" · ")}
                             </p>
                           </div>
                         );
@@ -730,19 +808,6 @@ export default function StudentDashboardPage() {
                 description="หากรู้สึกไม่ปลอดภัยหรือมีความคิดอยากทำร้ายตนเอง ติดต่อทีมดูแลทันที"
                 onConfirmSos={handleCreateSosCase}
               />
-
-              <Link
-                href="/student/advisor#expert-counseling"
-                className="block rounded-[1.35rem] border border-violet-200 bg-white p-5 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50/40 sm:p-6"
-              >
-                <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                  <HeartPulse className="h-5 w-5 text-violet-700" />
-                  ขอพบผู้เชี่ยวชาญสุขภาพจิต
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  ส่งคำตรงถึงศูนย์ให้คำปรึกษา — แยกจากการนัดกับที่ปรึกษา
-                </p>
-              </Link>
 
               <div className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-3">

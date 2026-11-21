@@ -4,8 +4,8 @@ import { presentActivityStatus } from "./activity-status-display";
 
 describe("activity-status-display", () => {
   it("ไม่โชว์ enum อังกฤษดิบ", () => {
-    assert.equal(presentActivityStatus("REFERRAL", "PENDING")?.label, "รอรับ");
-    assert.equal(presentActivityStatus("EMERGENCY", "OPEN")?.label, "เปิด");
+    assert.equal(presentActivityStatus("REFERRAL", "PENDING")?.label, "รอรับเคส");
+    assert.equal(presentActivityStatus("EMERGENCY", "OPEN")?.label, "รอรับเรื่อง");
     assert.equal(presentActivityStatus("CONSULTATION", "CANCELLED")?.label, "ยกเลิก");
     assert.equal(presentActivityStatus("ASSESSMENT", "high")?.label, "เสี่ยงสูง");
     assert.equal(presentActivityStatus("ASSESSMENT", "เสี่ยงสูง")?.label, "เสี่ยงสูง");

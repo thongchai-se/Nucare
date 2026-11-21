@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildUpcomingAppointmentPreview,
   countStudentActionQueue,
+  countStudentDashboardActions,
   hasOpenStudentConsultation,
   isAwaitingStudentResponse,
   isUpcomingStudentConsultation,
@@ -9,6 +11,7 @@ import {
   listUpcomingConsultations,
   resolveAppointmentLocation,
   sanitizeStudentFacingNote,
+  splitChatPeersByCareTeam,
 } from "./student-consultation-inbox";
 import type { StudentConsultationRequest } from "./student-dashboard";
 
@@ -178,6 +181,52 @@ describe("student-consultation-inbox", () => {
     );
   });
 
+  it("รวมนัดใกล้ถึงที่ปรึกษา+ผู้เชี่ยวชาญเรียงวันเวลาเหมือนกันทุกหน้า", () => {
+    const now = new Date("2026-11-04T10:00:00.000Z");
+    const preview = buildUpcomingAppointmentPreview(
+      [
+        baseRequest({
+          id: "consult-later",
+          status: "SCHEDULED",
+          scheduledAt: "2026-11-08T10:00:00.000Z",
+        }),
+        baseRequest({
+          id: "consult-soon",
+          status: "SCHEDULED",
+          scheduledAt: "2026-11-06T10:00:00.000Z",
+        }),
+      ],
+      [
+        {
+          id: "mh-mid",
+          scheduledAt: "2026-11-07T10:00:00.000Z",
+          location: "ศูนย์ให้คำปรึกษา",
+          providerName: "ทีมสุขภาพจิต",
+        },
+      ],
+      now,
+      3
+    );
+    assert.equal(preview.total, 3);
+    assert.deepEqual(
+      preview.items.map((item) => (item.kind === "mh" ? item.appointment.id : item.request.id)),
+      ["consult-soon", "mh-mid", "consult-later"]
+    );
+
+    const counts = countStudentDashboardActions(
+      [
+        baseRequest({
+          id: "consult-soon",
+          status: "SCHEDULED",
+          scheduledAt: "2026-11-06T10:00:00.000Z",
+        }),
+      ],
+      [{ scheduledAt: "2026-11-07T10:00:00.000Z" }],
+      now
+    );
+    assert.equal(counts.upcoming, 2);
+  });
+
   it("นับคิวงานแบบ actionable ไม่ใช่ทุกสถานะที่ยังไม่ปิด", () => {
     const now = new Date("2026-11-04T10:00:00.000Z");
     const counts = countStudentActionQueue(
@@ -259,5 +308,19 @@ describe("student-consultation-inbox", () => {
       hasOpenStudentConsultation([baseRequest({ id: "cancelled", status: "CANCELLED" })]),
       false
     );
+  });
+
+  it("แยก peer ในทีมดูแลออกจากรายชื่อทักหาอื่น", () => {
+    const split = splitChatPeersByCareTeam(
+      ["adv-1", "adv-2"],
+      [{ id: "adv-1" }, { id: "mh-9" }, { id: "adv-2" }, { id: "sd-3" }]
+    );
+    assert.deepEqual([...split.chatableCareTeamIds].sort(), ["adv-1", "adv-2"]);
+    assert.deepEqual(
+      split.otherPeers.map((peer) => peer.id),
+      ["mh-9", "sd-3"]
+    );
+    assert.deepEqual(splitChatPeersByCareTeam([], [{ id: "x" }]).otherPeers.map((p) => p.id), ["x"]);
+    assert.equal(splitChatPeersByCareTeam(["a"], []).otherPeers.length, 0);
   });
 });

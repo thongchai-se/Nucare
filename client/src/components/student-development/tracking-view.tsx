@@ -1,15 +1,15 @@
 "use client";
 
-import { Filter, Megaphone, Send } from "lucide-react";
+import { Megaphone, Send } from "lucide-react";
 import { ScreeningReviewQueue } from "@/components/screening-review/screening-review-queue";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import {
-  RosterCountBadge,
   RosterMobileCard,
   RosterMobileList,
   RosterPersonCell,
   RosterRow,
   RosterSearchInput,
+  RosterSelectFilter,
   RosterTable,
   RosterTableCard,
   RosterTd,
@@ -72,22 +72,18 @@ export function TrackingView({
           <>
             <RosterSearchInput value={searchKeyword} onChange={onSearchKeywordChange} />
             <RosterToolbarEnd>
-              <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600">
-                <Filter className="h-4 w-4 text-slate-400" />
-                <select
-                  value={yearFilter}
-                  onChange={(event) => onYearFilterChange(event.target.value)}
-                  className="bg-transparent font-medium outline-none"
-                >
-                  <option value="ALL">ทุกชั้นปี</option>
-                  {yearOptions.map((year) => (
-                    <option key={year} value={year}>
-                      ชั้นปี {year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <RosterCountBadge count={filteredPendingStudents.length} />
+              <RosterSelectFilter
+                value={yearFilter}
+                onChange={onYearFilterChange}
+                aria-label="กรองชั้นปี"
+              >
+                <option value="ALL">ทุกชั้นปี</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    ชั้นปี {year}
+                  </option>
+                ))}
+              </RosterSelectFilter>
             </RosterToolbarEnd>
           </>
         }
@@ -161,7 +157,7 @@ export function TrackingView({
           ))}
         </RosterMobileList>
 
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}

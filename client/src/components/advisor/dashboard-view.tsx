@@ -4,10 +4,10 @@ import {
   Activity,
   AlertCircle,
   CalendarDays,
-  ChevronRight,
   ClipboardList,
   Flag,
   Send,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 import { DashboardAlert } from "@/components/ui/dashboard-alert";
@@ -15,7 +15,7 @@ import { DashboardPanel } from "@/components/ui/dashboard-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { ScreeningReviewQueue } from "@/components/screening-review/screening-review-queue";
-import { UI_INLINE_ACTION, UI_TEXT_LINK } from "@/lib/ui-classes";
+import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SECONDARY_COMPACT, UI_TEXT_LINK } from "@/lib/ui-classes";
 import type { UpcomingCalendarAppointment } from "./upcoming-week-calendar";
 import { UpcomingWeekTimeline } from "./upcoming-week-timeline";
 import type { AdvisorStudent, RiskMeta, StudentRiskLevel } from "./types";
@@ -56,7 +56,7 @@ type InboxItem = {
   urgent?: boolean;
 };
 
-/** หน้าหลักที่ปรึกษา — แยกข้อเสนอรอตอบและนัดใกล้ถึงออกจากคิวรวม */
+/** หน้าหลักที่ปรึกษา — โครงเดียวกับแดชบอร์ดผู้เชี่ยวชาญ (MetricCard + DashboardPanel) */
 export function DashboardView(props: DashboardViewProps) {
   const {
     studentsCount,
@@ -131,123 +131,185 @@ export function DashboardView(props: DashboardViewProps) {
     },
   ].filter((item) => item.count > 0);
 
-  const totalInbox = inboxItems.reduce((sum, item) => sum + item.count, 0);
-
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800">งานวันนี้</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          {totalInbox > 0 ? `มี ${totalInbox} รายการในคิว` : "คิวว่างแล้ว — เปิดเมนูซ้ายเมื่อต้องการดูรายชื่อ"}
-        </p>
+      <div className="inline-flex w-max items-center gap-2 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">
+        <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+        เปิดการคุ้มครองข้อมูลส่วนบุคคล (PDPA)
       </div>
 
       {highRiskStudents.length > 0 ? (
         <DashboardAlert
           tone="amber"
           icon={AlertCircle}
-          title="มีนักศึกษาเสี่ยงสูงต้องดูแล"
-          description={`พบ ${highRiskStudents.length} ราย — เปิดรายชื่อเพื่อวางแผนดูแลหรือส่งต่อ`}
+          title={`มีนักศึกษาเสี่ยงสูง ${highRiskStudents.length} รายการ`}
+          description="เปิดรายชื่อเพื่อวางแผนดูแลหรือส่งต่อ — กดการ์ดด้านล่างเพื่อทำงานต่อ"
           action={
-            <button
-              type="button"
-              onClick={() => onNavigate("advisees")}
-              className="whitespace-nowrap rounded-full bg-[#C24712] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#A33B0F]"
-            >
+            <button type="button" onClick={() => onNavigate("advisees")} className={UI_ACTION_PRIMARY_COMPACT}>
               ดูรายชื่อเสี่ยงสูง
             </button>
           }
         />
       ) : null}
 
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">ต้องทำก่อน</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">
-            {inboxItems.length > 0 ? "กดการ์ดเพื่อไปทำต่อ" : "เมื่อมีคำขอ สัญญาณ หรือส่งต่อค้าง จะขึ้นที่นี่"}
-          </p>
-        </div>
-        {inboxItems.length > 0 ? (
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {inboxItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    onClick={item.onClick}
-                    className={`flex w-full min-w-0 items-center gap-3 rounded-2xl border bg-white p-4 text-left shadow-[0_10px_28px_-24px_rgba(15,23,42,0.45)] transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_14px_32px_-22px_rgba(15,23,42,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0057A8]/40 ${
-                      item.urgent ? "border-red-200/90" : "border-slate-200/90"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                        item.urgent ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      <Icon className="h-5 w-5" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-[15px] font-bold leading-snug text-slate-900">{item.title}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
-                            item.urgent ? "bg-red-600" : "bg-red-500"
-                          }`}
-                        >
-                          {item.count}
-                        </span>
-                      </span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-500">{item.detail}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.45)] sm:p-6">
-            <EmptyState
-              icon={Activity}
-              title="คิวว่างแล้ว"
-              description="กลับมาที่นี่เมื่อมีงานใหม่ หรือไปที่นักศึกษาในที่ปรึกษาเพื่อดูรายชื่อ"
-            />
-          </div>
-        )}
-      </section>
-
-      <ScreeningReviewQueue basePath="/api/advisor/screening-reviews" viewer="advisor" />
-
-      <DashboardPanel>
-        <UpcomingWeekTimeline
-          appointments={upcomingAppointments}
-          onOpenAll={() => onNavigate("consultations", { tab: "scheduled" })}
-        />
-      </DashboardPanel>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
         <MetricCard
-          tone="emerald"
-          icon={CalendarDays}
-          label="นัดหมายแล้วทั้งหมด"
-          value={String(scheduledConsultationCount)}
-          subtitle="รวมนัดที่ยืนยันแล้ว"
-          onClick={() => onNavigate("consultations", { tab: "scheduled" })}
+          tone="blue"
+          icon={ClipboardList}
+          subtitle="ยังไม่ได้กดรับ"
+          label="คำขอรอรับ"
+          value={pendingConsultationCount}
+          onClick={() => onNavigate("consultations", { tab: "pending" })}
+        />
+        <MetricCard
+          tone="rose"
+          icon={ClipboardList}
+          subtitle="นิสิตขอเปลี่ยนวัน/ที่"
+          label="ข้อเสนอรอตอบ"
+          value={waitingAdvisorOfferCount}
+          emphasized={waitingAdvisorOfferCount > 0}
+          onClick={() => onNavigate("consultations", { tab: "accepted" })}
         />
         <MetricCard
           tone="slate"
-          icon={Users}
-          label="นักศึกษาในที่ปรึกษา"
-          value={String(studentsCount)}
-          subtitle="เปิดรายชื่อทั้งหมด"
-          onClick={() => onNavigate("advisees")}
+          icon={CalendarDays}
+          subtitle="ใน 7 วันข้างหน้า"
+          label="นัดใกล้ถึง"
+          value={upcomingAppointmentCount}
+          onClick={() => onNavigate("consultations", { tab: "scheduled" })}
+        />
+        <MetricCard
+          tone="amber"
+          icon={Flag}
+          subtitle="จากอาจารย์ผู้สอน"
+          label="สัญญาณเข้า"
+          value={pendingInstructorSignalsCount}
+          emphasized={pendingInstructorSignalsCount > 0}
+          onClick={() => onNavigate("academic")}
         />
       </div>
 
+      {inboxItems.length > 0 ? (
+        <DashboardPanel title="ต้องทำก่อน" icon={Activity} description="กดรายการเพื่อไปทำต่อ">
+          <div className="space-y-3">
+            {inboxItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  className={`flex w-full items-start justify-between gap-3 rounded-xl px-4 py-3.5 text-left transition-colors ${
+                    item.urgent ? "bg-rose-50/70 hover:bg-rose-50" : "bg-slate-50 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span
+                      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                        item.urgent ? "bg-rose-100 text-rose-700" : "bg-white text-slate-600"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                      <p className="mt-1 text-xs text-slate-600">{item.detail}</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold ${
+                      item.urgent ? "bg-rose-100 text-rose-800" : "bg-slate-200 text-slate-800"
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </DashboardPanel>
+      ) : (
+        <DashboardPanel title="ต้องทำก่อน" icon={Activity}>
+          <EmptyState
+            icon={Activity}
+            title="คิวว่างแล้ว"
+            description="เมื่อมีคำขอ สัญญาณ หรือส่งต่อค้าง ระบบจะแสดงที่นี่"
+            className="py-6"
+          />
+        </DashboardPanel>
+      )}
+
+      <ScreeningReviewQueue basePath="/api/advisor/screening-reviews" viewer="advisor" />
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <DashboardPanel>
+          <UpcomingWeekTimeline
+            appointments={upcomingAppointments}
+            onOpenAll={() => onNavigate("consultations", { tab: "scheduled" })}
+          />
+        </DashboardPanel>
+
+        <DashboardPanel
+          title="ภาพรวมที่ปรึกษา"
+          icon={Users}
+          action={
+            <button type="button" onClick={() => onNavigate("advisees")} className={UI_TEXT_LINK}>
+              เปิดรายชื่อ
+            </button>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <MetricCard
+              tone="emerald"
+              icon={CalendarDays}
+              label="นัดที่ยืนยันแล้ว"
+              value={scheduledConsultationCount}
+              subtitle="ทั้งหมด"
+              onClick={() => onNavigate("consultations", { tab: "scheduled" })}
+            />
+            <MetricCard
+              tone="slate"
+              icon={Users}
+              label="นักศึกษาในที่ปรึกษา"
+              value={studentsCount}
+              subtitle="เปิดรายชื่อ"
+              onClick={() => onNavigate("advisees")}
+            />
+          </div>
+          {pendingReferralsCount > 0 || otherNegotiationCount > 0 ? (
+            <div className="mt-4 space-y-2">
+              {pendingReferralsCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("referrals")}
+                  className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100"
+                >
+                  <span className="text-sm font-semibold text-slate-900">ส่งต่อคงค้าง</span>
+                  <span className="rounded-md bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800">
+                    {pendingReferralsCount}
+                  </span>
+                </button>
+              ) : null}
+              {otherNegotiationCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("consultations", { tab: "accepted" })}
+                  className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100"
+                >
+                  <span className="text-sm font-semibold text-slate-900">รอเจรจานัด</span>
+                  <span className="rounded-md bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800">
+                    {otherNegotiationCount}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </DashboardPanel>
+      </div>
+
       <DashboardPanel
-        flush
         title={highRiskStudents.length > 0 ? "รายชื่อที่ควรดูก่อน" : "อัปเดตล่าสุด"}
+        icon={Users}
         description={
           highRiskStudents.length > 0
             ? "เรียงจากกลุ่มเสี่ยงสูง — กดเพื่อเปิดหน้ารายละเอียด"
@@ -255,53 +317,60 @@ export function DashboardView(props: DashboardViewProps) {
         }
         action={
           <button type="button" onClick={() => onNavigate("advisees")} className={UI_TEXT_LINK}>
-            ดูทั้งหมด
+            เปิดทั้งหมด
           </button>
         }
       >
         {priorityStudents.length > 0 ? (
-          <ul className="divide-y divide-slate-100">
+          <div className="space-y-3">
             {priorityStudents.slice(0, 5).map((student) => {
               const meta = riskMeta[student.riskLevel];
               return (
-                <li
-                  key={student.id}
-                  className="flex min-w-0 flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-start sm:gap-3 sm:px-6"
-                >
+                <div key={student.id} className="rounded-xl border border-slate-100 p-4">
                   <button
                     type="button"
                     onClick={() => onOpenStudent(student.id)}
-                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    className="flex w-full flex-col gap-3 text-left sm:flex-row sm:items-start sm:justify-between"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#278ACA]/15 text-sm font-semibold text-[#0057A8]">
-                      {student.image}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="break-words text-sm font-semibold text-[#0057A8]">{student.name}</p>
-                        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${meta.badgeClassName}`}>
-                          {meta.label}
-                        </span>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#278ACA]/15 text-sm font-semibold text-[#0057A8]">
+                        {student.image}
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{formatAssessmentSummary(student)}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">{student.name}</p>
+                        <p className="mt-1 text-xs text-slate-600">{formatAssessmentSummary(student)}</p>
+                      </div>
                     </div>
+                    <span className={`w-max shrink-0 rounded-md px-2.5 py-1 text-[10px] font-semibold ${meta.badgeClassName}`}>
+                      {meta.label}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenSoap(student)}
-                    className={`${UI_INLINE_ACTION} w-full justify-center sm:w-auto sm:shrink-0`}
-                  >
-                    บันทึกดูแล
-                  </button>
-                </li>
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => onOpenSoap(student)}
+                      className={`${UI_ACTION_SECONDARY_COMPACT} flex-1 py-2.5 text-sm`}
+                    >
+                      บันทึกดูแล
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenStudent(student.id)}
+                      className={`${UI_ACTION_PRIMARY_COMPACT} flex-1 py-2.5 text-sm`}
+                    >
+                      เปิดรายละเอียด
+                    </button>
+                  </div>
+                </div>
               );
             })}
-          </ul>
+          </div>
         ) : (
           <EmptyState
             icon={Activity}
             title="ยังไม่มีรายการที่ต้องติดตามด่วน"
             description="เมื่อมีผลประเมินหรือคำขอใหม่ ระบบจะแสดงที่นี่"
+            className="py-6"
           />
         )}
       </DashboardPanel>

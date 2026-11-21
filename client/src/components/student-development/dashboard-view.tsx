@@ -1,12 +1,30 @@
 "use client";
 
-import { AlertCircle, ClipboardCheck, Megaphone, Send, ShieldCheck, Users } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Bell,
+  ClipboardCheck,
+  Megaphone,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { DashboardAlert } from "@/components/ui/dashboard-alert";
 import { DashboardPanel } from "@/components/ui/dashboard-panel";
 import { EmptyState } from "@/components/ui/empty-state";
-import { UI_BUTTON_PRIMARY, UI_INLINE_ACTION, UI_TEXT_LINK } from "@/lib/ui-classes";
+import { sanitizeDisplayNote } from "@/lib/display-note";
+import { getNameInitials } from "@/lib/name-prefix";
+import { formatStudentIdDisplay } from "@/lib/student-id";
+import { referralStatusBadgeClass, STATUS_BADGE_COMPACT, URGENT_BADGE_CLASS } from "@/lib/status-badge";
+import {
+  UI_ACTION_PRIMARY_COMPACT,
+  UI_BUTTON_PRIMARY,
+  UI_INLINE_ACTION,
+  UI_TEXT_LINK,
+} from "@/lib/ui-classes";
+import { RiskSummaryCards } from "./risk-summary-cards";
 import type {
-  CampaignHighlight,
   PendingStudent,
   RiskInsightCard,
   ScreeningMeta,
@@ -18,7 +36,6 @@ import type {
 type DashboardViewProps = {
   screeningStats: ScreeningStats;
   screeningMeta?: ScreeningMeta;
-  campaignHighlights: CampaignHighlight[];
   pendingStudents: PendingStudent[];
   wellnessActivities: RiskInsightCard[];
   welfareTasks: WelfareTask[];
@@ -30,7 +47,6 @@ type DashboardViewProps = {
 export function DashboardView({
   screeningStats,
   screeningMeta,
-  campaignHighlights,
   pendingStudents,
   wellnessActivities,
   welfareTasks,
@@ -48,82 +64,176 @@ export function DashboardView({
     ? "ตรวจสอบนิสิตที่ค้างประเมินและส่งแจ้งเตือนให้ครบก่อนปิดรอบ"
     : "เมื่อแอดมินเปิดคลื่นแบบประเมิน รายชื่อค้างประเมินจะอัปเดตตาม assignment";
 
+  const highRiskCount =
+    wellnessActivities.find((item) => item.status === "กลุ่มเสี่ยงสูง")?.registered ??
+    screeningStats.highRiskCount;
+  let waitingWelfareCount = 0;
+  let openWelfareCount = 0;
+  for (const task of welfareTasks) {
+    if (task.referralStatus === "CLOSED") {
+      continue;
+    }
+    openWelfareCount += 1;
+    if (task.status === "รอประสานงาน") {
+      waitingWelfareCount += 1;
+    }
+  }
+
+  const queueItems = [
+    {
+      id: "pending",
+      label: "ค้างประเมิน",
+      count: screeningStats.pending,
+      hint: screeningStats.pending > 0 ? "ไปติดตามและส่งแจ้งเตือน" : "ไม่มีรายการค้าง",
+      icon: ClipboardCheck,
+      tone: screeningStats.pending > 0 ? "amber" : "slate",
+      onClick: () => onNavigate("tracking"),
+    },
+    {
+      id: "high-risk",
+      label: "กลุ่มเสี่ยงสูง",
+      count: highRiskCount,
+      hint: highRiskCount > 0 ? "ดูสรุปเพื่อวางการติดตาม" : "ยังไม่มีในผลล่าสุด",
+      icon: ShieldAlert,
+      tone: highRiskCount > 0 ? "rose" : "slate",
+      onClick: () => onNavigate("wellness"),
+    },
+    {
+      id: "welfare",
+      label: "เคสรอประสานงาน",
+      count: waitingWelfareCount,
+      hint:
+        waitingWelfareCount > 0
+          ? `เปิดอยู่ทั้งหมด ${openWelfareCount} เคส`
+          : openWelfareCount > 0
+            ? `กำลังประสาน ${openWelfareCount} เคส`
+            : "ไม่มีเคสรอประสาน",
+      icon: ArrowRightLeft,
+      tone: waitingWelfareCount > 0 ? "blue" : "slate",
+      onClick: () => onNavigate("welfare"),
+    },
+  ] as const;
+
+  const toneClass = {
+    amber: "bg-amber-50 text-amber-800",
+    rose: "bg-rose-50 text-rose-800",
+    blue: "bg-blue-50 text-blue-800",
+    slate: "bg-slate-50 text-slate-600",
+  } as const;
+
   return (
     <div className="space-y-6">
       <DashboardAlert tone="rose" icon={ShieldCheck} title={alertTitle} description={alertDescription} />
 
       {alerts.length > 0 ? (
-        <DashboardPanel title="การแจ้งเตือนเคสส่งต่อ" description="เคสสวัสดิการใหม่ที่ส่งมายังงานพัฒนานิสิต">
-          <ul className="space-y-3">
-            {alerts.slice(0, 5).map((alert) => (
-              <li key={alert.id} className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
-                <p className="mt-1 text-sm text-slate-600">{alert.message}</p>
-              </li>
-            ))}
+        <DashboardPanel
+          title="เคสสวัสดิการใหม่"
+          description="มีรายการส่งมายังงานพัฒนานิสิต"
+          icon={Bell}
+          action={
+            <button
+              type="button"
+              onClick={() => onNavigate("welfare")}
+              className={UI_ACTION_PRIMARY_COMPACT}
+            >
+              ไปงานสวัสดิการ
+            </button>
+          }
+          flush
+        >
+          <ul className="divide-y divide-slate-100">
+            {alerts.slice(0, 5).map((alert) => {
+              const note = sanitizeDisplayNote(alert.message);
+              return (
+                <li key={alert.id} className="flex items-start gap-3 px-5 py-3.5 sm:px-6">
+                  <span
+                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#0057A8]"
+                    aria-hidden
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900">{alert.title || "เคสสวัสดิการใหม่"}</p>
+                    {note ? (
+                      <p className="mt-0.5 line-clamp-2 text-sm leading-5 text-slate-600">{note}</p>
+                    ) : (
+                      <p className="mt-0.5 text-sm text-slate-500">มีรายละเอียดในงานสวัสดิการ</p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
-          <button type="button" onClick={() => onNavigate("welfare")} className={`${UI_TEXT_LINK} mt-3`}>
-            ไปที่งานสวัสดิการ
-          </button>
         </DashboardPanel>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_0.9fr]">
         <DashboardPanel title="ความคืบหน้าการคัดกรอง" icon={ClipboardCheck}>
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex-1">
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-3xl font-semibold tabular-nums tracking-tight text-slate-950">
-                    {screeningStats.percentage}%
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    ทำแบบประเมินแล้ว {screeningStats.completed} จาก {screeningStats.totalTarget} คน
-                  </p>
-                </div>
-                <div className="rounded-xl bg-amber-50 px-4 py-3 text-right">
-                  <p className="text-xs font-medium text-amber-800">ค้างประเมิน</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-900">
-                    {screeningStats.pending}
-                  </p>
-                </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-3xl font-semibold tabular-nums tracking-tight text-slate-950">
+                  {screeningStats.percentage}%
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  ทำแบบประเมินแล้ว {screeningStats.completed} จาก {screeningStats.totalTarget} คน
+                  {screeningStats.pending > 0 ? (
+                    <span className="text-amber-800"> · ค้าง {screeningStats.pending} คน</span>
+                  ) : null}
+                </p>
               </div>
-              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-[#0057A8] transition-[width] duration-300"
-                  style={{ width: `${screeningStats.percentage}%` }}
-                />
-              </div>
-              <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-                <AlertCircle className="h-4 w-4 text-amber-600" aria-hidden />
-                มีนิสิต {screeningStats.pending} คนที่ยังค้างประเมิน
-              </p>
+              <button
+                type="button"
+                onClick={() => onOpenReminder(null)}
+                disabled={screeningStats.pending === 0}
+                className={`${UI_BUTTON_PRIMARY} shrink-0 self-start`}
+              >
+                <Megaphone className="h-4 w-4" aria-hidden />
+                ส่งแจ้งเตือนทั้งหมด
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => onOpenReminder(null)}
-              disabled={screeningStats.pending === 0}
-              className={UI_BUTTON_PRIMARY}
-            >
-              <Megaphone className="h-4 w-4" aria-hidden />
-              ส่งแจ้งเตือนทั้งหมด
-            </button>
+            <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-[#0057A8] transition-[width] duration-300"
+                style={{ width: `${screeningStats.percentage}%` }}
+              />
+            </div>
+            {screeningStats.pending === 0 && screeningStats.totalTarget > 0 ? (
+              <p className="text-sm text-emerald-700">ครบทุกรายการในรอบนี้แล้ว</p>
+            ) : null}
           </div>
         </DashboardPanel>
 
-        <DashboardPanel title="โฟกัสวันนี้">
-          <div className="space-y-3">
-            {campaignHighlights.map((highlight) => (
-              <div key={highlight.title} className="rounded-xl bg-slate-50 px-4 py-3.5">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <span className="rounded-lg bg-white p-2 text-rose-700 shadow-sm">{highlight.icon}</span>
-                  {highlight.title}
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{highlight.description}</p>
-              </div>
-            ))}
-          </div>
+        <DashboardPanel title="คิวงานที่ต้องทำ" description="ตัวเลขจริงจากระบบ กดเพื่อไปทำงานต่อ">
+          <ul className="space-y-2">
+            {queueItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={item.onClick}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0057A8]/40"
+                  >
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneClass[item.tone]}`}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                        <span className="text-lg font-semibold tabular-nums tracking-tight text-slate-950">
+                          {item.count}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">{item.hint}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </DashboardPanel>
       </div>
 
@@ -176,9 +286,8 @@ export function DashboardView({
         </DashboardPanel>
 
         <DashboardPanel
-          flush
-          title="สรุปกลุ่มเสี่ยงจากผลคัดกรอง"
-          description="ใช้วางกิจกรรมเชิงป้องกันตามระดับความเสี่ยง"
+          title="สรุปกลุ่มเสี่ยง"
+          description="จากผลคัดกรองล่าสุด"
           action={
             <button type="button" onClick={() => onNavigate("wellness")} className={UI_TEXT_LINK}>
               ดูรายละเอียด
@@ -186,34 +295,7 @@ export function DashboardView({
           }
         >
           {wellnessActivities.length > 0 ? (
-            <ul className="divide-y divide-slate-100">
-              {wellnessActivities.map((activity) => (
-                <li key={activity.id} className="px-5 py-4 sm:px-6">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{activity.name}</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">{activity.focus}</p>
-                    </div>
-                    <div className="text-left sm:text-right">
-                      <span
-                        className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold ${
-                          activity.status === "กลุ่มเสี่ยงสูง"
-                            ? "bg-red-100 text-red-800"
-                            : activity.status === "กลุ่มเสี่ยงปานกลาง"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-emerald-100 text-emerald-800"
-                        }`}
-                      >
-                        {activity.status}
-                      </span>
-                      <p className="mt-2 text-sm font-semibold tabular-nums text-slate-700">
-                        {activity.registered} คน
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <RiskSummaryCards items={wellnessActivities} />
           ) : (
             <EmptyState
               icon={Users}
@@ -225,41 +307,63 @@ export function DashboardView({
       </div>
 
       <DashboardPanel
-        title="ประสานงานสวัสดิการที่กำลังดำเนินการ"
-        description="เคสส่งต่อมายังงานพัฒนานิสิตที่ยังต้องติดตาม"
+        title="เคสสวัสดิการ"
+        description="ที่ต้องติดตาม"
         action={
           <button type="button" onClick={() => onNavigate("welfare")} className={UI_TEXT_LINK}>
-            เปิดมุมมองงานสวัสดิการ
+            เปิดงานสวัสดิการ
           </button>
         }
       >
         {welfareTasks.length > 0 ? (
-          <div className="grid gap-3 lg:grid-cols-3">
-            {welfareTasks.slice(0, 6).map((task) => (
-              <div key={task.id} className="rounded-xl bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold leading-6 text-slate-900">{task.title}</p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {welfareTasks.slice(0, 6).map((task) => {
+              const note = sanitizeDisplayNote(task.note);
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => onNavigate("welfare")}
+                  className="rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-[#0057A8]/25 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0057A8]/30"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0057A8] text-sm font-bold text-white">
+                      {getNameInitials(task.studentName, "นศ")}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {task.studentName}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {formatStudentIdDisplay(task.studentCode)} · ปี {task.year}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {task.isUrgent ? (
+                            <span className={`${STATUS_BADGE_COMPACT} ${URGENT_BADGE_CLASS}`}>ด่วน</span>
+                          ) : null}
+                          <span
+                            className={`${STATUS_BADGE_COMPACT} ${referralStatusBadgeClass(task.referralStatus)}`}
+                          >
+                            {task.status}
+                          </span>
+                        </div>
+                      </div>
+                      {note ? (
+                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{note}</p>
+                      ) : null}
+                      <p className="mt-3 truncate text-[11px] text-slate-500">
+                        {task.acceptedByName
+                          ? `ผู้ประสาน ${task.acceptedByName}`
+                          : `ส่งโดย ${task.owner}`}
+                      </p>
+                    </div>
                   </div>
-                  <span
-                    className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold ${
-                      task.status === "กำลังประสานงาน"
-                        ? "bg-blue-100 text-blue-800"
-                        : task.status === "ปิดงานแล้ว"
-                          ? "bg-slate-100 text-slate-600"
-                          : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {task.status}
-                  </span>
-                </div>
-                <p className="mt-3 line-clamp-3 text-sm text-slate-600">{task.note}</p>
-                <div className="mt-4 flex items-center justify-between border-t border-slate-200/80 pt-3 text-xs text-slate-500">
-                  <span>{task.owner}</span>
-                  <span>{task.updatedAt}</span>
-                </div>
-              </div>
-            ))}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <EmptyState

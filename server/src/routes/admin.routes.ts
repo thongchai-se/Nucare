@@ -41,7 +41,16 @@ import {
   openAdminSurveyWave,
   previewAdminSurveyEligibility,
 } from "../controllers/survey-wave.controller";
-import { pullExternalDirectory, pullExternalDirectoryCatalog } from "../controllers/external-directory.controller";
+import {
+  getExternalDirectoryStatus,
+  pullExternalDirectory,
+  pullExternalDirectoryCatalog,
+} from "../controllers/external-directory.controller";
+import {
+  getAdminSiteSettings,
+  getAdminSystemHealth,
+  patchAdminSiteSettings,
+} from "../controllers/site-settings.controller";
 import {
   createSiteMedia,
   deleteSiteMedia,
@@ -285,6 +294,13 @@ router.post(
 );
 
 router.get(
+  "/external-directory/status",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  getExternalDirectoryStatus
+);
+
+router.get(
   "/external-directory/catalog",
   authenticateToken,
   authorizeRoles(Role.ADMIN),
@@ -296,6 +312,27 @@ router.get(
   authenticateToken,
   authorizeRoles(Role.ADMIN),
   pullExternalDirectory
+);
+
+router.get(
+  "/system/health",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  getAdminSystemHealth
+);
+
+router.get(
+  "/system/settings",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  getAdminSiteSettings
+);
+
+router.patch(
+  "/system/settings",
+  authenticateToken,
+  authorizeRoles(Role.ADMIN),
+  patchAdminSiteSettings
 );
 
 router.post(

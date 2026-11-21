@@ -5,6 +5,7 @@ import {
   buildReorderSortAssignments,
   isLinkOnlySiteMediaPath,
   isSiteMediaSlot,
+  matchesImageMagicBytes,
   parseImageDataUrl,
   parseYoutubeVideoId,
   resolveNextSortOrder,
@@ -48,6 +49,13 @@ describe("site-media helpers", () => {
     const huge = Buffer.alloc(SITE_MEDIA_MAX_BYTES + 1, 1).toString("base64");
     const parsed = parseImageDataUrl(`data:image/jpeg;base64,${huge}`);
     assert.ok("error" in parsed);
+  });
+
+  it("SM-03b ปฏิเสธเมื่อ magic bytes ไม่ตรง MIME", () => {
+    const fakeJpeg = Buffer.from("not-a-jpeg-file!!!!").toString("base64");
+    const parsed = parseImageDataUrl(`data:image/jpeg;base64,${fakeJpeg}`);
+    assert.ok("error" in parsed);
+    assert.equal(matchesImageMagicBytes("image/png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), true);
   });
 
   it("SM-04 สร้าง URL สาธารณะจากชื่อไฟล์เท่านั้น", () => {

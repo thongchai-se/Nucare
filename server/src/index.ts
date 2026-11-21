@@ -10,19 +10,24 @@ import { prisma } from "./lib/prisma";
 import { resolveUnhandledHttpError } from "./lib/http-error-message";
 import { SITE_MEDIA_UPLOAD_DIR } from "./lib/site-media";
 import { purgeExpiredAuditLogs } from "./lib/audit-log";
+import { runEphemeralChatRetention } from "./lib/ephemeral-chat/sessions";
 import { purgeStaleStudentChatMemories } from "./lib/student-chat/memory";
 import { materializeDueWaves } from "./lib/survey-auto-schedule";
 import { assertChatReadyForEnvironment } from "./lib/student-chat/provider";
+import { isUnsafeMethodOriginAllowed } from "./lib/request-origin";
 import { purgeExpiredTrafficLogs, trafficLogMiddleware } from "./lib/traffic-log";
 import adminRoutes from "./routes/admin.routes";
 import alertsRoutes from "./routes/alerts.routes";
 import authRoutes from "./routes/auth.routes";
+import chatRoutes from "./routes/chat.routes";
 import consentRoutes from "./routes/consent.routes";
 import advisorRoutes from "./routes/advisor.routes";
 import executiveRoutes from "./routes/executive.routes";
 import instructorRoutes from "./routes/instructor.routes";
 import mentalHealthRoutes from "./routes/mental-health.routes";
 import siteMediaRoutes from "./routes/site-media.routes";
+import siteSettingsRoutes from "./routes/site-settings.routes";
+import { maintenanceMiddleware } from "./middleware/maintenance.middleware";
 import studentRoutes from "./routes/student.routes";
 import studentDevelopmentRoutes from "./routes/student-development.routes";
 import { apiRateLimit, apiWriteRateLimit } from "./middleware/rate-limit.middleware";
@@ -158,13 +163,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!unsafeMethods.has(req.method.toUpperCase())) {
-    next();
-    return;
-  }
-
-  const origin = req.get("origin");
-  if (!origin || allowedOriginSet.has(origin)) {
+  if (
+    isUnsafeMethodOriginAllowed({
+      method: req.method,
+      origin: req.get("origin") || undefined,
+      secFetchSite: req.get("sec-fetch-site") || undefined,
+      allowedOrigins: allowedOriginSet,
+      isProduction: process.env.NODE_ENV === "production",
+    })
+  ) {
     next();
     return;
   }
@@ -210,6 +217,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 });
 
 app.use("/api", apiRateLimit, apiWriteRateLimit);
+app.use(maintenanceMiddleware);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/consent", consentRoutes);
@@ -221,7 +229,9 @@ app.use("/api/instructor", instructorRoutes);
 app.use("/api/mental-health", mentalHealthRoutes);
 app.use("/api/executive", executiveRoutes);
 app.use("/api/alerts", alertsRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/site-media", siteMediaRoutes);
+app.use("/api/site-settings", siteSettingsRoutes);
 
 /** เสิร์ฟรูปสื่อที่แอดมินอัปโหลด — อนุญาตเฉพาะชื่อไฟล์ปลอดภัย */
 app.get("/api/uploads/site-media/:fileName", (req: Request, res: Response) => {
@@ -255,6 +265,24 @@ const runChatMemoryMaintenance = async (): Promise<void> => {
     }
   } catch (error) {
     console.error("[chat-memory] purge failed:", error);
+  }
+};
+
+const EPHEMERAL_CHAT_RETENTION_INTERVAL_MS = Math.max(
+  60 * 1000,
+  parseNonNegativeInt(readEnv("EPHEMERAL_CHAT_RETENTION_INTERVAL_MS"), 15 * 60 * 1000)
+);
+
+const runEphemeralChatMaintenance = async (): Promise<void> => {
+  try {
+    const result = await runEphemeralChatRetention(prisma);
+    if (result.midnightDeleted > 0 || result.pressureDeleted > 0) {
+      console.log(
+        `[ephemeral-chat] midnight=${result.midnightDeleted} pressure=${result.pressureDeleted}`
+      );
+    }
+  } catch (error) {
+    console.error("[ephemeral-chat] purge failed:", error);
   }
 };
 
@@ -305,12 +333,16 @@ const runSurveyScheduleTick = async (): Promise<void> => {
 const startServer = async (): Promise<void> => {
   await ensureAppReady(5);
   await runChatMemoryMaintenance();
+  await runEphemeralChatMaintenance();
   await runComplianceLogMaintenance();
   await runSurveyScheduleTick();
   setInterval(() => {
     void runChatMemoryMaintenance();
     void runComplianceLogMaintenance();
   }, LOG_MAINTENANCE_INTERVAL_MS);
+  setInterval(() => {
+    void runEphemeralChatMaintenance();
+  }, EPHEMERAL_CHAT_RETENTION_INTERVAL_MS);
   setInterval(() => {
     void runSurveyScheduleTick();
   }, surveyScheduleIntervalMs);

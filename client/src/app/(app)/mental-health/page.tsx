@@ -6,14 +6,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRightLeft,
   CalendarDays,
-  ChevronRight,
   LayoutDashboard,
-  Menu,
+  MessageCircle,
   Users,
   X,
 } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
+import { EphemeralChatPanel } from "@/components/ephemeral-chat/ephemeral-chat-panel";
+import { StaffMessagesView } from "@/components/ephemeral-chat/staff-messages-view";
 import { AppointmentsView } from "@/components/mental-health/appointments-view";
 import { CasesView } from "@/components/mental-health/cases-view";
 import { DashboardView } from "@/components/mental-health/dashboard-view";
@@ -22,14 +23,16 @@ import { resolveActionToastPresentation } from "@/lib/expandable-toast";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
 import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
 import { StaffSidebarSection } from "@/components/staff-sidebar-section";
+import { StaffTopBar } from "@/components/staff-top-bar";
+import { useEphemeralChatUnread } from "@/hooks/use-ephemeral-chat-unread";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import api from "@/lib/axios";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatMhCareNotePayload } from "@/lib/clinical-note-display";
 import { formatQueueWait } from "@/lib/format-queue-wait";
-import { getNameInitials } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole } from "@/lib/roles";
+import { scheduleDateInputMin } from "@/lib/schedule-datetime";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import {
   STAFF_SIDEBAR_ASIDE,
@@ -48,6 +51,20 @@ type CareSession = {
   createdAt: string;
 };
 
+type ScheduleOfferDto = {
+  id: string;
+  referralId: string;
+  proposedAt: string;
+  location: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  proposedById: string;
+  proposedByName: string;
+  proposedByRole: "MENTAL_HEALTH" | "STUDENT";
+  waitingOn: "MENTAL_HEALTH" | "STUDENT" | null;
+};
+
 type DashboardReferral = {
   id: string;
   status: "PENDING" | "ACCEPTED" | "CLOSED";
@@ -56,10 +73,13 @@ type DashboardReferral = {
   createdAt: string;
   updatedAt: string;
   advisorName: string;
+  acceptedByUserId?: string | null;
   currentOwnerName: string | null;
   currentOwnerAssignedAt: string | null;
   careSessionCount: number;
   latestCareSessionAt: string | null;
+  latestPendingScheduleOffer?: ScheduleOfferDto | null;
+  scheduleOffers?: ScheduleOfferDto[];
   recentCareSessions?: CareSession[];
   student: {
     id: string;
@@ -98,10 +118,14 @@ type DashboardEmergencyCase = {
   };
 };
 
-type ActiveView = "dashboard" | "queue" | "cases" | "appointments";
+type ActiveView = "dashboard" | "queue" | "cases" | "appointments" | "messages";
 
 const isMentalHealthView = (value: string | null): value is ActiveView =>
-  value === "dashboard" || value === "queue" || value === "cases" || value === "appointments";
+  value === "dashboard" ||
+  value === "queue" ||
+  value === "cases" ||
+  value === "appointments" ||
+  value === "messages";
 
 type ActiveCase = {
   referralId: string;
@@ -114,6 +138,7 @@ type ActiveCase = {
   reason: string;
   isUrgent: boolean;
   status: "PENDING" | "ACCEPTED" | "CLOSED";
+  acceptedByUserId: string | null;
   createdAt: string;
   lastUpdatedAt: string;
   currentOwnerName: string | null;
@@ -122,6 +147,7 @@ type ActiveCase = {
   latestCareSessionAt: string | null;
   recentCareSessions: CareSession[];
   latestAssessment: DashboardReferral["student"]["latestAssessment"];
+  latestPendingScheduleOffer: ScheduleOfferDto | null;
 };
 
 const sortWorkspaceCases = (items: ActiveCase[]) =>
@@ -166,6 +192,8 @@ type AppointmentModalState = {
 type Notice = {
   tone: "success" | "error" | "info";
   message: string;
+  title?: string;
+  description?: string;
 } | null;
 
 const emptyCareModalState = (): CareModalState => ({
@@ -184,8 +212,6 @@ const emptyAppointmentModalState = (): AppointmentModalState => ({
   location: "",
   note: "",
 });
-
-const getInitials = (name: string): string => getNameInitials(name, "MH");
 
 const formatThaiDate = (value: string): string => {
   const date = new Date(value);
@@ -257,11 +283,19 @@ const ModalShell = ({
   children: React.ReactNode;
   onClose: () => void;
 }) => (
-  <div className="fixed inset-0 z-[220] flex items-center justify-center overflow-hidden bg-slate-950/40 p-3 sm:p-4">
-    <div className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]">{children}</div>
-    <button type="button" onClick={onClose} className="sr-only">
-      ปิดหน้าต่าง
-    </button>
+  <div className="fixed inset-0 z-[220] flex items-center justify-center overflow-hidden p-4 sm:p-6">
+    <button
+      type="button"
+      onClick={onClose}
+      className="absolute inset-0 bg-slate-900/45"
+      aria-label="ปิดพื้นหลัง"
+    />
+    <div
+      className="relative flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)]"
+      style={{ animation: "toast-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both" }}
+    >
+      {children}
+    </div>
   </div>
 );
 
@@ -281,6 +315,10 @@ function MentalHealthDashboardContent() {
   const [dashboardError, setDashboardError] = useState(false);
   const [busyReferralId, setBusyReferralId] = useState<string | null>(null);
   const [busyEmergencyCaseId, setBusyEmergencyCaseId] = useState<string | null>(null);
+  const [chatPeerId, setChatPeerId] = useState<string | null>(null);
+  const { unreadCount: chatUnreadCount, refreshUnreadCount } = useEphemeralChatUnread(
+    Boolean(user && isAuthenticated)
+  );
   const [notice, setNotice] = useState<Notice>(null);
   const [showCareModal, setShowCareModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -369,6 +407,7 @@ function MentalHealthDashboardContent() {
       reason: referral.reason,
       isUrgent: referral.isUrgent,
       status: referral.status,
+      acceptedByUserId: referral.acceptedByUserId ?? null,
       createdAt: referral.createdAt,
       lastUpdatedAt: referral.latestCareSessionAt || referral.updatedAt || referral.createdAt,
       currentOwnerName: referral.currentOwnerName,
@@ -377,6 +416,7 @@ function MentalHealthDashboardContent() {
       latestCareSessionAt: referral.latestCareSessionAt,
       recentCareSessions: referral.recentCareSessions ?? [],
       latestAssessment: referral.student.latestAssessment,
+      latestPendingScheduleOffer: referral.latestPendingScheduleOffer ?? null,
     };
   }, []);
 
@@ -389,13 +429,20 @@ function MentalHealthDashboardContent() {
     [mapReferralToCase, referrals]
   );
 
-  /** เคสที่รับไว้และกำลังดูแล */
+  /** เคสที่รับไว้และกำลังดูแล — เฉพาะที่ตนเป็นผู้รับ */
   const activeCases = useMemo<ActiveCase[]>(
     () =>
       sortWorkspaceCases(
-        referrals.filter((item) => item.status === "ACCEPTED").map(mapReferralToCase)
+        referrals
+          .filter(
+            (item) =>
+              item.status === "ACCEPTED" &&
+              Boolean(user?.id) &&
+              item.acceptedByUserId === user?.id
+          )
+          .map(mapReferralToCase)
       ),
-    [mapReferralToCase, referrals]
+    [mapReferralToCase, referrals, user?.id]
   );
 
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -480,24 +527,13 @@ function MentalHealthDashboardContent() {
   }, [normalizedAppointments, searchQuery]);
 
   const requestedView = searchParams.get("view");
-  // ลิงก์เก่า ?view=referrals → คิวรอรับ
+  // ลิงก์เก่า ?view=referrals → คิวรอรับเคส
   const activeView: ActiveView =
     requestedView === "referrals"
       ? "queue"
       : isMentalHealthView(requestedView)
         ? requestedView
         : "dashboard";
-
-  const currentViewLabel =
-    activeView === "dashboard"
-      ? "หน้าหลัก"
-      : activeView === "queue"
-        ? "คิวรอรับ"
-        : activeView === "cases"
-          ? "เคสที่ดูแล"
-          : "นัดหมาย";
-  const resolvedViewLabel = currentViewLabel;
-  const userInitials = useMemo(() => getInitials(user?.name || ""), [user?.name]);
 
   const navigateTo = (view: ActiveView, referralId?: string) => {
     setIsMobileMenuOpen(false);
@@ -521,7 +557,7 @@ function MentalHealthDashboardContent() {
   const getCaseStatusLabel = useCallback(
     (item: ActiveCase): string => {
       if (item.status === "PENDING") {
-        return "รอรับ";
+        return "รอรับเคส";
       }
 
       if (item.riskLevel === "high" || item.isUrgent) {
@@ -609,16 +645,38 @@ function MentalHealthDashboardContent() {
 
     setBusyReferralId(referralId);
     try {
-      await api.patch(`/api/mental-health/referrals/${referralId}/status`, { status });
+      const response = await api.patch<{
+        message?: string;
+        declineOnly?: boolean;
+      }>(`/api/mental-health/referrals/${referralId}/status`, { status });
       await loadDashboard();
+      const declineOnly = Boolean(response.data?.declineOnly);
       setNotice({
         tone: "success",
+        title:
+          status === "ACCEPTED"
+            ? "รับเคสสำเร็จ"
+            : status === "CLOSED"
+              ? declineOnly
+                ? "ซ่อนคิวแล้ว"
+                : "ปฏิเสธคิวสำเร็จ"
+              : "บันทึกแล้ว",
+        description:
+          status === "ACCEPTED"
+            ? "ไปเมนูเคสที่ดูแลเพื่อนัดหรือบันทึกผล"
+            : status === "CLOSED"
+              ? declineOnly
+                ? "รอผู้เชี่ยวชาญท่านอื่น"
+                : "ที่ปรึกษาได้รับการแจ้งแล้ว"
+              : undefined,
         message:
           status === "ACCEPTED"
-            ? "รับเคสเรียบร้อยแล้ว — ไปต่อที่เมนูเคสที่ดูแลเพื่อนัดคุยหรือบันทึกผล"
+            ? "รับเคสสำเร็จ"
             : status === "CLOSED"
-              ? "ปิด/ปฏิเสธคิวเรียบร้อยแล้ว ที่ปรึกษาจะได้รับการแจ้ง"
-              : "บันทึกสถานะเคสแล้ว",
+              ? declineOnly
+                ? "ซ่อนคิวแล้ว"
+                : "ปฏิเสธคิวสำเร็จ"
+              : "บันทึกแล้ว",
       });
       if (status === "ACCEPTED") {
         navigateTo("cases");
@@ -648,7 +706,7 @@ function MentalHealthDashboardContent() {
         referralId,
         title: isQueueReject ? "ปฏิเสธคิว" : "ปิดเคส",
         description: isQueueReject
-          ? "ปฏิเสธคิวนี้หรือไม่? ที่ปรึกษาจะได้รับการแจ้ง และรายการจะออกจากคิว"
+          ? "ปฏิเสธคิวนี้หรือไม่? คิวจะถูกซ่อนจากคุณก่อน — ถ้าผู้เชี่ยวชาญทุกคนปฏิเสธ ค่อยยกเลิกกลับไปแจ้งที่ปรึกษา"
           : "ปิดเคสนี้หรือไม่? จะออกจากรายการกำลังดูแล และไม่สามารถย้อนกลับได้",
         confirmLabel: isQueueReject ? "ปฏิเสธคิว" : "ปิดเคส",
       });
@@ -794,7 +852,9 @@ function MentalHealthDashboardContent() {
       await loadDashboard();
       setNotice({
         tone: "success",
-        message: "บันทึกผลการปรึกษาเรียบร้อยแล้ว",
+        title: "บันทึกผลสำเร็จ",
+        description: "บันทึกการดูแลของนิสิตแล้ว",
+        message: "บันทึกผลสำเร็จ",
       });
     } catch (error) {
       setNotice({
@@ -810,18 +870,33 @@ function MentalHealthDashboardContent() {
     if (!targetCase) {
       setNotice({
         tone: "error",
-        message: "กรุณาเลือกนักศึกษาก่อนสร้างนัดหมาย",
+        message: "กรุณาเลือกนักศึกษาก่อนเสนอนัด",
+      });
+      return;
+    }
+
+    const location = appointmentForm.location.trim();
+    if (!location) {
+      setNotice({
+        tone: "error",
+        message: "กรุณาระบุสถานที่นัด",
+      });
+      return;
+    }
+
+    const proposedAt = new Date(`${appointmentForm.date}T${appointmentForm.time}`);
+    if (Number.isNaN(proposedAt.getTime())) {
+      setNotice({
+        tone: "error",
+        message: "วันเวลานัดไม่ถูกต้อง",
       });
       return;
     }
 
     try {
-      await api.post("/api/mental-health/appointments", {
-        studentId: targetCase.studentId,
-        referralId: targetCase.referralId,
-        date: appointmentForm.date,
-        time: appointmentForm.time,
-        location: appointmentForm.location.trim(),
+      await api.post(`/api/mental-health/referrals/${targetCase.referralId}/schedule-offers`, {
+        proposedAt: proposedAt.toISOString(),
+        location,
         note: appointmentForm.note.trim() || undefined,
       });
 
@@ -829,12 +904,32 @@ function MentalHealthDashboardContent() {
       await loadDashboard();
       setNotice({
         tone: "success",
-        message: "บันทึกนัดหมายเรียบร้อยแล้ว นิสิตจะเห็นในหน้าการนัดหมาย",
+        title: "เสนอนัดแล้ว",
+        description: "รอนิสิตยอมรับหรือขอเปลี่ยน",
+        message: "รอนิสิตยอมรับหรือขอเปลี่ยน",
       });
     } catch (error) {
       setNotice({
         tone: "error",
-        message: getApiErrorMessage(error, "ไม่สามารถสร้างนัดหมายได้"),
+        message: getApiErrorMessage(error, "ไม่สามารถเสนอนัดได้"),
+      });
+    }
+  };
+
+  const handleAcceptStudentScheduleOffer = async (referralId: string, offerId: string) => {
+    try {
+      await api.post(`/api/mental-health/referrals/${referralId}/schedule-offers/${offerId}/accept`);
+      await loadDashboard();
+      setNotice({
+        tone: "success",
+        title: "ยืนยันนัดแล้ว",
+        description: "นัดถูกยืนยันแล้ว",
+        message: "ยืนยันนัดแล้ว",
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: getApiErrorMessage(error, "ไม่สามารถยอมรับข้อเสนอได้"),
       });
     }
   };
@@ -853,13 +948,21 @@ function MentalHealthDashboardContent() {
 
   const NavSections = () => (
     <>
-      <StaffSidebarSection title="เมนูหลัก">
-        <StaffSidebarNavButton active={activeView === "dashboard"} icon={<LayoutDashboard size={20} />} label="หน้าหลัก" onClick={() => navigateTo("dashboard")} />
+      <StaffSidebarSection title="งานหลัก">
+        <StaffSidebarNavButton
+          active={activeView === "dashboard"}
+          icon={<LayoutDashboard size={20} />}
+          label="หน้าหลัก"
+          onClick={() => navigateTo("dashboard")}
+        />
+      </StaffSidebarSection>
+
+      <StaffSidebarSection title="งานเคส">
         <StaffSidebarNavButton
           active={activeView === "queue"}
           badge={pendingReferrals.length || undefined}
           icon={<ArrowRightLeft size={20} />}
-          label="คิวรอรับ"
+          label="คิวรอรับเคส"
           onClick={() => navigateTo("queue")}
         />
         <StaffSidebarNavButton
@@ -875,14 +978,26 @@ function MentalHealthDashboardContent() {
           onClick={() => navigateTo("appointments")}
         />
       </StaffSidebarSection>
+
+      <StaffSidebarSection title="ติดต่อ">
+        <StaffSidebarNavButton
+          active={activeView === "messages"}
+          badge={chatUnreadCount || undefined}
+          icon={<MessageCircle size={20} />}
+          label="ข้อความ"
+          onClick={() => navigateTo("messages")}
+        />
+      </StaffSidebarSection>
     </>
   );
 
   const noticeToast = notice
     ? resolveActionToastPresentation({
         message: notice.message,
+        title: notice.title,
+        description: notice.description,
         tone: notice.tone,
-        errorTitle: "ไม่สามารถดำเนินการได้",
+        errorTitle: "ทำไม่สำเร็จ",
       })
     : null;
 
@@ -965,35 +1080,7 @@ function MentalHealthDashboardContent() {
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen((current) => !current)}
-                className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
-
-              <div className="hidden items-center gap-2 text-sm font-medium text-slate-500 lg:flex">
-                <span>พอร์ทัลผู้เชี่ยวชาญ</span>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-                <span className="font-bold text-slate-800">{resolvedViewLabel}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 sm:gap-6">
-              <div className="flex items-center gap-3">
-                <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
-                  <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-500">ผู้เชี่ยวชาญสุขภาพจิต</p>
-                </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-indigo-100 text-sm font-bold text-indigo-700">
-                  {userInitials}
-                </div>
-              </div>
-            </div>
-          </header>
+          <StaffTopBar onOpenMenu={() => setIsMobileMenuOpen((current) => !current)} />
 
           <main
             ref={mainContentRef}
@@ -1026,7 +1113,6 @@ function MentalHealthDashboardContent() {
                   getNextAppointmentLabel={getNextAppointmentLabel}
                   getRiskClasses={getRiskClasses}
                   handleAcknowledgeAlert={handleAcknowledgeAlert}
-                  loadDashboard={loadDashboard}
                   navigateTo={navigateTo}
                   onUpdateEmergencyCase={handleUpdateEmergencyCase}
                   openAppointmentModal={openAppointmentModal}
@@ -1050,6 +1136,7 @@ function MentalHealthDashboardContent() {
                   mode="queue"
                   onAcceptCase={(referralId) => void handleUpdateReferral(referralId, "ACCEPTED")}
                   onCloseCase={(referralId) => void handleUpdateReferral(referralId, "CLOSED")}
+                  onOpenChat={(studentId) => setChatPeerId(studentId)}
                   openAppointmentModal={openAppointmentModal}
                   openCareModal={openCareModal}
                   searchQuery={searchQuery}
@@ -1071,6 +1158,7 @@ function MentalHealthDashboardContent() {
                   mode="cases"
                   onAcceptCase={(referralId) => void handleUpdateReferral(referralId, "ACCEPTED")}
                   onCloseCase={(referralId) => void handleUpdateReferral(referralId, "CLOSED")}
+                  onOpenChat={(studentId) => setChatPeerId(studentId)}
                   openAppointmentModal={openAppointmentModal}
                   openCareModal={openCareModal}
                   searchQuery={searchQuery}
@@ -1087,6 +1175,15 @@ function MentalHealthDashboardContent() {
                   getRiskClasses={getRiskClasses}
                   onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
                   openAppointmentModal={openAppointmentModal}
+                />
+              ) : null}
+
+              {activeView === "messages" ? (
+                <StaffMessagesView
+                  onOpenChat={(peerUserId) => setChatPeerId(peerUserId)}
+                  onUnreadCountChange={() => {
+                    void refreshUnreadCount();
+                  }}
                 />
               ) : null}
 
@@ -1125,6 +1222,7 @@ function MentalHealthDashboardContent() {
                 <label className="text-sm font-bold text-slate-700">วันที่พบ</label>
                 <input
                   type="date"
+                  max={scheduleDateInputMin()}
                   value={careForm.sessionDate}
                   onChange={(event) => setCareForm((current) => ({ ...current, sessionDate: event.target.value }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
@@ -1187,12 +1285,12 @@ function MentalHealthDashboardContent() {
                   value={careForm.confidentialNotes}
                   onChange={(event) => setCareForm((current) => ({ ...current, confidentialNotes: event.target.value }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="ข้อความที่เห็นได้เฉพาะทีมสุขภาพจิต"
+                  placeholder="ข้อความที่เห็นได้เฉพาะคุณ"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
+            <div className="flex flex-col-reverse justify-center gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
               <button
                 type="button"
                 onClick={closeCareModal}
@@ -1215,9 +1313,9 @@ function MentalHealthDashboardContent() {
               <div>
                 <h3 className="flex items-center gap-2 text-xl font-bold text-slate-800">
                   <CalendarDays className="h-5 w-5 text-blue-600" />
-                  สร้างนัดหมายใหม่
+                  เสนอนัดหมาย
                 </h3>
-                <p className="mt-1 text-sm text-slate-500">เลือกนักศึกษาจากเคสที่คุณรับไว้แล้ว เพื่อจัดตารางติดตาม</p>
+                <p className="mt-1 text-sm text-slate-500">เสนอวันเวลาและสถานที่ให้นิสิตยอมรับหรือขอเปลี่ยน</p>
               </div>
               <button type="button" onClick={closeAppointmentModal} className="rounded-full bg-white p-2 shadow-sm transition-colors hover:bg-slate-50">
                 <X className="h-5 w-5 text-slate-400" />
@@ -1244,11 +1342,35 @@ function MentalHealthDashboardContent() {
                 </select>
               </div>
 
+              {(() => {
+                const selected = activeCases.find((item) => item.studentId === appointmentForm.studentId);
+                const pending = selected?.latestPendingScheduleOffer;
+                if (!pending || pending.waitingOn !== "MENTAL_HEALTH") {
+                  return null;
+                }
+                return (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">มีข้อเสนอจากนิสิตรอคุณ</p>
+                    <p className="mt-1">
+                      {formatThaiDateTime(pending.proposedAt)} · {pending.location}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleAcceptStudentScheduleOffer(selected.referralId, pending.id)}
+                      className="mt-3 inline-flex rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800"
+                    >
+                      ยอมรับข้อเสนอนี้
+                    </button>
+                  </div>
+                );
+              })()}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-xs font-bold uppercase text-slate-500">วันที่</label>
                   <input
                     type="date"
+                    min={scheduleDateInputMin()}
                     value={appointmentForm.date}
                     onChange={(event) => setAppointmentForm((current) => ({ ...current, date: event.target.value }))}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
@@ -1274,8 +1396,9 @@ function MentalHealthDashboardContent() {
                   value={appointmentForm.location}
                   onChange={(event) => setAppointmentForm((current) => ({ ...current, location: event.target.value }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="เช่น ห้องให้คำปรึกษา 1 หรือออนไลน์"
+                  placeholder="เช่น ห้อง 9525 หรือออนไลน์"
                   required
+                  maxLength={200}
                 />
               </div>
 
@@ -1286,16 +1409,16 @@ function MentalHealthDashboardContent() {
                   value={appointmentForm.note}
                   onChange={(event) => setAppointmentForm((current) => ({ ...current, note: event.target.value }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="เช่น เตรียมประเด็นที่อยากคุย หรือสิ่งที่นักศึกษาควรทราบก่อนเข้าพบ"
+                  placeholder="ข้อความสั้นถึงนิสิต (ถ้ามี)"
                 />
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                นัดหมายจะถูกบันทึกในระบบ และนิสิตจะเห็นรายการในหน้าการนัดหมายของตนเอง
+                นิสิตจะเห็นข้อเสนอในหน้าแรก — เมื่อยอมรับจึงกลายเป็นนัดยืนยัน
               </div>
             </div>
 
-            <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
+            <div className="flex flex-col-reverse justify-center gap-3 border-t border-slate-100 bg-slate-50 p-6 sm:flex-row">
               <button
                 type="button"
                 onClick={closeAppointmentModal}
@@ -1307,11 +1430,23 @@ function MentalHealthDashboardContent() {
                 type="submit"
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto"
               >
-                <ConfirmSubmitLabel>บันทึกนัดหมาย</ConfirmSubmitLabel>
+                <ConfirmSubmitLabel>ส่งข้อเสนอ</ConfirmSubmitLabel>
               </button>
             </div>
           </form>
         </ModalShell>
+      ) : null}
+
+      {user ? (
+        <EphemeralChatPanel
+          open={Boolean(chatPeerId)}
+          currentUserId={user.id}
+          peerUserId={chatPeerId}
+          onClose={() => {
+            setChatPeerId(null);
+            void refreshUnreadCount();
+          }}
+        />
       ) : null}
     </div>
   );

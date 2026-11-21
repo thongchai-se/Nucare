@@ -41,7 +41,7 @@ export function emergencyCaseTransitionError(
 export function emergencyCaseStatusLabel(status: EmergencyCaseStatus): string {
   switch (status) {
     case EmergencyCaseStatus.OPEN:
-      return "รอรับ";
+      return "รอรับเรื่อง";
     case EmergencyCaseStatus.IN_PROGRESS:
       return "กำลังดำเนินการ";
     case EmergencyCaseStatus.RESOLVED:

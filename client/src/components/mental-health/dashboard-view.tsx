@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   FileText,
   MapPin,
-  RefreshCw,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -17,6 +16,7 @@ import { DashboardPanel } from "@/components/ui/dashboard-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { stripSeedMarkers } from "@/lib/history-display";
+import { STATUS_BADGE_COMPACT } from "@/lib/status-badge";
 import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SECONDARY_COMPACT, UI_TEXT_LINK } from "@/lib/ui-classes";
 import type {
   MentalHealthAlert,
@@ -39,7 +39,6 @@ type DashboardViewProps = {
   onUpdateEmergencyCase: (caseId: string, status: MentalHealthEmergencyCase["status"]) => void | Promise<void>;
   openAppointmentModal: (item?: MentalHealthCase) => void;
   openCareModal: (item: MentalHealthCase) => void;
-  loadDashboard: () => void | Promise<void>;
   getCaseStatusLabel: (item: MentalHealthCase) => string;
   getNextAppointmentLabel: (studentId: string) => string;
   formatThaiDateTime: (value: string) => string;
@@ -59,7 +58,6 @@ export function DashboardView({
   onUpdateEmergencyCase,
   openAppointmentModal,
   openCareModal,
-  loadDashboard,
   getCaseStatusLabel,
   getNextAppointmentLabel,
   formatThaiDateTime,
@@ -89,7 +87,7 @@ export function DashboardView({
           tone="blue"
           icon={ArrowRightLeft}
           subtitle="ส่งต่อจากที่ปรึกษา"
-          label="คิวรอรับ"
+          label="คิวรอรับเคส"
           value={pendingReferrals.length}
           onClick={() => navigateTo("queue")}
         />
@@ -135,7 +133,7 @@ export function DashboardView({
                             : "bg-rose-100 text-rose-800"
                         }`}
                       >
-                        {item.status === "IN_PROGRESS" ? "กำลังดำเนินการ" : "รอรับ"}
+                        {item.status === "IN_PROGRESS" ? "กำลังดำเนินการ" : "รอรับเรื่อง"}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-600">
@@ -173,11 +171,11 @@ export function DashboardView({
 
       <div className="grid gap-6 xl:grid-cols-2">
         <DashboardPanel
-          title="คิวรอรับ"
+          title="คิวรอรับเคส"
           icon={ArrowRightLeft}
           action={
             <button type="button" onClick={() => navigateTo("queue")} className={UI_TEXT_LINK}>
-              เปิดคิวรอรับ
+              เปิดคิวรอรับเคส
             </button>
           }
         >
@@ -202,9 +200,7 @@ export function DashboardView({
                         {stripSeedMarkers(item.reason) || item.reason}
                       </p>
                     </div>
-                    <span className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-semibold ${risk.badge}`}>
-                      {risk.label}
-                    </span>
+                    <span className={`shrink-0 ${STATUS_BADGE_COMPACT} ${risk.badge}`}>{risk.label}</span>
                   </button>
                 );
               })}
@@ -212,7 +208,7 @@ export function DashboardView({
           ) : (
             <EmptyState
               icon={ArrowRightLeft}
-              title="ยังไม่มีคิวรอรับ"
+              title="ยังไม่มีคิวรอรับเคส"
               description="เมื่อมีเคสส่งต่อเข้าคิว ระบบจะแสดงที่นี่"
               className="py-6"
             />
@@ -342,16 +338,6 @@ export function DashboardView({
         <DashboardPanel
           title="สัญญาณและการแจ้งเตือน"
           icon={Activity}
-          action={
-            <button
-              type="button"
-              onClick={() => void loadDashboard()}
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              aria-label="รีเฟรชการแจ้งเตือน"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          }
         >
           {alerts.length > 0 ? (
             <div className="space-y-3">

@@ -1,16 +1,13 @@
 /**
  * นิสิตที่ถือว่า “ค้างประเมิน” สำหรับงานพัฒนานิสิต
- * — มี assignment ของคลื่น OPEN ที่ยังไม่ทำ หรือยังไม่เคยมีผลประเมิน/ตอบแบบเลย
+ * — มี assignment ของคลื่น OPEN ที่ยังไม่ทำ (completedAt เป็น null) เท่านั้น
  */
 export function isStudentDevelopmentPendingAssessment(student: {
   surveyAssignments: ReadonlyArray<unknown>;
   surveyResponses: ReadonlyArray<unknown>;
   studentAssessments: ReadonlyArray<unknown>;
 }): boolean {
-  return (
-    student.surveyAssignments.length > 0 ||
-    (student.surveyResponses.length === 0 && student.studentAssessments.length === 0)
-  );
+  return student.surveyAssignments.length > 0;
 }
 
 /** หนี HTML ในข้อความแจ้งเตือนอีเมล */

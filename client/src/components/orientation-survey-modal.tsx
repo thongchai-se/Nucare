@@ -210,9 +210,11 @@ export function OrientationSurveyModal({
     setErrorMessage("");
 
     window.requestAnimationFrame(() => {
+      // nearest กันดึงสกอลล์ทั้งหน้าหลังโมดัล — เลื่อนเฉพาะคอนเทนเนอร์ในโมดัล
       questionNodeRefs.current[questionId]?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: "nearest",
+        inline: "nearest",
       });
       window.setTimeout(() => focusQuestionControl(questionId), 260);
     });
@@ -291,7 +293,7 @@ export function OrientationSurveyModal({
             {question.options.map((option) => (
               <label
                 key={option.value}
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-blue-50"
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-[#0057A8]/25 hover:bg-[#0057A8]/5"
               >
                 <input
                   type="radio"
@@ -314,7 +316,7 @@ export function OrientationSurveyModal({
               return (
                 <label
                   key={option.value}
-                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-blue-50"
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-[#0057A8]/25 hover:bg-[#0057A8]/5"
                 >
                   <input
                     type="checkbox"
@@ -343,7 +345,7 @@ export function OrientationSurveyModal({
                 className={`flex h-11 min-w-11 items-center justify-center rounded-xl border px-4 text-sm font-black transition-colors ${
                   answer === value
                     ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-blue-50"
+                    : "border-slate-200 bg-white text-slate-800 hover:border-[#0057A8]/25 hover:bg-[#0057A8]/5"
                 }`}
               >
                 {value}
@@ -380,36 +382,34 @@ export function OrientationSurveyModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0" style={{ inset: 0, position: "fixed", zIndex: 10000 }}>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-hidden p-4 sm:p-6">
       <button
         type="button"
         aria-label="ปิดแบบสอบถาม"
-        className="fixed inset-0 bg-slate-900/60"
-        style={{ inset: 0, position: "fixed" }}
+        className="absolute inset-0 bg-slate-900/45"
         onClick={requestClose}
       />
 
-      <div
-        className="fixed inset-0 flex items-center justify-center overflow-hidden p-3 sm:p-4"
-        style={{ inset: 0, position: "fixed", zIndex: 1 }}
+      <form
+        onSubmit={handleSubmit}
+        className="relative flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)]"
+        style={{ animation: "toast-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both" }}
       >
-        <form
-          onSubmit={handleSubmit}
-          className="flex min-h-0 max-h-[calc(100dvh-1rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl"
-        >
-          <div className="flex shrink-0 items-start justify-between gap-3 bg-blue-700 px-4 py-3 text-white sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-b from-sky-50 to-white px-5 py-4 sm:gap-4 sm:px-6 sm:py-5">
             <div className="min-w-0">
-              <h3 className="flex min-w-0 items-center gap-2 text-base font-bold leading-snug sm:text-lg">
-                <ClipboardList className="h-4 w-4 shrink-0 text-blue-200 sm:h-5 sm:w-5" />
+              <h3 className="flex min-w-0 items-center gap-2 text-base font-bold leading-snug text-slate-900 sm:text-lg">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0057A8] text-white">
+                  <ClipboardList className="h-4 w-4" strokeWidth={2.25} />
+                </span>
                 <span className="min-w-0 truncate">{survey?.title || "แบบสอบถาม"}</span>
               </h3>
               {survey?.description ? (
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-blue-100 sm:line-clamp-3 sm:text-sm sm:leading-6">
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600 sm:line-clamp-3 sm:text-sm sm:leading-6">
                   {survey.description}
                 </p>
               ) : null}
               {survey && !hasSubmitted && totalQuestionCount > 0 ? (
-                <p className="mt-2 text-xs font-semibold text-blue-100" aria-live="polite">
+                <p className="mt-2 text-xs font-semibold text-[#0057A8]" aria-live="polite">
                   ความคืบหน้า {answeredCount}/{totalQuestionCount} ข้อ
                   {missingRequiredCount > 0 ? ` · เหลือบังคับอีก ${missingRequiredCount}` : ""}
                 </p>
@@ -419,9 +419,9 @@ export function OrientationSurveyModal({
               type="button"
               onClick={requestClose}
               aria-label="ปิดแบบสอบถาม"
-              className="shrink-0 rounded-md p-1 text-blue-200 transition-colors hover:bg-blue-600 hover:text-white"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
             >
-              <X className="h-5 w-5 sm:h-6 sm:w-6" />
+              <X className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
 
@@ -533,37 +533,36 @@ export function OrientationSurveyModal({
             ) : null}
           </div>
         </form>
-      </div>
 
       {confirmCloseOpen ? (
         <div
-          className="fixed inset-0 z-[1] grid place-items-center bg-slate-950/40 p-4"
+          className="absolute inset-0 z-10 grid place-items-center bg-slate-950/40 p-4"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="survey-discard-title"
           aria-describedby="survey-discard-desc"
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
-            <h4 id="survey-discard-title" className="text-base font-bold text-slate-950">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35)]">
+            <h4 id="survey-discard-title" className="text-lg font-bold text-slate-900">
               ทิ้งคำตอบที่กรอกไว้?
             </h4>
             <p id="survey-discard-desc" className="mt-2 text-sm leading-6 text-slate-600">
               คุณตอบไปแล้ว {answeredCount} ข้อ หากปิดตอนนี้คำตอบจะไม่ถูกบันทึก
             </p>
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setConfirmCloseOpen(false)}
-                className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200"
-              >
-                กลับไปทำต่อ
-              </button>
+            <div className="mt-6 flex flex-col-reverse gap-2.5 sm:flex-row-reverse sm:justify-center">
               <button
                 type="button"
                 onClick={confirmDiscardAndClose}
-                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-700"
               >
                 ทิ้งคำตอบแล้วปิด
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmCloseOpen(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                กลับไปทำต่อ
               </button>
             </div>
           </div>

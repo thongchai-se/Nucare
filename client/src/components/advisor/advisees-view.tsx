@@ -1,15 +1,16 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Users } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import {
-  RosterCountBadge,
   RosterMobileCard,
   RosterMobileList,
   RosterPersonCell,
   RosterRow,
   RosterSearchInput,
+  RosterSelectFilter,
   RosterTable,
   RosterTableCard,
   RosterTd,
@@ -114,7 +115,7 @@ function RowActions({
           referralBlocked
             ? latestReferral?.status === "ACCEPTED"
               ? "มีเคสที่กำลังดูแลอยู่แล้ว"
-              : "มีเคสส่งต่อที่รอรับอยู่แล้ว"
+              : "มีเคสส่งต่อที่รอรับเคสอยู่แล้ว"
             : "ส่งต่อเคส"
         }
         className={UI_ACTION_PRIMARY_COMPACT}
@@ -140,7 +141,26 @@ export function AdviseesView(props: AdviseesViewProps) {
     onOpenReferral,
   } = props;
 
-  const pagination = useListPagination(filteredStudents, searchTerm);
+  const [yearFilter, setYearFilter] = useState<"ALL" | string>("ALL");
+
+  const yearOptions = useMemo(() => {
+    const years = filteredStudents
+      .map((student) => student.year)
+      .filter((year) => year && year !== "-");
+    return Array.from(new Set(years)).sort(
+      (left, right) => Number(left) - Number(right) || left.localeCompare(right, "th")
+    );
+  }, [filteredStudents]);
+
+  const yearFilteredStudents = useMemo(
+    () =>
+      yearFilter === "ALL"
+        ? filteredStudents
+        : filteredStudents.filter((student) => student.year === yearFilter),
+    [filteredStudents, yearFilter]
+  );
+
+  const pagination = useListPagination(yearFilteredStudents, `${searchTerm}:${yearFilter}`);
   const pageItems = pagination.pageItems;
 
   return (
@@ -162,7 +182,18 @@ export function AdviseesView(props: AdviseesViewProps) {
               aria-label="ค้นหานักศึกษา"
             />
             <RosterToolbarEnd>
-              <RosterCountBadge count={filteredStudents.length} />
+              <RosterSelectFilter
+                value={yearFilter}
+                onChange={setYearFilter}
+                aria-label="กรองชั้นปี"
+              >
+                <option value="ALL">ทุกชั้นปี</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    ชั้นปี {year}
+                  </option>
+                ))}
+              </RosterSelectFilter>
             </RosterToolbarEnd>
           </>
         }
@@ -278,7 +309,7 @@ export function AdviseesView(props: AdviseesViewProps) {
           })}
         </RosterMobileList>
 
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}

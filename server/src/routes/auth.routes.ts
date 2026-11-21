@@ -1,31 +1,11 @@
 import { Router } from "express";
-import {
-  changePassword,
-  forgotPassword,
-  login,
-  logout,
-  me,
-  resetPassword,
-  session,
-  validateResetPasswordToken,
-  refresh,
-} from "../controllers/auth.controller";
+import { login, logout, me, session, refresh } from "../controllers/auth.controller";
 import { authenticateToken } from "../middleware/auth.middleware";
-import {
-  changePasswordRateLimit,
-  forgotPasswordRateLimit,
-  loginRateLimit,
-  refreshRateLimit,
-  resetPasswordRateLimit,
-} from "../middleware/rate-limit.middleware";
+import { loginRateLimit, refreshRateLimit } from "../middleware/rate-limit.middleware";
 
 const router = Router();
 
 router.post("/login", loginRateLimit, login);
-router.post("/forgot-password", forgotPasswordRateLimit, forgotPassword);
-router.get("/reset-password/validate", validateResetPasswordToken);
-router.post("/reset-password", resetPasswordRateLimit, resetPassword);
-router.post("/change-password", authenticateToken, changePasswordRateLimit, changePassword);
 router.post("/logout", logout);
 router.get("/session", session);
 router.get("/me", authenticateToken, me);

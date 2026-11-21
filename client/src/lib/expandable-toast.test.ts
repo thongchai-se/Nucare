@@ -61,13 +61,29 @@ describe("expandable toast helpers", () => {
     assert.equal(dup.hasDetail, false);
   });
 
-  it("ET-05 ใช้ข้อความการกระทำเป็นหัวข้อ ไม่ห่อด้วยอัปเดตข้อมูลแล้ว", () => {
+  it("ET-05 ใช้ข้อความการกระทำเป็นหัวข้อ และแยกรายละเอียดยาวออกจากหัวข้อ", () => {
     const ack = resolveActionToastPresentation({
       message: "รับเรื่องแล้ว",
       tone: "info",
     });
     assert.equal(ack.title, "รับเรื่องแล้ว");
     assert.equal(ack.description, undefined);
+
+    const split = resolveActionToastPresentation({
+      message: "รับเคสสำเร็จ — ไปเมนูเคสที่ดูแลเพื่อนัดหรือบันทึกผล",
+      tone: "success",
+    });
+    assert.equal(split.title, "รับเคสสำเร็จ");
+    assert.equal(split.description, "ไปเมนูเคสที่ดูแลเพื่อนัดหรือบันทึกผล");
+
+    const titled = resolveActionToastPresentation({
+      message: "ignored",
+      title: "ปิดเคสสำเร็จ",
+      description: "ออกจากรายการกำลังดูแลแล้ว",
+      tone: "success",
+    });
+    assert.equal(titled.title, "ปิดเคสสำเร็จ");
+    assert.equal(titled.description, "ออกจากรายการกำลังดูแลแล้ว");
 
     const err = resolveActionToastPresentation({
       message: "ไม่พบรายการ",

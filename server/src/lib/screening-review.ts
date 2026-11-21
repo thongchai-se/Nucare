@@ -735,7 +735,10 @@ export async function createReferralFromScreening(input: {
         studentId,
         type: AlertType.REFERRAL_RECEIVED,
         priority: isUrgent ? AlertPriority.HIGH : AlertPriority.MEDIUM,
-        title: "มีเคสส่งต่อใหม่",
+        title:
+          input.target === ReferralTarget.STUDENT_DEVELOPMENT
+            ? "เคสสวัสดิการใหม่"
+            : "มีเคสส่งต่อใหม่",
         message: reason,
         sourceType: "CaseReferral",
         sourceId: referral.id,

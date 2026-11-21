@@ -12,7 +12,6 @@ import {
   calculateSurveyResponseScore,
   getGhq28DistressLevel,
   getGhq28RiskLevel,
-  getSurveyInstrumentLabel,
   getSurveyRiskLevel,
   Ghq28DistressLevel,
   isGhq28SurveyTitle,
@@ -552,8 +551,14 @@ export const buildOperationsStats = (input: {
   };
 };
 
+/** ขอบเขตย้อนหลังสำหรับเคส/นัดบนแดชบอร์ดผู้บริหาร — ลด payload บนเซิร์ฟเวอร์จำกัด */
+const EXECUTIVE_CASE_LOOKBACK_MS = 730 * 24 * 60 * 60 * 1000;
+const EXECUTIVE_CASE_MAX_RESULTS = 5000;
+const EXECUTIVE_ASSESSMENT_MAX_RESULTS = 8000;
+
 export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboardPayload> => {
   const now = new Date();
+  const caseSince = new Date(now.getTime() - EXECUTIVE_CASE_LOOKBACK_MS);
 
   const [students, activeSurvey, consultations, referrals, emergencies, assessments] =
     await Promise.all([
@@ -582,14 +587,10 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
           questions: {
             orderBy: { order: "asc" },
           },
-          responses: {
-            include: {
-              answers: true,
-            },
-          },
         },
       }),
       prisma.consultationRequest.findMany({
+        where: { createdAt: { gte: caseSince } },
         select: {
           topic: true,
           createdAt: true,
@@ -601,8 +602,11 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
             },
           },
         },
+        orderBy: { createdAt: "desc" },
+        take: EXECUTIVE_CASE_MAX_RESULTS,
       }),
       prisma.caseReferral.findMany({
+        where: { createdAt: { gte: caseSince } },
         select: {
           createdAt: true,
           status: true,
@@ -612,8 +616,11 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
             },
           },
         },
+        orderBy: { createdAt: "desc" },
+        take: EXECUTIVE_CASE_MAX_RESULTS,
       }),
       prisma.emergencyCase.findMany({
+        where: { openedAt: { gte: caseSince } },
         select: {
           openedAt: true,
           status: true,
@@ -623,14 +630,18 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
             },
           },
         },
+        orderBy: { openedAt: "desc" },
+        take: EXECUTIVE_CASE_MAX_RESULTS,
       }),
       prisma.studentAssessment.findMany({
+        where: { assessedAt: { gte: caseSince } },
         orderBy: [{ assessedAt: "desc" }, { createdAt: "desc" }],
         select: {
           studentId: true,
           riskLevel: true,
           assessedAt: true,
         },
+        take: EXECUTIVE_ASSESSMENT_MAX_RESULTS,
       }),
     ]);
 
@@ -660,16 +671,46 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
   if (activeSurvey) {
     const maxScore = calculateSurveyMaxScore(activeSurvey.questions, activeSurvey.title);
     const isGhq28 = isGhq28SurveyTitle(activeSurvey.title);
+    const surveyResponses = await prisma.surveyResponse.findMany({
+      where: { surveyId: activeSurvey.id },
+      orderBy: [{ studentId: "asc" }, { submittedAt: "desc" }],
+      distinct: ["studentId"],
+      select: {
+        id: true,
+        studentId: true,
+        totalScore: true,
+        maxScore: true,
+        riskLevel: true,
+        submittedAt: true,
+      },
+    });
 
-    activeSurvey.responses.forEach((response) => {
-      if (surveyResponseByStudentId.has(response.studentId)) {
-        return;
+    const needsRescore = surveyResponses.filter(
+      (response) => response.totalScore === null || response.maxScore <= 0
+    );
+    const answersByResponseId = new Map<string, Array<{ questionId: string; value: unknown }>>();
+    if (needsRescore.length > 0) {
+      const answerRows = await prisma.surveyAnswer.findMany({
+        where: { responseId: { in: needsRescore.map((row) => row.id) } },
+        select: { responseId: true, questionId: true, value: true },
+      });
+      for (const row of answerRows) {
+        const list = answersByResponseId.get(row.responseId) ?? [];
+        list.push({ questionId: row.questionId, value: row.value });
+        answersByResponseId.set(row.responseId, list);
       }
+    }
 
+    for (const response of surveyResponses) {
       const responseMaxScore = response.maxScore > 0 ? response.maxScore : maxScore;
       const totalScore =
-        response.totalScore ??
-        calculateSurveyResponseScore(activeSurvey.questions, response.answers, activeSurvey.title);
+        response.totalScore === null || response.maxScore <= 0
+          ? calculateSurveyResponseScore(
+              activeSurvey.questions,
+              answersByResponseId.get(response.id) ?? [],
+              activeSurvey.title
+            )
+          : response.totalScore;
       const computedRiskLevel = isGhq28
         ? getGhq28RiskLevel(totalScore)
         : getSurveyRiskLevel(activeSurvey.title, totalScore, responseMaxScore);
@@ -683,7 +724,7 @@ export const buildExecutiveDashboardStats = async (): Promise<ExecutiveDashboard
         submittedAt: response.submittedAt,
         isGhq28,
       });
-    });
+    }
   }
 
   const profiles = students.map((student) =>

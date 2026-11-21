@@ -37,7 +37,11 @@ const studentMobileNavItems = [
   },
 ] as const;
 
-export function StudentMobileBottomNav() {
+type StudentMobileBottomNavProps = {
+  advisorUnreadCount?: number;
+};
+
+export function StudentMobileBottomNav({ advisorUnreadCount = 0 }: StudentMobileBottomNavProps) {
   const pathname = usePathname();
 
   return (
@@ -53,19 +57,27 @@ export function StudentMobileBottomNav() {
             (item.match === "survey" && pathname === "/student/assessment") ||
             (item.match === "consultation" && pathname === "/student/advisor") ||
             (item.match === "profile" && pathname === "/student/profile");
+          const showChatBadge = item.match === "consultation" && advisorUnreadCount > 0;
 
           return (
             <Link
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1 text-[10px] font-bold leading-none transition-colors ${
+              className={`relative flex min-h-[3.25rem] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1 text-[10px] font-bold leading-none transition-colors ${
                 active
                   ? "bg-blue-50 text-blue-700"
                   : "text-slate-500 hover:bg-slate-50 hover:text-blue-700"
               }`}
             >
-              <Icon className="h-5 w-5 shrink-0" />
+              <span className="relative">
+                <Icon className="h-5 w-5 shrink-0" />
+                {showChatBadge ? (
+                  <span className="absolute -right-2 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
+                    {advisorUnreadCount > 9 ? "9+" : advisorUnreadCount}
+                  </span>
+                ) : null}
+              </span>
               <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );

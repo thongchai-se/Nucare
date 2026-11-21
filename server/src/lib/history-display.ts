@@ -81,7 +81,7 @@ export function referralHistoryStatusLabel(status: ReferralStatus | string): str
   switch (status) {
     case ReferralStatus.PENDING:
     case "PENDING":
-      return "รอผู้เชี่ยวชาญรับเคส";
+      return "รอรับเคส";
     case ReferralStatus.ACCEPTED:
     case "ACCEPTED":
       return "กำลังดูแล";

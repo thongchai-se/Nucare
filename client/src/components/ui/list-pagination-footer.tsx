@@ -1,5 +1,7 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
 type ListPaginationFooterProps = {
   total: number;
   rangeStart: number;
@@ -9,10 +11,17 @@ type ListPaginationFooterProps = {
   canGoNext: boolean;
   onPrev: () => void;
   onNext: () => void;
+  /** ตารางปกติแสดงสรุปช่วงรายการ — แผงแคบ/ไซด์บาร์ปิดได้ */
+  showSummary?: boolean;
   className?: string;
 };
 
-/** ส่วนท้ายรายการแบบ admin — แสดงช่วงรายการและปุ่มก่อนหน้า/ถัดไป */
+const navControlClass =
+  "inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:pointer-events-none disabled:text-slate-300";
+
+/**
+ * ส่วนท้ายตาราง — สรุปช่วงรายการ (ถ้าเปิด) + ก่อนหน้า / หน้าปัจจุบัน / ถัดไป
+ */
 export function ListPaginationFooter({
   total,
   rangeStart,
@@ -22,6 +31,7 @@ export function ListPaginationFooter({
   canGoNext,
   onPrev,
   onNext,
+  showSummary = true,
   className = "",
 }: ListPaginationFooterProps) {
   if (total <= 0) {
@@ -30,37 +40,54 @@ export function ListPaginationFooter({
 
   return (
     <div
-      className={`flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${className}`}
+      className={`flex flex-col gap-3 border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:px-5 ${
+        showSummary ? "sm:justify-between" : "sm:justify-center"
+      } ${className}`}
     >
-      <span className="text-sm tabular-nums text-slate-500">
-        แสดง <span className="font-medium text-slate-800">{rangeStart}</span>-
-        <span className="font-medium text-slate-800">{rangeEnd}</span> จาก
-        <span className="font-medium text-slate-800"> {total}</span> รายการ
-      </span>
-      <div className="flex gap-1">
+      {showSummary ? (
+        <p className="whitespace-nowrap text-sm tabular-nums text-slate-500">
+          แสดง{" "}
+          <span className="font-medium text-slate-700">
+            {rangeStart}-{rangeEnd}
+          </span>{" "}
+          จาก <span className="font-medium text-slate-700">{total}</span> รายการ
+        </p>
+      ) : null}
+
+      <nav
+        className="inline-flex w-fit max-w-full shrink-0 items-center gap-0.5 self-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:self-auto"
+        aria-label="เปลี่ยนหน้า"
+      >
         <button
           type="button"
           disabled={!canGoPrev}
           onClick={onPrev}
-          className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          className={navControlClass}
+          aria-label="หน้าก่อนหน้า"
         >
+          <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
           ก่อนหน้า
         </button>
-        <button
-          type="button"
-          className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white"
+
+        <span
+          className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg bg-[#0057A8] px-2.5 text-sm font-semibold tabular-nums text-white"
+          aria-current="page"
+          aria-label={`หน้า ${currentPage}`}
         >
           {currentPage}
-        </button>
+        </span>
+
         <button
           type="button"
           disabled={!canGoNext}
           onClick={onNext}
-          className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          className={navControlClass}
+          aria-label="หน้าถัดไป"
         >
           ถัดไป
+          <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
         </button>
-      </div>
+      </nav>
     </div>
   );
 }

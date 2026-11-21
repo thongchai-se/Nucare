@@ -19,7 +19,7 @@ function baseRequest(
     year: "2",
     topic: "การเรียนและผลการเรียน",
     preferredChannel: "IN_PERSON",
-    preferredChannelLabel: "พบที่คณะ",
+    preferredChannelLabel: "ออนไซต์",
     note: null,
     advisorNote: null,
     scheduledAt: null,

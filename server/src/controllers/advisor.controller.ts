@@ -39,6 +39,12 @@ import {
   consultationChannelLabel,
 } from "../lib/consultation-channels";
 import {
+  assertStaffMayOpenChatWithStudent,
+  findOrCreateEphemeralChatSession,
+  purgeEphemeralChatForConsultationRequest,
+} from "../lib/ephemeral-chat/sessions";
+import { referralTargetLabel as mapReferralTargetLabel } from "../lib/referral-labels";
+import {
   CANCELLED_CASE_LABEL,
   consultationClosedStatusLabel,
   formatAdvisorConfirmCancelNote,
@@ -80,38 +86,44 @@ const studentParamSchema = z.object({
   studentUserId: z.string().trim().min(1),
 });
 
-const createCareRecordSchema = z.object({
-  careDate: z.string().trim().min(1),
-  careType: z.string().trim().min(1).max(120),
-  topic: z.string().trim().min(1).max(4000),
-  action: z.string().trim().min(1).max(4000),
-  outcome: z.string().trim().max(4000).optional(),
-});
+export const createCareRecordSchema = z
+  .object({
+    careDate: z.string().trim().min(1),
+    careType: z.string().trim().min(1).max(120),
+    topic: z.string().trim().min(1).max(4000),
+    action: z.string().trim().min(1).max(4000),
+    outcome: z.string().trim().max(4000).optional(),
+  })
+  .strict();
 
-const createReferralSchema = z.object({
-  target: z.nativeEnum(ReferralTarget),
-  /** ต้องมีบริบทพอให้ผู้เชี่ยวชาญอ่านก่อนนัดนิสิต — ไม่บังคับว่าต้องเป็นเคสวิกฤต */
-  reason: z.string().trim().min(20).max(4000),
-  isUrgent: z.boolean().optional(),
-});
+export const createReferralSchema = z
+  .object({
+    target: z.nativeEnum(ReferralTarget),
+    /** ต้องมีข้อความสั้น ๆ ให้ทีมรับเคสเข้าใจบริบท — ไม่บังคับความยาวขั้นต่ำยาว */
+    reason: z.string().trim().min(1).max(4000),
+    isUrgent: z.boolean().optional(),
+  })
+  .strict();
 
 const consultationRequestParamSchema = z.object({
   requestId: z.string().trim().min(1),
 });
 
-const updateConsultationRequestStatusSchema = z.object({
-  status: z.enum([
-    ConsultationRequestStatus.ACCEPTED,
-    ConsultationRequestStatus.SCHEDULED,
-    ConsultationRequestStatus.CLOSED,
-    ConsultationRequestStatus.CANCELLED,
-  ]),
-  scheduledAt: z.string().trim().optional(),
-  advisorNote: z.string().trim().max(1200).optional(),
-  /** เหตุผลยกเลิกเมื่ออาจารย์ยกเลิกเองจาก PENDING/ACCEPTED */
-  cancelReason: z.string().trim().max(200).optional(),
-  cancelDetail: z.string().trim().max(500).optional(),
-});
+export const updateConsultationRequestStatusSchema = z
+  .object({
+    status: z.enum([
+      ConsultationRequestStatus.ACCEPTED,
+      ConsultationRequestStatus.SCHEDULED,
+      ConsultationRequestStatus.CLOSED,
+      ConsultationRequestStatus.CANCELLED,
+    ]),
+    scheduledAt: z.string().trim().optional(),
+    advisorNote: z.string().trim().max(1200).optional(),
+    /** เหตุผลยกเลิกเมื่ออาจารย์ยกเลิกเองจาก PENDING/ACCEPTED */
+    cancelReason: z.string().trim().max(200).optional(),
+    cancelDetail: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
 
 const normalizeSearch = (value: string | undefined): string | undefined => {
@@ -133,11 +145,6 @@ const parseOptionalDateTime = (value: string | undefined): Date | null | undefin
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
-
-const mapReferralTargetLabel = (target: ReferralTarget): string =>
-  target === ReferralTarget.COUNSELING_CENTER
-    ? "ศูนย์ให้คำปรึกษา / ทีมจิตแพทย์"
-    : "ฝ่ายพัฒนานักศึกษา";
 
 type AdvisorConsultationOfferRecord = {
   id: string;
@@ -215,6 +222,10 @@ const resolveStudent = async (studentUserId: string) =>
       id: true,
       studentId: true,
       studyYear: true,
+      section: true,
+      email: true,
+      phone: true,
+      guardianPhone: true,
       name: true,
       isActive: true,
       studentAssessments: {
@@ -342,6 +353,10 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
         id: true,
         studentId: true,
         studyYear: true,
+        section: true,
+        email: true,
+        phone: true,
+        guardianPhone: true,
         name: true,
         studentAssessments: {
           orderBy: { assessedAt: "desc" },
@@ -388,6 +403,10 @@ export const listAdvisorStudents = async (req: Request, res: Response): Promise<
           name: student.name,
           image: getUserInitials(student.name, "นศ"),
           year: inferStudyYear(student.studentId, student.studyYear),
+          section: student.section?.trim() || null,
+          email: student.email,
+          phone: student.phone,
+          guardianPhone: student.guardianPhone,
           riskLevel: normalizeRiskLevel(latestSurvey?.riskLevel ?? latestAssessment?.riskLevel ?? RiskLevel.NORMAL),
           lastAssessment: latestSurvey?.assessedAt ?? latestAssessment?.assessedAt ?? null,
           careRecordCount: student._count.studentCareRecords,
@@ -637,6 +656,9 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
         alertId: true,
         status: true,
         advisorNote: true,
+        preferredChannel: true,
+        studentId: true,
+        teacherId: true,
       },
     });
 
@@ -689,7 +711,12 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
     }
 
     if (nextStatus === ConsultationRequestStatus.CLOSED) {
-      if (!canAdvisorCloseCompletedConsultation(existingRequest.status)) {
+      if (
+        !canAdvisorCloseCompletedConsultation(
+          existingRequest.status,
+          existingRequest.preferredChannel
+        )
+      ) {
         res.status(400).json({
           message: "ปิดเคสหลังคุยได้เมื่อมีนัดยืนยันแล้ว — หากจะเลิกคิวก่อนนัดให้ใช้ปุ่มยกเลิก",
           code: "CLOSE_NOT_ALLOWED",
@@ -799,6 +826,41 @@ export const updateAdvisorConsultationRequest = async (req: Request, res: Respon
 
       return request;
     });
+
+    if (
+      nextStatus === ConsultationRequestStatus.CLOSED ||
+      nextStatus === ConsultationRequestStatus.CANCELLED
+    ) {
+      try {
+        await purgeEphemeralChatForConsultationRequest(prisma, existingRequest.id);
+      } catch (chatError) {
+        console.error("Purge ephemeral chat for consultation failed:", chatError);
+      }
+    }
+
+    if (
+      nextStatus === ConsultationRequestStatus.ACCEPTED &&
+      existingRequest.preferredChannel === ConsultationPreferredChannel.MESSAGE
+    ) {
+      try {
+        await assertStaffMayOpenChatWithStudent(
+          prisma,
+          {
+            id: existingRequest.teacherId,
+            role: Role.ADVISOR,
+            isActive: true,
+          },
+          existingRequest.studentId
+        );
+        await findOrCreateEphemeralChatSession(prisma, {
+          studentId: existingRequest.studentId,
+          staffId: existingRequest.teacherId,
+          consultationRequestId: existingRequest.id,
+        });
+      } catch (chatError) {
+        console.error("Open ephemeral chat on MESSAGE accept failed:", chatError);
+      }
+    }
 
     if (
       nextStatus === ConsultationRequestStatus.SCHEDULED ||
@@ -961,8 +1023,6 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         select: {
           id: true,
           sessionDate: true,
-          summary: true,
-          interventionPlan: true,
           referralId: true,
           mentalHealthUser: {
             select: {
@@ -1034,6 +1094,20 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
           action: stripSeedMarkers(record.action) || record.action,
           outcome: record.outcome ? stripSeedMarkers(record.outcome) || null : null,
           actorName: record.advisor.name,
+          isUrgent: false,
+        })
+      ),
+      ...specializedCareRecords.map((record) =>
+        mapHistoryEntry({
+          id: record.id,
+          kind: "CARE",
+          date: record.sessionDate,
+          type: "บันทึกเฉพาะทาง (ศูนย์ให้คำปรึกษา)",
+          // ที่ปรึกษาเห็นเฉพาะสถานะปฏิบัติการ — ไม่ส่ง summary/plan คลินิก
+          topic: "มีการบันทึกการดูแลโดยผู้เชี่ยวชาญ",
+          action: "รายละเอียดคลินิกสงวนไว้สำหรับทีมผู้เชี่ยวชาญ",
+          outcome: null,
+          actorName: record.mentalHealthUser.name,
           isUrgent: false,
         })
       ),
@@ -1112,6 +1186,10 @@ export const getStudentHistory = async (req: Request, res: Response): Promise<vo
         name: student.name,
         image: getUserInitials(student.name, "นศ"),
         year: inferStudyYear(student.studentId, student.studyYear),
+        section: student.section?.trim() || null,
+        email: student.email,
+        phone: student.phone,
+        guardianPhone: student.guardianPhone,
         riskLevel: normalizeRiskLevel(latestSurvey?.riskLevel ?? latestAssessment?.riskLevel ?? RiskLevel.NORMAL),
         lastAssessment: latestSurvey?.assessedAt ?? latestAssessment?.assessedAt ?? null,
         careRecordCount: student._count.studentCareRecords,
@@ -1311,7 +1389,9 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
       if (
         error instanceof Error &&
         ((error as Error & { code?: string }).code === "ACTIVE_REFERRAL" ||
-          /มีเคสที่กำลังดูแล|มีเคสส่งต่อที่รอรับ/.test(error.message))
+          /มีเคสที่กำลังดูแล|มีเคสที่รอรับเคส|มีเคสที่รอประสานงาน|มีเคสส่งต่อที่รอรับ/.test(
+            error.message
+          ))
       ) {
         res.status(409).json({ message: error.message });
         return;
@@ -1341,7 +1421,10 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
           studentId: student.id,
           type: AlertType.REFERRAL_RECEIVED,
           priority: isUrgent ? AlertPriority.HIGH : AlertPriority.MEDIUM,
-          title: "มีเคสส่งต่อใหม่",
+          title:
+            referral.target === ReferralTarget.STUDENT_DEVELOPMENT
+              ? "เคสสวัสดิการใหม่"
+              : "มีเคสส่งต่อใหม่",
           message: reason,
           sourceType: "CaseReferral",
           sourceId: referral.id,
@@ -1374,13 +1457,15 @@ export const createReferral = async (req: Request, res: Response): Promise<void>
   }
 };
 
-const createObservationSchema = z.object({
-  studentId: z.string().trim().min(1),
-  observedAt: z.string().trim().min(1),
-  category: z.string().trim().min(1).max(120),
-  details: z.string().trim().min(1).max(4000),
-  severity: z.nativeEnum(BehaviorSeverity),
-});
+export const createObservationSchema = z
+  .object({
+    studentId: z.string().trim().min(1),
+    observedAt: z.string().trim().min(1),
+    category: z.string().trim().min(1).max(120),
+    details: z.string().trim().min(1).max(4000),
+    severity: z.nativeEnum(BehaviorSeverity),
+  })
+  .strict();
 
 /** ค้นหานิสิตสำหรับแจ้งข้อสังเกต — ไม่รวมนิสิตในสังกัดผู้แจ้ง */
 export const searchObservationStudents = async (req: Request, res: Response): Promise<void> => {

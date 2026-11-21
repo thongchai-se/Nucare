@@ -80,6 +80,12 @@ enum AlertType {
   REFERRAL_RECEIVED
   HIGH_RISK_SCREENING
   SOS_OPENED
+  CHAT_MESSAGE
+}
+
+/// สถานะห้องแชทชั่วคราว (ลบทั้งห้องเมื่อจบ — ไม่เก็บ transcript)
+enum EphemeralChatSessionStatus {
+  ACTIVE
 }
 
 enum AlertStatus {
@@ -191,6 +197,10 @@ model User {
   email                             String?                       @unique
   studyYear                         Int?
   section                           String?
+  /// เบอร์โทรศัพท์มือถือของนิสิต (นิสิตแก้เองได้)
+  phone                             String?
+  /// เบอร์ผู้ปกครอง / ผู้ติดต่อฉุกเฉิน (นิสิตแก้เองได้)
+  guardianPhone                     String?
   password                          String
   /// บังคับเปลี่ยนรหัสผ่านหลังสร้าง/นำเข้าด้วยรหัสชั่วคราว
   mustChangePassword                Boolean                       @default(false)
@@ -208,9 +218,11 @@ model User {
   advisorReferrals                  CaseReferral[]                @relation("CaseReferralAdvisor")
   studentReferrals                  CaseReferral[]                @relation("CaseReferralStudent")
   acceptedReferrals                 CaseReferral[]                @relation("CaseReferralAcceptedBy")
+  referralDeclines                  CaseReferralDecline[]         @relation("CaseReferralDeclineUser")
   studentConsultationRequests       ConsultationRequest[]         @relation("ConsultationRequestStudent")
   teacherConsultationRequests       ConsultationRequest[]         @relation("ConsultationRequestTeacher")
   consultationScheduleOffers        ConsultationScheduleOffer[]   @relation("ConsultationScheduleOfferProposer")
+  mentalHealthScheduleOffers        MentalHealthScheduleOffer[]   @relation("MentalHealthScheduleOfferProposer")
   advisorAssignments                StudentAdvisorAssignment[]    @relation("AdvisorAssignments")
   studentAssignments                StudentAdvisorAssignment[]    @relation("StudentAssignments")
   instructorStudentAssignments      StudentInstructorAssignment[] @relation("InstructorStudentAssignments")
@@ -233,6 +245,49 @@ model User {
   wellnessTrendSummaries            StudentWellnessTrendSummary[] @relation("WellnessTrendSummaryStudent")
   wellnessTrendHits                 StudentWellnessTrendHit[]     @relation("WellnessTrendHitStudent")
   studentChatMemories               StudentChatMemory[]           @relation("StudentChatMemoryStudent")
+  ephemeralChatSessionsAsStudent    EphemeralChatSession[]        @relation("EphemeralChatSessionStudent")
+  ephemeralChatSessionsAsStaff      EphemeralChatSession[]        @relation("EphemeralChatSessionStaff")
+  ephemeralChatMessagesSent         EphemeralChatMessage[]        @relation("EphemeralChatMessageSender")
+}
+
+/// ห้องแชทชั่วคราวนิสิต↔บุคลากร — hard-delete เมื่อจบคุย (ไม่เก็บประวัติข้อความ)
+model EphemeralChatSession {
+  id                     String                     @id @default(cuid())
+  studentId              String
+  staffId                String
+  status                 EphemeralChatSessionStatus @default(ACTIVE)
+  consultationRequestId  String?                    @unique
+  lastMessageAt          DateTime?
+  /// นิสิตอ่านถึงเมื่อไหร่ — ใช้ขึ้น badge ข้อความใหม่
+  studentLastReadAt      DateTime?
+  /// บุคลากรอ่านถึงเมื่อไหร่ — ใช้ขึ้น badge ข้อความใหม่
+  staffLastReadAt        DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  student             User                   @relation("EphemeralChatSessionStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  staff               User                   @relation("EphemeralChatSessionStaff", fields: [staffId], references: [id], onDelete: Cascade)
+  consultationRequest ConsultationRequest?   @relation(fields: [consultationRequestId], references: [id], onDelete: SetNull)
+  messages            EphemeralChatMessage[]
+
+  @@unique([studentId, staffId])
+  @@index([staffId, lastMessageAt])
+  @@index([studentId, lastMessageAt])
+  @@index([status, lastMessageAt])
+}
+
+model EphemeralChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  session EphemeralChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sender  User                 @relation("EphemeralChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 /// บันทึกสั้นต่อนิสิต+persona สำหรับคุยต่อเนื่อง — ไม่เก็บแชทเต็ม (ประหยัดพื้นที่)
@@ -418,17 +473,34 @@ model CaseReferral {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  student                  User                      @relation("CaseReferralStudent", fields: [studentId], references: [id], onDelete: Cascade)
-  advisor                  User                      @relation("CaseReferralAdvisor", fields: [advisorId], references: [id], onDelete: Restrict)
-  acceptedBy               User?                     @relation("CaseReferralAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
-  specializedCareRecords   SpecializedCareRecord[]
-  mentalHealthAppointments MentalHealthAppointment[]
+  student                    User                        @relation("CaseReferralStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  advisor                    User                        @relation("CaseReferralAdvisor", fields: [advisorId], references: [id], onDelete: Restrict)
+  acceptedBy                 User?                       @relation("CaseReferralAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  declines                   CaseReferralDecline[]
+  specializedCareRecords     SpecializedCareRecord[]
+  mentalHealthAppointments   MentalHealthAppointment[]
+  mentalHealthScheduleOffers MentalHealthScheduleOffer[]
 
   @@index([studentId, createdAt])
   @@index([advisorId, createdAt])
   @@index([status, createdAt])
   @@index([acceptedByUserId, status])
   @@index([sourceType, sourceId])
+}
+
+/// ผู้เชี่ยวชาญที่ปฏิเสธคิว PENDING — ซ่อนจากคนนั้นจนกว่าผู้เชี่ยวชาญที่ยังใช้งานครบจะปฏิเสธจึงปิดคิว
+model CaseReferralDecline {
+  id         String   @id @default(cuid())
+  referralId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  referral CaseReferral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  user     User         @relation("CaseReferralDeclineUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([referralId, userId])
+  @@index([userId, createdAt])
+  @@index([referralId, createdAt])
 }
 
 model Alert {
@@ -475,10 +547,11 @@ model ConsultationRequest {
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
 
-  student        User                        @relation("ConsultationRequestStudent", fields: [studentId], references: [id], onDelete: Cascade)
-  teacher        User                        @relation("ConsultationRequestTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
-  alert          Alert?                      @relation(fields: [alertId], references: [id], onDelete: SetNull)
-  scheduleOffers ConsultationScheduleOffer[]
+  student             User                        @relation("ConsultationRequestStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  teacher             User                        @relation("ConsultationRequestTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  alert               Alert?                      @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  scheduleOffers      ConsultationScheduleOffer[]
+  ephemeralChatSession EphemeralChatSession?
 
   @@index([studentId, createdAt])
   @@index([teacherId, status, createdAt])
@@ -565,6 +638,27 @@ model MentalHealthAppointment {
   @@index([mentalHealthUserId, scheduledAt])
   @@index([status, scheduledAt])
   @@index([referralId])
+}
+
+/**
+ * ข้อเสนอนัดหมายสุขภาพจิต — ส่งกลับไปมาระหว่างผู้เชี่ยวชาญกับนิสิตจนกว่าอีกฝ่ายจะยอมรับ
+ */
+model MentalHealthScheduleOffer {
+  id           String                  @id @default(cuid())
+  referralId   String
+  proposedById String
+  proposedAt   DateTime
+  location     String
+  note         String?
+  status       ConsultationOfferStatus @default(PENDING)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  referral   CaseReferral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  proposedBy User         @relation("MentalHealthScheduleOfferProposer", fields: [proposedById], references: [id], onDelete: Restrict)
+
+  @@index([referralId, status, createdAt])
+  @@index([proposedById, createdAt])
 }
 
 model AuditLog {
@@ -851,4 +945,23 @@ model SiteMediaItem {
 
   @@index([slot, isActive, sortOrder])
   @@index([createdByUserId])
+}
+
+/// การตั้งค่าระบบ/ไซต์ — แถวเดียว id = "default" (ไม่เก็บ secrets)
+model SiteSettings {
+  id                       String   @id @default("default")
+  maintenanceEnabled       Boolean  @default(false)
+  maintenanceMessage       String   @default("")
+  facultyNameTh            String
+  universityNameTh         String
+  facultyEnglishBanner     String
+  contactAddress           String
+  contactPhoneDisplay      String
+  contactPhoneTel          String
+  contactFaxDisplay        String   @default("")
+  contactOfficeHoursLabel  String   @default("")
+  contactOfficeHours       String   @default("")
+  updatedByUserId          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 }

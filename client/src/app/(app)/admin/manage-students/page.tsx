@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, ShieldAlert, X } from "lucide-react";
+import { Pencil, Plus, ShieldAlert, X } from "lucide-react";
 import api from "@/lib/axios";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { useAuth } from "@/context/auth.context";
@@ -12,6 +12,13 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleToast } from "@/components/role-toast";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
+import {
+  RosterSearchInput,
+  RosterSelectFilter,
+  RosterToolbarEnd,
+} from "@/components/ui/roster-table";
+import { UI_ACTION_PRIMARY_COMPACT } from "@/lib/ui-classes";
 import {
   MAX_STUDY_YEAR,
   normalizeStudyYear,
@@ -136,6 +143,8 @@ export default function ManageStudentsPage() {
 
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [yearFilter, setYearFilter] = useState<"ALL" | string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | UserStatus>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -207,10 +216,23 @@ export default function ManageStudentsPage() {
 
   const isAdmin = useMemo(() => user?.role === "ADMIN", [user]);
 
+  const yearOptions = useMemo(() => {
+    const years = users
+      .map((managedUser) => managedUser.studyYear)
+      .filter((year): year is number => typeof year === "number" && year > 0);
+    return Array.from(new Set(years)).sort((left, right) => left - right);
+  }, [users]);
+
   const filteredUsers = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
 
     return users.filter((managedUser) => {
+      if (yearFilter !== "ALL" && String(managedUser.studyYear ?? "") !== yearFilter) {
+        return false;
+      }
+      if (statusFilter !== "ALL" && managedUser.status !== statusFilter) {
+        return false;
+      }
       if (!keyword) {
         return true;
       }
@@ -220,13 +242,13 @@ export default function ManageStudentsPage() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [searchKeyword, users]);
+  }, [searchKeyword, statusFilter, users, yearFilter]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredUsers.length / rowsPerPage)), [filteredUsers.length, rowsPerPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchKeyword]);
+  }, [searchKeyword, statusFilter, yearFilter]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -429,9 +451,9 @@ export default function ManageStudentsPage() {
     }
 
     if (!trimmedSection) {
-      nextErrors.section = "กรุณาระบุเซคหรือกลุ่ม";
+      nextErrors.section = "กรุณาระบุเซค (section)";
     } else if (trimmedSection.length > SECTION_MAX_LENGTH) {
-      nextErrors.section = `เซคหรือกลุ่มต้องไม่เกิน ${SECTION_MAX_LENGTH} ตัวอักษร`;
+      nextErrors.section = `เซคต้องไม่เกิน ${SECTION_MAX_LENGTH} ตัวอักษร`;
     }
 
     setFormErrors(nextErrors);
@@ -678,17 +700,36 @@ export default function ManageStudentsPage() {
         {serverError ? <InlineAlert className="p-4">{serverError}</InlineAlert> : null}
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 md:flex-row">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="ค้นหาชื่อ, อีเมล, รหัสนักศึกษา, ชั้นปี, เซค..."
-                className="block min-h-11 w-full rounded-xl border border-slate-200 bg-white p-2.5 pl-10 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 md:flex-row md:items-center">
+            <RosterSearchInput
+              value={searchKeyword}
+              onChange={setSearchKeyword}
+              placeholder="ค้นหาชื่อ, อีเมล, รหัสนักศึกษา, เซค..."
+              aria-label="ค้นหานักศึกษา"
+            />
+            <RosterToolbarEnd>
+              <RosterSelectFilter
+                value={yearFilter}
+                onChange={setYearFilter}
+                aria-label="กรองชั้นปี"
+              >
+                <option value="ALL">ทุกชั้นปี</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={String(year)}>
+                    ชั้นปี {year}
+                  </option>
+                ))}
+              </RosterSelectFilter>
+              <RosterSelectFilter
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "ALL" | UserStatus)}
+                aria-label="กรองสถานะ"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                <option value="active">ใช้งาน</option>
+                <option value="inactive">ระงับ</option>
+              </RosterSelectFilter>
+            </RosterToolbarEnd>
           </div>
 
           <div className="overflow-hidden">
@@ -724,7 +765,7 @@ export default function ManageStudentsPage() {
                           <p className="mt-0.5 text-slate-700">{managedUser.studyYear || "-"}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-slate-500">เซค / กลุ่ม</p>
+                          <p className="text-xs text-slate-500">เซค</p>
                           <p className="mt-0.5 truncate text-slate-700">{managedUser.section || "-"}</p>
                         </div>
                       </div>
@@ -744,24 +785,15 @@ export default function ManageStudentsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${managedUser.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
                         <span className={`mr-1.5 h-1.5 w-1.5 rounded-full ${managedUser.status === "active" ? "bg-emerald-500" : "bg-slate-400"}`} />
                         {managedUser.status === "active" ? "ใช้งาน" : "ระงับ"}
                       </span>
-                      <div className="flex gap-4">
-                        <button type="button" onClick={() => openEditModal(managedUser)} className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                          แก้ไข
-                        </button>
-                        <button
-                          type="button"
-                          disabled={deletingId === managedUser.id}
-                          onClick={() => handleDeleteUser(managedUser)}
-                          className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
-                        >
-                          {deletingId === managedUser.id ? "กำลังลบ..." : "ลบ"}
-                        </button>
-                      </div>
+                      <button type="button" onClick={() => openEditModal(managedUser)} className={UI_ACTION_PRIMARY_COMPACT}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        แก้ไข
+                      </button>
                     </div>
                   </div>
                 );
@@ -786,7 +818,7 @@ export default function ManageStudentsPage() {
                     <th className="px-6 py-4 font-medium">ชื่อ-นามสกุล</th>
                     <th className="px-3 py-4 font-medium">รหัสนักศึกษา</th>
                     <th className="px-3 py-4 text-center font-medium">ชั้นปี</th>
-                    <th className="px-3 py-4 text-center font-medium">เซค / กลุ่ม</th>
+                    <th className="px-3 py-4 text-center font-medium">เซค</th>
                     <th className="px-6 py-4 font-medium">อีเมล</th>
                     <th className="px-3 py-4 text-center font-medium">สถานะ</th>
                     <th className="px-6 py-4 text-right font-medium">จัดการ</th>
@@ -810,8 +842,6 @@ export default function ManageStudentsPage() {
 
                   {!loadingUsers &&
                     paginatedUsers.map((managedUser, index) => {
-                    const isDeleting = deletingId === managedUser.id;
-
                     return (
                       <tr key={managedUser.id} className="transition-colors hover:bg-slate-50">
                         <td className="px-6 py-4 text-center text-slate-500">{startItemIndex + index + 1}</td>
@@ -837,16 +867,9 @@ export default function ManageStudentsPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button type="button" onClick={() => openEditModal(managedUser)} className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-800">
+                          <button type="button" onClick={() => openEditModal(managedUser)} className={UI_ACTION_PRIMARY_COMPACT}>
+                            <Pencil className="h-3.5 w-3.5" />
                             แก้ไข
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isDeleting}
-                            onClick={() => handleDeleteUser(managedUser)}
-                            className="hidden text-sm font-medium text-red-500 disabled:opacity-60"
-                          >
-                            {isDeleting ? "กำลังลบ..." : "ลบ"}
                           </button>
                         </td>
                       </tr>
@@ -857,34 +880,16 @@ export default function ManageStudentsPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <span className="text-sm tabular-nums text-slate-500">
-              แสดง <span className="font-medium text-slate-800">{filteredUsers.length === 0 ? 0 : startItemIndex + 1}</span>-
-              <span className="font-medium text-slate-800">{endItemIndex}</span> จาก
-              <span className="font-medium text-slate-800"> {filteredUsers.length}</span> รายการ
-            </span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                disabled={!canGoPrev}
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-              >
-                ก่อนหน้า
-              </button>
-              <button type="button" className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white">
-                {currentPage}
-              </button>
-              <button
-                type="button"
-                disabled={!canGoNext}
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
+          <ListPaginationFooter
+            total={filteredUsers.length}
+            rangeStart={filteredUsers.length === 0 ? 0 : startItemIndex + 1}
+            rangeEnd={endItemIndex}
+            currentPage={currentPage}
+            canGoPrev={canGoPrev}
+            canGoNext={canGoNext}
+            onPrev={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+          />
         </div>
       </div>
 
@@ -894,16 +899,16 @@ export default function ManageStudentsPage() {
         }`}
         onClick={closeModal}
       />
-      <div className={`fixed inset-0 z-[230] flex items-center justify-center overflow-hidden p-3 sm:p-4 ${modalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[230] flex items-center justify-center overflow-hidden p-4 sm:p-6 ${modalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
+          className={`flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)] transition-all duration-200 ${
             modalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 px-6 py-4">
-            <h3 className="text-lg font-semibold text-gray-800">{modalMode === "add" ? "เพิ่มบัญชีนักศึกษาใหม่" : "แก้ไขข้อมูลนักศึกษา"}</h3>
-            <button type="button" onClick={closeModal} className="text-gray-400 transition-colors hover:text-gray-600">
-              <X className="h-6 w-6" />
+          <div className="relative flex items-center justify-between border-b border-slate-100 bg-gradient-to-b from-sky-50/80 to-white px-6 py-4">
+            <h3 className="text-lg font-bold tracking-tight text-slate-900">{modalMode === "add" ? "เพิ่มบัญชีนักศึกษาใหม่" : "แก้ไขข้อมูลนักศึกษา"}</h3>
+            <button type="button" onClick={closeModal} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700" aria-label="ปิด">
+              <X className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
 
@@ -1004,7 +1009,7 @@ export default function ManageStudentsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  เซค / กลุ่ม <span className="text-red-500">*</span>
+                  เซค (section) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1056,21 +1061,22 @@ export default function ManageStudentsPage() {
             </div>
 
             {modalMode === "edit" && editingManagedUser ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 lg:col-span-2">
-                <p className="text-sm font-semibold text-red-800">Danger Zone</p>
-
-                <button
-                  type="button"
-                  disabled={deletingId === editingManagedUser.id}
-                  onClick={() => handleDeleteUser(editingManagedUser)}
-                  className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีนักศึกษา"}
-                </button>
+              <div className="space-y-3 lg:col-span-2">
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm font-semibold text-red-800">Danger Zone</p>
+                  <button
+                    type="button"
+                    disabled={deletingId === editingManagedUser.id}
+                    onClick={() => handleDeleteUser(editingManagedUser)}
+                    className="mt-4 inline-flex items-center justify-center rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === editingManagedUser.id ? "กำลังลบ..." : "ลบบัญชีนักศึกษา"}
+                  </button>
+                </div>
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-3 pt-2 lg:col-span-2">
+            <div className="flex justify-center gap-3 pt-2 lg:col-span-2">
               <button
                 type="button"
                 onClick={closeModal}
@@ -1098,19 +1104,19 @@ export default function ManageStudentsPage() {
         }`}
         onClick={closeBulkPromotionModal}
       />
-      <div className={`fixed inset-0 z-[250] flex items-center justify-center overflow-hidden p-3 sm:p-4 ${bulkModalOpen ? "" : "pointer-events-none"}`}>
+      <div className={`fixed inset-0 z-[250] flex items-center justify-center overflow-hidden p-4 sm:p-6 ${bulkModalOpen ? "" : "pointer-events-none"}`}>
         <div
-          className={`flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl transition-all duration-200 sm:max-h-[calc(100dvh-2rem)] ${
+          className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)] transition-all duration-200 ${
             bulkModalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 px-6 py-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800">เลื่อนชั้นปีแบบกลุ่ม</h3>
-              <p className="mt-1 text-xs text-slate-500">เลือกชั้นปีก่อนหน้าและชั้นปีเป้าหมายเพื่ออัปเดตทีเดียวหลายคน</p>
+          <div className="relative flex items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-b from-sky-50/80 to-white px-6 py-4">
+            <div className="min-w-0 pr-2">
+              <h3 className="text-lg font-bold tracking-tight text-slate-900">เลื่อนชั้นปีแบบกลุ่ม</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">เลือกชั้นปีก่อนหน้าและชั้นปีเป้าหมายเพื่ออัปเดตทีเดียวหลายคน</p>
             </div>
-            <button type="button" onClick={closeBulkPromotionModal} className="text-gray-400 transition-colors hover:text-gray-600">
-              <X className="h-6 w-6" />
+            <button type="button" onClick={closeBulkPromotionModal} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700" aria-label="ปิด">
+              <X className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
 
@@ -1153,7 +1159,7 @@ export default function ManageStudentsPage() {
               <span className="font-semibold">{bulkToStudyYear}</span>
             </InlineAlert>
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={closeBulkPromotionModal}

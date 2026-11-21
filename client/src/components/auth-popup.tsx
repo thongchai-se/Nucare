@@ -2,26 +2,16 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
-  User,
-  X,
-} from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Lock, User, X } from "lucide-react";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { InlineAlert } from "@/components/ui/inline-alert";
-import api from "@/lib/axios";
 import { getSafeNextPath } from "@/lib/auth-routes";
 import { acquireBodyScrollLock } from "@/lib/body-scroll-lock";
 import { facultyFullName } from "@/lib/brand";
 import { getDefaultRole, getRoleHomePath } from "@/lib/roles";
 
-export type AuthPopupView = "login" | "forgot";
+export type AuthPopupView = "login";
 
 type AuthPopupProps = {
   isOpen: boolean;
@@ -60,12 +50,7 @@ const formatStudentIdentifier = (value: string): string => {
   return `${onlyDigits.slice(0, 9)}-${onlyDigits.slice(9)}`;
 };
 
-export default function AuthPopup({
-  isOpen,
-  view,
-  onClose,
-  onViewChange,
-}: AuthPopupProps) {
+export default function AuthPopup({ isOpen, onClose }: AuthPopupProps) {
   const router = useRouter();
   const { login } = useAuth();
 
@@ -75,21 +60,12 @@ export default function AuthPopup({
   const [loginError, setLoginError] = useState("");
   const [isLoginLoading, setIsLoginLoading] = useState(false);
 
-  const [email, setEmail] = useState("");
-  const [forgotError, setForgotError] = useState("");
-  const [forgotSuccess, setForgotSuccess] = useState("");
-  const [isForgotLoading, setIsForgotLoading] = useState(false);
-
   const resetPopupState = () => {
     setShowPassword(false);
     setIdentifier("");
     setPassword("");
     setLoginError("");
     setIsLoginLoading(false);
-    setEmail("");
-    setForgotError("");
-    setForgotSuccess("");
-    setIsForgotLoading(false);
   };
 
   useEffect(() => {
@@ -161,64 +137,22 @@ export default function AuthPopup({
       }
     }
 
-    const loginIdentifier = normalizedIdentifier;
-
     setIsLoginLoading(true);
 
     try {
-      const loggedInUser = await login(loginIdentifier, normalizedPassword);
+      const loggedInUser = await login(normalizedIdentifier, normalizedPassword);
       onClose();
-      if (loggedInUser.mustChangePassword) {
-        router.push("/change-password");
-        return;
-      }
       const nextParam =
         typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
       const defaultRole = getDefaultRole(loggedInUser);
-      router.push(getSafeNextPath(nextParam) || (defaultRole ? getRoleHomePath(defaultRole) : getRoleHomePath("STUDENT")));
+      router.push(
+        getSafeNextPath(nextParam) ||
+          (defaultRole ? getRoleHomePath(defaultRole) : getRoleHomePath("STUDENT"))
+      );
     } catch {
       setLoginError(LOGIN_FAILED_MESSAGE);
     } finally {
       setIsLoginLoading(false);
-    }
-  };
-
-  const handleForgotSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setForgotError("");
-    setForgotSuccess("");
-
-    if (isForgotLoading) {
-      return;
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) {
-      setForgotError("กรุณากรอกอีเมล");
-      return;
-    }
-
-    setIsForgotLoading(true);
-
-    try {
-      const response = await api.post<{ message: string }>("/api/auth/forgot-password", {
-        email: normalizedEmail,
-      });
-      setForgotSuccess(response.data.message || "ส่งลิงก์เปลี่ยนรหัสผ่านสำเร็จ");
-      setEmail("");
-    } catch (requestError) {
-      const message =
-        typeof requestError === "object" &&
-        requestError !== null &&
-        "response" in requestError &&
-        typeof (requestError as { response?: { data?: { message?: string } } }).response?.data
-          ?.message === "string"
-          ? (requestError as { response?: { data?: { message?: string } } }).response?.data?.message
-          : "ไม่สามารถส่งอีเมลได้";
-
-      setForgotError(message || "ไม่สามารถส่งอีเมลได้");
-    } finally {
-      setIsForgotLoading(false);
     }
   };
 
@@ -227,22 +161,25 @@ export default function AuthPopup({
   }
 
   return (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center overflow-hidden p-3 sm:p-4">
+    <div className="fixed inset-0 z-[220] flex items-center justify-center overflow-hidden p-4 sm:p-6">
       <button
         type="button"
-        className="absolute inset-0 bg-slate-900/60"
+        className="absolute inset-0 bg-slate-900/45"
         onClick={onClose}
         aria-label="close auth popup backdrop"
       />
 
-      <div className="relative z-10 flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-x-hidden overflow-y-auto rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] md:min-h-[34.25rem] md:flex-row md:overflow-hidden">
+      <div
+        className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-x-hidden overflow-y-auto rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)] sm:max-h-[calc(100dvh-2rem)] md:min-h-[34.25rem] md:flex-row md:overflow-hidden"
+        style={{ animation: "toast-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both" }}
+      >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 z-20 rounded-full bg-white/80 p-1.5 text-slate-500 transition-colors hover:bg-white hover:text-slate-700"
+          className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
           aria-label="close auth popup"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" strokeWidth={2} />
         </button>
 
         <div className="relative hidden flex-col justify-between overflow-hidden bg-blue-600 p-12 md:flex md:w-1/2">
@@ -276,166 +213,94 @@ export default function AuthPopup({
             <AppBrand size="compact" />
           </div>
 
-          {view === "login" ? (
-            <>
-              <div className="mb-8 text-center md:text-left">
-                <h3 className="mb-2 text-3xl font-bold text-slate-800">เข้าสู่ระบบ</h3>
-                <p className="text-sm text-slate-500">ระบบดูแลสุขภาพนักศึกษา {facultyFullName}</p>
+          <div className="mb-8 text-center md:text-left">
+            <h3 className="mb-2 text-3xl font-bold text-slate-800">เข้าสู่ระบบ</h3>
+            <p className="text-sm text-slate-500">ระบบดูแลสุขภาพนักศึกษา {facultyFullName}</p>
+          </div>
+
+          <form className="space-y-5" onSubmit={handleLoginSubmit}>
+            {loginError ? <InlineAlert className="p-3">{loginError}</InlineAlert> : null}
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">รหัสประจำตัว หรือ อีเมล</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <User size={18} />
+                </div>
+                <input
+                  type="text"
+                  value={identifier}
+                  onChange={(event) => handleIdentifierChange(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="รหัสนักศึกษา หรือ อีเมล"
+                  autoComplete="username"
+                  required
+                />
               </div>
+            </div>
 
-              <form className="space-y-5" onSubmit={handleLoginSubmit}>
-                {loginError ? <InlineAlert className="p-3">{loginError}</InlineAlert> : null}
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">รหัสประจำตัว หรือ อีเมล</label>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <User size={18} />
-                    </div>
-                    <input
-                      type="text"
-                      value={identifier}
-                      onChange={(event) => handleIdentifierChange(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="รหัสนักศึกษา หรือ อีเมล"
-                      autoComplete="username"
-                      required
-                    />
-                  </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">รหัสผ่าน</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Lock size={18} />
                 </div>
-
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <label className="block text-sm font-medium text-slate-700">รหัสผ่าน</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotError("");
-                        setForgotSuccess("");
-                        onViewChange("forgot");
-                      }}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-                    >
-                      ลืมรหัสผ่าน?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <Lock size={18} />
-                    </div>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-10 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="******"
-                      autoComplete="current-password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
-                      aria-label="toggle password"
-                    >
-                      {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoginLoading}
-                  className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed"
-                >
-                  {isLoginLoading ? (
-                    <span className="loader h-5 w-5"></span>
-                  ) : (
-                    <>
-                      เข้าสู่ระบบ <ArrowRight size={18} />
-                    </>
-                  )}
-                </button>
-
-                <div className="mt-6">
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-200" />
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span className="bg-white px-2 text-slate-500">หรือ</span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled
-                    className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 shadow-sm"
-                    title="กำลังรอเชื่อมต่อ SSO API จากมหาวิทยาลัย"
-                  >
-                    <KkuSsoIcon />
-                    เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัยขอนแก่น (SSO)
-                  </button>
-                  <p className="mt-2 text-center text-xs text-slate-400">กำลังรอเชื่อมต่อ SSO API จากมหาวิทยาลัย</p>
-                </div>
-              </form>
-            </>
-          ) : (
-            <>
-              <div className="mb-8 text-center md:text-left">
-                <h3 className="mb-2 text-3xl font-bold text-slate-800">ลืมรหัสผ่าน</h3>
-                <p className="text-sm text-slate-500">
-                  กรอกอีเมลที่ใช้งานในระบบ แล้วเราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ให้
-                </p>
-              </div>
-
-              <form className="space-y-4" onSubmit={handleForgotSubmit}>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">อีเมล</label>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <Mail size={18} />
-                    </div>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="your.email@domain.com"
-                      autoComplete="email"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {forgotError ? <InlineAlert>{forgotError}</InlineAlert> : null}
-
-                {forgotSuccess ? <InlineAlert tone="success">{forgotSuccess}</InlineAlert> : null}
-
-                <button
-                  type="submit"
-                  disabled={isForgotLoading}
-                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isForgotLoading ? <span className="loader h-5 w-5 "></span> : "ส่งลิงก์เปลี่ยนรหัสผ่าน"}
-                </button>
-              </form>
-
-              <div className="mt-6">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-10 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="******"
+                  autoComplete="current-password"
+                  required
+                />
                 <button
                   type="button"
-                  onClick={() => {
-                    setLoginError("");
-                    onViewChange("login");
-                  }}
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-800"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                  aria-label="toggle password"
                 >
-                  <ArrowLeft size={16} />
-                  กลับไปหน้าเข้าสู่ระบบ
+                  {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
                 </button>
               </div>
-            </>
-          )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoginLoading}
+              className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed"
+            >
+              {isLoginLoading ? (
+                <span className="loader h-5 w-5"></span>
+              ) : (
+                <>
+                  เข้าสู่ระบบ <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="bg-white px-2 text-slate-500">หรือ</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled
+                className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-600 shadow-sm"
+                title="กำลังรอเชื่อมต่อ SSO API จากมหาวิทยาลัย"
+              >
+                <KkuSsoIcon />
+                เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัยขอนแก่น (SSO)
+              </button>
+              <p className="mt-2 text-center text-xs text-slate-400">กำลังรอเชื่อมต่อ SSO API จากมหาวิทยาลัย</p>
+            </div>
+          </form>
         </div>
       </div>
     </div>

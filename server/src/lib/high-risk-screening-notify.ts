@@ -3,7 +3,7 @@ import {
   buildHighRiskAdvisorEmail,
   buildHighRiskUnassignedEmail,
 } from "./email/messages";
-import { notifyUser } from "./notify-user";
+import { notifyManyUsers } from "./notify-batch";
 import { prisma } from "./prisma";
 import { buildUserHasRoleWhere } from "./roles";
 import { formatStudentIdForResponse } from "./user-format";
@@ -86,26 +86,24 @@ export async function notifyHighRiskScreening(input: {
       sourceLabel: input.sourceLabel,
     });
 
-    let notified = 0;
-    for (const advisor of advisors) {
-      await notifyUser({
-        recipientUserId: advisor.id,
-        recipientEmail: advisor.email,
-        channels: { inApp: true, email: true },
-        alert: {
-          studentId: student.id,
-          type: AlertType.HIGH_RISK_SCREENING,
-          priority: AlertPriority.CRITICAL,
-          title: plan.title,
-          message: plan.message,
-          sourceType: input.sourceType,
-          sourceId: input.sourceId ?? null,
-        },
-        email: emailCopy,
-      });
-      notified += 1;
-    }
-    return { notified, mode: plan.action };
+    const result = await notifyManyUsers({
+      recipients: advisors.map((advisor) => ({
+        userId: advisor.id,
+        email: advisor.email,
+      })),
+      channels: { inApp: true, email: true },
+      alert: {
+        studentId: student.id,
+        type: AlertType.HIGH_RISK_SCREENING,
+        priority: AlertPriority.CRITICAL,
+        title: plan.title,
+        message: plan.message,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId ?? null,
+      },
+      email: emailCopy,
+    });
+    return { notified: result.alertCount, mode: plan.action };
   }
 
   const staff = await prisma.user.findMany({
@@ -121,25 +119,23 @@ export async function notifyHighRiskScreening(input: {
     sourceLabel: input.sourceLabel,
   });
 
-  let notified = 0;
-  for (const user of staff) {
-    await notifyUser({
-      recipientUserId: user.id,
-      recipientEmail: user.email,
-      channels: { inApp: true, email: true },
-      alert: {
-        studentId: student.id,
-        type: AlertType.HIGH_RISK_SCREENING,
-        priority: AlertPriority.CRITICAL,
-        title: plan.title,
-        message: plan.message,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId ?? null,
-      },
-      email: emailCopy,
-    });
-    notified += 1;
-  }
+  const result = await notifyManyUsers({
+    recipients: staff.map((user) => ({
+      userId: user.id,
+      email: user.email,
+    })),
+    channels: { inApp: true, email: true },
+    alert: {
+      studentId: student.id,
+      type: AlertType.HIGH_RISK_SCREENING,
+      priority: AlertPriority.CRITICAL,
+      title: plan.title,
+      message: plan.message,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId ?? null,
+    },
+    email: emailCopy,
+  });
 
-  return { notified, mode: plan.action };
+  return { notified: result.alertCount, mode: plan.action };
 }

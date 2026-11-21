@@ -12,6 +12,7 @@ import {
 import type { AxiosError } from "axios";
 import type { User } from "@/types/auth";
 import api from "@/lib/axios";
+import { setVisibleInterval } from "@/lib/visible-interval";
 
 const AUTH_EXPIRED_EVENT = "nucare:auth-expired";
 const SESSION_CHECK_INTERVAL_MS = 60 * 1000;
@@ -69,7 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           previous.role === currentUser.role &&
           previous.name === currentUser.name &&
           previous.email === currentUser.email &&
-          previous.mustChangePassword === currentUser.mustChangePassword &&
+          previous.phone === currentUser.phone &&
+          previous.guardianPhone === currentUser.guardianPhone &&
           previous.roles.join("|") === currentUser.roles.join("|")
         ) {
           return previous;
@@ -123,12 +125,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const intervalId = window.setInterval(runSessionCheck, SESSION_CHECK_INTERVAL_MS);
+    const clearPoll = setVisibleInterval(runSessionCheck, SESSION_CHECK_INTERVAL_MS);
     window.addEventListener("focus", runSessionCheck);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.clearInterval(intervalId);
+      clearPoll();
       window.removeEventListener("focus", runSessionCheck);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };

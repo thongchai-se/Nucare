@@ -219,18 +219,22 @@ const upsertEligibilityRule = async (
   });
 };
 
-const submitSurveyResponseSchema = z.object({
-  waveId: z.string().trim().min(1).optional(),
-  answers: z
-    .array(
-      z.object({
-        questionId: z.string().trim().min(1),
-        value: z.unknown(),
-      })
-    )
-    .min(1)
-    .max(MAX_SURVEY_QUESTIONS),
-});
+const submitSurveyResponseSchema = z
+  .object({
+    waveId: z.string().trim().min(1).optional(),
+    answers: z
+      .array(
+        z
+          .object({
+            questionId: z.string().trim().min(1),
+            value: z.unknown(),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(MAX_SURVEY_QUESTIONS),
+  })
+  .strict();
 
 type SurveyQuestionInput = z.infer<typeof surveyQuestionInputSchema>;
 type SurveyPayload = z.infer<typeof surveyPayloadSchema>;
@@ -1332,7 +1336,15 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
           orderBy: {
             submittedAt: "desc",
           },
-          include: {
+          select: {
+            id: true,
+            submittedAt: true,
+            totalScore: true,
+            maxScore: true,
+            scorePercent: true,
+            riskLevel: true,
+            instrument: true,
+            scoredAt: true,
             student: {
               select: {
                 id: true,
@@ -1342,7 +1354,6 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
                 section: true,
               },
             },
-            answers: true,
           },
         },
       },
@@ -1354,6 +1365,25 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
     }
 
     const fallbackMaxScore = calculateSurveyMaxScore(survey.questions, survey.title);
+    const needsRescoreIds = survey.responses
+      .filter((response) => response.totalScore === null || response.maxScore <= 0)
+      .map((response) => response.id);
+
+    const answersByResponseId = new Map<
+      string,
+      Array<{ questionId: string; value: unknown }>
+    >();
+    if (needsRescoreIds.length > 0) {
+      const answerRows = await prisma.surveyAnswer.findMany({
+        where: { responseId: { in: needsRescoreIds } },
+        select: { responseId: true, questionId: true, value: true },
+      });
+      for (const row of answerRows) {
+        const list = answersByResponseId.get(row.responseId) ?? [];
+        list.push({ questionId: row.questionId, value: row.value });
+        answersByResponseId.set(row.responseId, list);
+      }
+    }
 
     res.status(200).json({
       survey: serializeSurvey({
@@ -1366,8 +1396,13 @@ export const listAdminSurveyResponses = async (req: Request, res: Response): Pro
       responses: survey.responses.map((response) => {
         const maxScore = response.maxScore > 0 ? response.maxScore : fallbackMaxScore;
         const totalScore =
-          response.totalScore ??
-          calculateSurveyResponseScore(survey.questions, response.answers, survey.title);
+          response.totalScore === null || response.maxScore <= 0
+            ? calculateSurveyResponseScore(
+                survey.questions,
+                answersByResponseId.get(response.id) ?? [],
+                survey.title
+              )
+            : response.totalScore;
         const scorePercent =
           response.scorePercent ?? calculateSurveyScorePercent(totalScore, maxScore);
         const instrument = response.instrument ?? getSurveyInstrumentLabel(survey.title);
@@ -1552,10 +1587,7 @@ export const submitStudentSurveyResponse = async (req: Request, res: Response): 
 
   try {
     const now = new Date();
-    const requestedWaveId =
-      typeof req.body?.waveId === "string" && req.body.waveId.trim()
-        ? req.body.waveId.trim()
-        : undefined;
+    const requestedWaveId = parsed.data.waveId?.trim() || undefined;
 
     const openWave = await prisma.surveyWave.findFirst({
       where: {

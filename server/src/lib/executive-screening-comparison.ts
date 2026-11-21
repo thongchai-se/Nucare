@@ -278,13 +278,13 @@ const resolveResponseScore = (
     maxScore: number;
     riskLevel: RiskLevel;
     submittedAt: Date;
-    answers: Array<{ questionId: string; value: unknown }>;
+    answers?: Array<{ questionId: string; value: unknown }>;
   },
   instrumentCode: SurveyInstrumentCode
 ): ResponseScore => {
   const totalScore =
     response.totalScore ??
-    calculateSurveyResponseScore(survey.questions, response.answers, survey.title) ??
+    calculateSurveyResponseScore(survey.questions, response.answers ?? [], survey.title) ??
     0;
   const distress = getGhq28DistressLevel(totalScore);
   const customRiskLabel: Record<RiskLevel, string> = {
@@ -359,10 +359,10 @@ export const buildScreeningRoundComparison = async (input?: {
     orderBy: [{ opensAt: "asc" }, { createdAt: "asc" }],
     include: {
       survey: {
-        include: {
-          questions: {
-            orderBy: { order: "asc" },
-          },
+        select: {
+          id: true,
+          title: true,
+          instrumentCode: true,
         },
       },
       _count: {
@@ -491,36 +491,86 @@ export const buildScreeningRoundComparison = async (input?: {
     };
   }
 
-  const [round1Responses, round2Responses] = await Promise.all([
+  const responseSelect = {
+    id: true,
+    studentId: true,
+    totalScore: true,
+    maxScore: true,
+    riskLevel: true,
+    submittedAt: true,
+    student: {
+      select: {
+        id: true,
+        studentId: true,
+        studyYear: true,
+        section: true,
+      },
+    },
+  } as const;
+
+  const [round1Responses, round2Responses, roundSurveys] = await Promise.all([
     prisma.surveyResponse.findMany({
       where: { waveId: round1Wave.id },
-      include: {
-        answers: true,
-        student: {
-          select: {
-            id: true,
-            studentId: true,
-            studyYear: true,
-            section: true,
-          },
-        },
-      },
+      select: responseSelect,
     }),
     prisma.surveyResponse.findMany({
       where: { waveId: round2Wave.id },
-      include: {
-        answers: true,
-        student: {
+      select: responseSelect,
+    }),
+    prisma.survey.findMany({
+      where: { id: { in: [round1Wave.surveyId, round2Wave.surveyId] } },
+      select: {
+        id: true,
+        title: true,
+        instrumentCode: true,
+        questions: {
+          orderBy: { order: "asc" },
           select: {
             id: true,
-            studentId: true,
-            studyYear: true,
-            section: true,
+            type: true,
+            options: true,
+            minValue: true,
+            maxValue: true,
           },
         },
       },
     }),
   ]);
+
+  const surveyById = new Map(roundSurveys.map((survey) => [survey.id, survey]));
+  const round1Survey = surveyById.get(round1Wave.surveyId);
+  const round2Survey = surveyById.get(round2Wave.surveyId);
+  if (!round1Survey || !round2Survey) {
+    return {
+      generatedAt: new Date().toISOString(),
+      instrumentCode: requestedInstrument,
+      instrumentLabel,
+      availableRounds,
+      round1: round1Info,
+      round2: round2Info,
+      summary: buildScreeningComparisonSummary([]),
+      rows: [],
+    };
+  }
+
+  const needsRescoreIds = [...round1Responses, ...round2Responses]
+    .filter((response) => response.totalScore === null || response.maxScore <= 0)
+    .map((response) => response.id);
+  const answersByResponseId = new Map<
+    string,
+    Array<{ questionId: string; value: unknown }>
+  >();
+  if (needsRescoreIds.length > 0) {
+    const answerRows = await prisma.surveyAnswer.findMany({
+      where: { responseId: { in: needsRescoreIds } },
+      select: { responseId: true, questionId: true, value: true },
+    });
+    for (const row of answerRows) {
+      const list = answersByResponseId.get(row.responseId) ?? [];
+      list.push({ questionId: row.questionId, value: row.value });
+      answersByResponseId.set(row.responseId, list);
+    }
+  }
 
   const round1ByStudentId = new Map<string, ResponseScore>();
   const students = new Map<string, StudentInfo>();
@@ -529,9 +579,12 @@ export const buildScreeningRoundComparison = async (input?: {
     round1ByStudentId.set(
       response.studentId,
       resolveResponseScore(
-        round1Wave.survey,
-        response,
-        resolveEffectiveInstrumentCode(round1Wave.survey)
+        round1Survey,
+        {
+          ...response,
+          answers: answersByResponseId.get(response.id) ?? [],
+        },
+        resolveEffectiveInstrumentCode(round1Survey)
       )
     );
     students.set(response.studentId, {
@@ -546,9 +599,12 @@ export const buildScreeningRoundComparison = async (input?: {
     round2ByStudentId.set(
       response.studentId,
       resolveResponseScore(
-        round2Wave.survey,
-        response,
-        resolveEffectiveInstrumentCode(round2Wave.survey)
+        round2Survey,
+        {
+          ...response,
+          answers: answersByResponseId.get(response.id) ?? [],
+        },
+        resolveEffectiveInstrumentCode(round2Survey)
       )
     );
     if (!students.has(response.studentId)) {

@@ -4,6 +4,7 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import { requireEnv } from "../lib/env";
 import { prisma } from "../lib/prisma";
 import { getAssignedRoles } from "../lib/roles";
+import { writePrivilegeProbeSecurityAudit } from "../lib/security-audit-write";
 
 export interface AuthTokenPayload extends JwtPayload {
   userId: string;
@@ -90,6 +91,7 @@ export const authorizeRoles =
     const assignedRoles = req.user.roles?.length ? req.user.roles : [req.user.role];
 
     if (!assignedRoles.some((role) => allowedRoles.includes(role))) {
+      void writePrivilegeProbeSecurityAudit({ req });
       res.status(403).json({ message: "Forbidden" });
       return;
     }

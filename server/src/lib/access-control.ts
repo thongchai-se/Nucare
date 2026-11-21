@@ -1,4 +1,8 @@
 import { Prisma, Role } from "@prisma/client";
+import {
+  createDefaultMentalHealthAccessStore,
+  type MentalHealthStudentAccessStore,
+} from "./mental-health-access";
 import { prisma } from "./prisma";
 import { hasAssignedRole } from "./roles";
 
@@ -13,7 +17,9 @@ export type StudentAccessStore = {
   findActiveInstructorAssignment: (instructorId: string, studentId: string) => Promise<boolean>;
   listAdvisorStudentIds: (advisorId: string) => Promise<string[]>;
   listInstructorStudentIds: (instructorId: string) => Promise<string[]>;
-};
+} & Partial<MentalHealthStudentAccessStore>;
+
+const defaultMentalHealthAccessStore = createDefaultMentalHealthAccessStore(prisma);
 
 const defaultStudentAccessStore: StudentAccessStore = {
   findActiveAdvisorAssignment: async (advisorId, studentId) => {
@@ -66,11 +72,13 @@ const defaultStudentAccessStore: StudentAccessStore = {
     });
     return assignments.map((assignment) => assignment.studentId);
   },
+  resolveMentalHealthStudentAccess: defaultMentalHealthAccessStore.resolveMentalHealthStudentAccess,
+  listMentalHealthStudentIds: defaultMentalHealthAccessStore.listMentalHealthStudentIds,
 };
 
 /**
  * สร้างเงื่อนไข Prisma จำกัดเฉพาะนิสิตที่ผู้เรียกมีสิทธิ์เห็น
- * (ตามการมอบหมายที่ปรึกษา/ผู้สอน หรือนิสิตทั้งหมดสำหรับทีมสุขภาพจิต)
+ * (ตามการมอบหมายที่ปรึกษา/ผู้สอน หรือคิว/เคส counseling สำหรับทีมสุขภาพจิต)
  */
 export const getStudentScopeWhere = async (
   role: Role | Role[],
@@ -88,8 +96,21 @@ export const getStudentScopeWhere = async (
     };
   }
 
-  if (hasRole(role, Role.MENTAL_HEALTH) || hasRole(role, Role.EXECUTIVE) || hasRole(role, Role.ADMIN)) {
+  if (hasRole(role, Role.EXECUTIVE) || hasRole(role, Role.ADMIN)) {
     return {
+      role: Role.STUDENT,
+      isActive: true,
+    };
+  }
+
+  if (hasRole(role, Role.MENTAL_HEALTH)) {
+    const listIds =
+      store.listMentalHealthStudentIds ?? defaultMentalHealthAccessStore.listMentalHealthStudentIds;
+    const studentIds = await listIds(userId);
+    return {
+      id: {
+        in: studentIds.length > 0 ? studentIds : ["__no_student_scope__"],
+      },
       role: Role.STUDENT,
       isActive: true,
     };
@@ -113,7 +134,8 @@ export const getStudentScopeWhere = async (
 
 /**
  * ตรวจว่าผู้เรียกเข้าถึงนิสิตรายคนได้หรือไม่ (กัน IDOR)
- * แอดมิน / ผู้บริหาร / สุขภาพจิต เข้าถึงได้ทุกคน
+ * แอดมิน / ผู้บริหาร: ทุกคน
+ * สุขภาพจิต: เฉพาะคิว PENDING ที่ยังไม่ปฏิเสธ หรือเคส ACCEPTED ที่ตนรับ
  * ที่ปรึกษา/ผู้สอนต้องมีการมอบหมายที่ยังใช้งาน
  */
 export const canAccessStudent = async (
@@ -122,12 +144,16 @@ export const canAccessStudent = async (
   studentId: string,
   store: StudentAccessStore = defaultStudentAccessStore
 ): Promise<boolean> => {
-  if (
-    hasRole(role, Role.MENTAL_HEALTH) ||
-    hasRole(role, Role.ADMIN) ||
-    hasRole(role, Role.EXECUTIVE)
-  ) {
+  if (hasRole(role, Role.ADMIN) || hasRole(role, Role.EXECUTIVE)) {
     return true;
+  }
+
+  if (hasRole(role, Role.MENTAL_HEALTH)) {
+    const resolveAccess =
+      store.resolveMentalHealthStudentAccess ??
+      defaultMentalHealthAccessStore.resolveMentalHealthStudentAccess;
+    const level = await resolveAccess(userId, studentId);
+    return level !== "none";
   }
 
   if (hasRole(role, Role.ADVISOR)) {

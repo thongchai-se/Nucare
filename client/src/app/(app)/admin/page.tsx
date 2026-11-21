@@ -15,13 +15,29 @@ import {
   resolveAuditActionLabel,
   resolveAuditTargetLabel,
 } from "@/lib/audit-display";
+import {
+  type AuditDisplayStatus,
+  getAuditDisplayStatusClassName,
+  getAuditDisplayStatusLabel,
+  resolveAuditDisplayStatus,
+} from "@/lib/audit-status";
 import { downloadCsv, pushCsvSection, pushKeyValueRows } from "@/lib/csv-export";
 import { getRoleHomePath } from "@/lib/roles";
+import {
+  SECURITY_CRITICAL_ACK_STORAGE_KEY,
+  shouldShowCriticalSecurityPopup,
+} from "@/lib/security-critical-ack";
+import {
+  SECURITY_CRITICAL_WINDOW_MS,
+  isCriticalSecurityRedFlag,
+  isSecurityRedFlagAction,
+} from "@/lib/security-red-flag";
 import { AdminShell } from "@/components/admin-shell";
 import { AuditLogView } from "@/components/admin/audit-log-view";
 import { DashboardView } from "@/components/admin/dashboard-view";
 import { ReportsView, type AdminReportsSummary } from "@/components/admin/reports-view";
 import { SettingsView } from "@/components/admin/settings-view";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import type { Role } from "@/types/auth";
 
@@ -75,9 +91,12 @@ type AuditLogsResponse = {
   logs: AuditLogItem[];
 };
 
-type HealthResponse = {
-  message: string;
+type AdminSystemHealthResponse = {
   ok: boolean;
+  api: { ok: boolean };
+  database: { ok: boolean; latencyMs: number | null };
+  directory: { configured: boolean; host: string | null };
+  timestamp: string;
 };
 
 const adminOnlyViewSet = new Set<AdminRootView>(["dashboard", "audit", "reports", "settings"]);
@@ -159,8 +178,6 @@ const getErrorMessage = (error: unknown): string => {
   return "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
 };
 
-type AuditStatus = "Success" | "Partial" | "Failed";
-
 type ParsedImportAuditSummary = {
   outcome: "success" | "partial" | "failed" | null;
   total: number | null;
@@ -226,36 +243,6 @@ const parseAuditImportSummary = (log: AuditLogItem): ParsedImportAuditSummary | 
   };
 };
 
-const resolveAuditStatusFromImportSummary = (summary: ParsedImportAuditSummary): AuditStatus => {
-  if (summary.outcome === "success") {
-    return "Success";
-  }
-
-  if (summary.outcome === "partial") {
-    return "Partial";
-  }
-
-  if (summary.outcome === "failed") {
-    return "Failed";
-  }
-
-  const created = summary.created ?? 0;
-  const updated = summary.updated ?? 0;
-  const skipped = summary.skipped ?? 0;
-  const failed = summary.failed ?? 0;
-  const completedCount = created + updated + skipped;
-
-  if (failed > 0 && completedCount > 0) {
-    return "Partial";
-  }
-
-  if (failed > 0) {
-    return "Failed";
-  }
-
-  return "Success";
-};
-
 const formatAuditImportDetail = (summary: ParsedImportAuditSummary): string => {
   const detailParts = [
     summary.total !== null ? `ทั้งหมด ${summary.total}` : null,
@@ -272,26 +259,19 @@ const formatAuditImportDetail = (summary: ParsedImportAuditSummary): string => {
   return [`ผลการนำเข้า: ${detailParts.join(", ")}`, ...extras].join(" | ");
 };
 
-const getAuditStatus = (log: AuditLogItem): AuditStatus => {
-  const importSummary = parseAuditImportSummary(log);
-  if (importSummary) {
-    return resolveAuditStatusFromImportSummary(importSummary);
-  }
+const getAuditStatus = (log: AuditLogItem): AuditDisplayStatus =>
+  resolveAuditDisplayStatus({ action: log.action, description: log.description });
 
-  const haystack = `${log.action} ${log.description || ""}`.toLowerCase();
-  return haystack.includes("failed") || haystack.includes("error") ? "Failed" : "Success";
-};
+const getAuditStatusLabel = (status: AuditDisplayStatus): string => getAuditDisplayStatusLabel(status);
 
-const getAuditStatusLabel = (status: AuditStatus): string => {
-  if (status === "Success") {
-    return "สำเร็จ";
-  }
-
-  if (status === "Partial") {
-    return "สำเร็จบางส่วน";
-  }
-
-  return "ไม่สำเร็จ";
+const getSecurityAlertBadge = (
+  log: AuditLogItem
+): { label: string; className: string } => {
+  const status = getAuditStatus(log);
+  return {
+    label: getAuditDisplayStatusLabel(status),
+    className: getAuditDisplayStatusClassName(status),
+  };
 };
 
 const getNormalizedAuditAction = (log: AuditLogItem): string =>
@@ -399,12 +379,23 @@ function AdminDashboardContent() {
   const { user, isAuthenticated, loading, logout } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [auditStatusFilter, setAuditStatusFilter] = useState<"ALL" | AuditDisplayStatus>("ALL");
   const [auditCurrentPage, setAuditCurrentPage] = useState(1);
   const [auditRowsPerPage, setAuditRowsPerPage] = useState(8);
   const [students, setStudents] = useState<ManagedStudent[]>([]);
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
-  const [systemOnline, setSystemOnline] = useState(true);
+  const [auditFromDate, setAuditFromDate] = useState("");
+  const [auditToDate, setAuditToDate] = useState("");
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [systemHealth, setSystemHealth] = useState({
+    apiOk: true,
+    databaseOk: true,
+    databaseLatencyMs: null as number | null,
+    directoryConfigured: false,
+    directoryHost: null as string | null,
+  });
+  const systemOnline = systemHealth.apiOk && systemHealth.databaseOk;
   const [loadingData, setLoadingData] = useState(false);
   const [serverError, setServerError] = useState("");
   const [reportsSummary, setReportsSummary] = useState<AdminReportsSummary | null>(null);
@@ -470,13 +461,19 @@ function AdminDashboardContent() {
           api.get<StudentsResponse>("/api/admin/students"),
           api.get<StaffResponse>("/api/admin/staff"),
           api.get<AuditLogsResponse>("/api/admin/audit-logs?limit=60"),
-          api.get<HealthResponse>("/api/health"),
+          api.get<AdminSystemHealthResponse>("/api/admin/system/health"),
         ]);
 
         setStudents(studentsResponse.data.students);
         setStaffUsers(staffResponse.data.staff);
         setAuditLogs(auditResponse.data.logs);
-        setSystemOnline(Boolean(healthResponse.data.ok));
+        setSystemHealth({
+          apiOk: Boolean(healthResponse.data.api?.ok),
+          databaseOk: Boolean(healthResponse.data.database?.ok),
+          databaseLatencyMs: healthResponse.data.database?.latencyMs ?? null,
+          directoryConfigured: Boolean(healthResponse.data.directory?.configured),
+          directoryHost: healthResponse.data.directory?.host ?? null,
+        });
       } catch (error) {
         setServerError(getErrorMessage(error));
       } finally {
@@ -507,6 +504,40 @@ function AdminDashboardContent() {
     void loadReportsSummary();
   }, [activeView, loading, user?.role]);
 
+  const loadAuditLogs = async (options?: { forDashboardPreview?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.forDashboardPreview) {
+      params.set("limit", "60");
+    } else {
+      params.set("limit", "500");
+      if (auditFromDate) {
+        params.set("from", new Date(`${auditFromDate}T00:00:00.000`).toISOString());
+      }
+      if (auditToDate) {
+        params.set("to", new Date(`${auditToDate}T23:59:59.999`).toISOString());
+      }
+    }
+
+    setAuditLoading(true);
+    try {
+      const response = await api.get<AuditLogsResponse>(`/api/admin/audit-logs?${params.toString()}`);
+      setAuditLogs(response.data.logs);
+    } catch (error) {
+      setServerError(getErrorMessage(error));
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (loading || user?.role !== "ADMIN" || activeView !== "audit") {
+      return;
+    }
+    void loadAuditLogs();
+    // โหลดเมื่อเข้าหน้า audit ครั้งแรกของชุดตัวกรองวัน — กดปุ่มเพื่อรีโหลดหลังเปลี่ยนวัน
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, loading, user?.role]);
+
   const handleLogout = async () => {
     await logout();
     router.replace(UNAUTHENTICATED_PATH);
@@ -514,12 +545,16 @@ function AdminDashboardContent() {
 
   const filteredAuditLogs = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
-    if (!normalized) {
-      return auditLogs;
-    }
-
-    return auditLogs.filter((log) => getAuditSearchText(log).includes(normalized));
-  }, [auditLogs, searchQuery]);
+    return auditLogs.filter((log) => {
+      if (auditStatusFilter !== "ALL" && getAuditStatus(log) !== auditStatusFilter) {
+        return false;
+      }
+      if (!normalized) {
+        return true;
+      }
+      return getAuditSearchText(log).includes(normalized);
+    });
+  }, [auditLogs, auditStatusFilter, searchQuery]);
 
   const auditTotalPages = useMemo(
     () => Math.max(1, Math.ceil(filteredAuditLogs.length / auditRowsPerPage)),
@@ -528,7 +563,7 @@ function AdminDashboardContent() {
 
   useEffect(() => {
     setAuditCurrentPage(1);
-  }, [activeView, searchQuery]);
+  }, [activeView, auditStatusFilter, searchQuery]);
 
   useEffect(() => {
     setAuditCurrentPage((prev) => Math.min(prev, auditTotalPages));
@@ -561,10 +596,23 @@ function AdminDashboardContent() {
     [students]
   );
 
-  const abnormalEventsCount = useMemo(
-    () => auditLogs.filter((log) => getAuditStatus(log) === "Failed").length,
+  const securityRedFlagLogs = useMemo(
+    () => auditLogs.filter((log) => isSecurityRedFlagAction(log.action)),
     [auditLogs]
   );
+
+  const abnormalEventsCount = securityRedFlagLogs.length;
+
+  const latestCriticalSecurityLog = useMemo(() => {
+    const cutoff = Date.now() - SECURITY_CRITICAL_WINDOW_MS;
+    return (
+      securityRedFlagLogs.find(
+        (log) =>
+          isCriticalSecurityRedFlag(log.action) &&
+          new Date(log.createdAt).getTime() >= cutoff
+      ) ?? null
+    );
+  }, [securityRedFlagLogs]);
 
   const quickStats = useMemo(
     () => [
@@ -581,7 +629,7 @@ function AdminDashboardContent() {
         tone: "emerald" as const,
       },
       {
-        title: "เหตุการณ์ผิดปกติในบันทึกระบบ",
+        title: "เหตุการณ์ความปลอดภัย",
         value: abnormalEventsCount.toLocaleString(),
         icon: ShieldAlert,
         tone: "rose" as const,
@@ -596,8 +644,33 @@ function AdminDashboardContent() {
     [abnormalEventsCount, activeStudentsCount, staffUsers.length, students.length, systemOnline]
   );
 
-  const latestAuditLogs = filteredAuditLogs.slice(0, 4);
+  const latestAuditLogs = securityRedFlagLogs.slice(0, 4);
   const staffPreview = filteredStaffUsers.slice(0, 4);
+
+  const [criticalPopupOpen, setCriticalPopupOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const ackRaw = window.localStorage.getItem(SECURITY_CRITICAL_ACK_STORAGE_KEY);
+    const ackTimestampMs = ackRaw ? Number.parseInt(ackRaw, 10) : null;
+    const decision = shouldShowCriticalSecurityPopup({
+      logs: securityRedFlagLogs,
+      ackTimestampMs: Number.isFinite(ackTimestampMs) ? ackTimestampMs : null,
+    });
+    setCriticalPopupOpen(decision.show);
+  }, [securityRedFlagLogs]);
+
+  const acknowledgeCriticalSecurity = () => {
+    if (latestCriticalSecurityLog && typeof window !== "undefined") {
+      window.localStorage.setItem(
+        SECURITY_CRITICAL_ACK_STORAGE_KEY,
+        String(new Date(latestCriticalSecurityLog.createdAt).getTime())
+      );
+    }
+    setCriticalPopupOpen(false);
+  };
 
   if (loading) {
     return (
@@ -624,9 +697,25 @@ function AdminDashboardContent() {
       }}
       onLogout={handleLogout}
       title="แดชบอร์ดผู้ดูแลระบบ"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
+      <ConfirmDialog
+        open={criticalPopupOpen}
+        tone="danger"
+        title="พบเหตุการณ์ความปลอดภัยวิกฤต"
+        description={
+          latestCriticalSecurityLog
+            ? `${getAuditActionLabel(latestCriticalSecurityLog)} — ตรวจบันทึกระบบและเซสชันที่เกี่ยวข้องทันที`
+            : "พบเหตุการณ์ความปลอดภัยที่ต้องตรวจสอบ"
+        }
+        confirmLabel="ไปดูบันทึกระบบ"
+        cancelLabel="รับทราบ"
+        onCancel={acknowledgeCriticalSecurity}
+        onConfirm={() => {
+          acknowledgeCriticalSecurity();
+          router.replace("/admin?view=audit");
+        }}
+      />
+
       {serverError ? <InlineAlert className="mb-6 rounded-2xl p-4">{serverError}</InlineAlert> : null}
 
       {loadingData ? (
@@ -644,8 +733,7 @@ function AdminDashboardContent() {
               formatThaiDateTime={formatThaiDateTime}
               getAuditActionLabel={getAuditActionLabel}
               getAuditActorName={getAuditActorName}
-              getAuditStatus={getAuditStatus}
-              getAuditStatusLabel={getAuditStatusLabel}
+              getSecurityAlertBadge={getSecurityAlertBadge}
               getAuditTargetLabel={getAuditTargetLabel}
               latestAuditLogs={latestAuditLogs}
               quickStats={quickStats}
@@ -653,14 +741,18 @@ function AdminDashboardContent() {
               roleLabelMap={roleLabelMap}
               staffCount={staffUsers.length}
               staffPreview={staffPreview}
-              systemOnline={systemOnline}
+              systemHealth={systemHealth}
             />
           )}
           {activeView === "audit" && (
             <AuditLogView
               auditCurrentPage={auditCurrentPage}
               auditEndItemIndex={auditEndItemIndex}
+              auditFromDate={auditFromDate}
+              auditLoading={auditLoading}
               auditStartItemIndex={auditStartItemIndex}
+              auditStatusFilter={auditStatusFilter}
+              auditToDate={auditToDate}
               canGoNextAudit={canGoNextAudit}
               canGoPrevAudit={canGoPrevAudit}
               filteredAuditLogs={filteredAuditLogs}
@@ -671,13 +763,20 @@ function AdminDashboardContent() {
               getAuditIpLabel={getAuditIpLabel}
               getAuditLogRef={getAuditLogRef}
               getAuditStatus={getAuditStatus}
+              getAuditStatusClassName={getAuditDisplayStatusClassName}
               getAuditStatusLabel={getAuditStatusLabel}
               getAuditTargetLabel={getAuditTargetLabel}
               getAuditTargetReference={getAuditTargetReference}
               getResolvedAuditActionDetail={getResolvedAuditActionDetail}
+              onAuditFromDateChange={setAuditFromDate}
+              onAuditStatusFilterChange={setAuditStatusFilter}
+              onAuditToDateChange={setAuditToDate}
               onExport={() => exportAuditLogsCsv(filteredAuditLogs)}
               onNextPage={() => setAuditCurrentPage((prev) => Math.min(auditTotalPages, prev + 1))}
               onPrevPage={() => setAuditCurrentPage((prev) => Math.max(1, prev - 1))}
+              onReloadAudit={() => {
+                void loadAuditLogs();
+              }}
               onSearchQueryChange={setSearchQuery}
               paginatedAuditLogs={paginatedAuditLogs}
               roleLabelMap={roleLabelMap}
@@ -689,7 +788,6 @@ function AdminDashboardContent() {
               error={reportsError}
               loading={reportsLoading}
               onOpenAudit={() => router.push("/admin?view=audit")}
-              onRefresh={() => void loadReportsSummary()}
               summary={reportsSummary}
             />
           )}

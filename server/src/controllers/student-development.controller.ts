@@ -2,6 +2,7 @@ import {
   AlertPriority,
   AlertStatus,
   AlertType,
+  Prisma,
   ReferralStatus,
   ReferralTarget,
   RiskLevel,
@@ -24,10 +25,12 @@ import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
 import { hasAssignedRole } from "../lib/roles";
 import { closeReferralReceivedAlerts } from "../lib/close-referral-alerts";
+import { filterReferralAlertsForPortalTarget } from "../lib/referral-alert-portal-filter";
 import {
   escapeHtmlForEmail,
   isStudentDevelopmentPendingAssessment,
 } from "../lib/student-development-pending";
+import { decideWelfareClaim } from "../lib/student-development-claim";
 import { shouldRequireClosedReason } from "../lib/student-development-welfare-note";
 import { formatStudentIdForResponse, inferStudyYear, normalizeRiskLevel } from "../lib/user-format";
 
@@ -64,6 +67,31 @@ const normalizeScore = (riskLevel: RiskLevel | undefined): "normal" | "medium" |
   return normalizeRiskLevel(riskLevel ?? RiskLevel.NORMAL);
 };
 
+/** เงื่อนไขนิสิตค้างประเมิน — มี OPEN assignment ที่ยังไม่ทำเท่านั้น */
+const pendingStudentWhere: Prisma.UserWhereInput = {
+  role: Role.STUDENT,
+  isActive: true,
+  surveyAssignments: {
+    some: {
+      completedAt: null,
+      wave: { status: SurveyWaveStatus.OPEN },
+    },
+  },
+};
+
+/** นิสิตที่ประเมินแล้ว (ไม่ค้าง) — ใช้สรุปกลุ่มเสี่ยง */
+const assessedStudentWhere: Prisma.UserWhereInput = {
+  role: Role.STUDENT,
+  isActive: true,
+  surveyAssignments: {
+    none: {
+      completedAt: null,
+      wave: { status: SurveyWaveStatus.OPEN },
+    },
+  },
+  OR: [{ surveyResponses: { some: {} } }, { studentAssessments: { some: {} } }],
+};
+
 const pendingStudentSelect = {
   id: true,
   studentId: true,
@@ -72,16 +100,6 @@ const pendingStudentSelect = {
   name: true,
   email: true,
   createdAt: true,
-  studentAssessments: {
-    orderBy: [{ assessedAt: "desc" as const }, { createdAt: "desc" as const }],
-    take: 1,
-    select: {
-      riskLevel: true,
-      totalScore: true,
-      instrument: true,
-      assessedAt: true,
-    },
-  },
   surveyAssignments: {
     where: {
       completedAt: null,
@@ -100,9 +118,13 @@ const pendingStudentSelect = {
     take: 1,
     select: {
       riskLevel: true,
-      totalScore: true,
-      instrument: true,
-      submittedAt: true,
+    },
+  },
+  studentAssessments: {
+    orderBy: [{ assessedAt: "desc" as const }, { createdAt: "desc" as const }],
+    take: 1,
+    select: {
+      riskLevel: true,
     },
   },
   studentAssignments: {
@@ -121,6 +143,20 @@ const pendingStudentSelect = {
   },
 };
 
+const assessedRiskSelect = {
+  id: true,
+  surveyResponses: {
+    orderBy: { submittedAt: "desc" as const },
+    take: 1,
+    select: { riskLevel: true },
+  },
+  studentAssessments: {
+    orderBy: [{ assessedAt: "desc" as const }, { createdAt: "desc" as const }],
+    take: 1,
+    select: { riskLevel: true },
+  },
+};
+
 /** โหลดแดชบอร์ดพัฒนานิสิต — คัดกรองค้างประเมิน กลุ่มเสี่ยง และเคสสวัสดิการ */
 export const getStudentDevelopmentDashboard = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId;
@@ -130,95 +166,104 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
   }
 
   try {
-    const [students, referrals, openWave, openAlerts] = await Promise.all([
-      prisma.user.findMany({
-        where: {
-          role: Role.STUDENT,
-          isActive: true,
-        },
-        select: pendingStudentSelect,
-        orderBy: [{ studyYear: "asc" }, { studentId: "asc" }, { createdAt: "asc" }],
-        take: STUDENT_DEVELOPMENT_STUDENT_MAX_RESULTS,
-      }),
-      prisma.caseReferral.findMany({
-        where: {
-          target: ReferralTarget.STUDENT_DEVELOPMENT,
-        },
-        select: {
-          id: true,
-          reason: true,
-          isUrgent: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-          acceptedByUserId: true,
-          staffNote: true,
-          closedReason: true,
-          acceptedBy: {
-            select: { name: true },
+    const [totalTarget, pendingCount, pendingRows, assessedRows, referrals, openWave, openAlerts] =
+      await Promise.all([
+        prisma.user.count({
+          where: { role: Role.STUDENT, isActive: true },
+        }),
+        prisma.user.count({ where: pendingStudentWhere }),
+        prisma.user.findMany({
+          where: pendingStudentWhere,
+          select: pendingStudentSelect,
+          orderBy: [{ studyYear: "asc" }, { studentId: "asc" }, { createdAt: "asc" }],
+          take: STUDENT_DEVELOPMENT_STUDENT_MAX_RESULTS,
+        }),
+        prisma.user.findMany({
+          where: assessedStudentWhere,
+          select: assessedRiskSelect,
+          take: STUDENT_DEVELOPMENT_STUDENT_MAX_RESULTS,
+        }),
+        prisma.caseReferral.findMany({
+          where: {
+            target: ReferralTarget.STUDENT_DEVELOPMENT,
           },
-          advisor: {
-            select: {
-              name: true,
+          select: {
+            id: true,
+            reason: true,
+            isUrgent: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            acceptedByUserId: true,
+            staffNote: true,
+            closedReason: true,
+            acceptedBy: {
+              select: { name: true },
             },
-          },
-          student: {
-            select: {
-              id: true,
-              studentId: true,
-              studyYear: true,
-              section: true,
-              name: true,
-              studentAssessments: {
-                orderBy: [{ assessedAt: "desc" }, { createdAt: "desc" }],
-                take: 1,
-                select: {
-                  riskLevel: true,
-                  totalScore: true,
-                  instrument: true,
-                  assessedAt: true,
-                },
-              },
-              studentCareRecords: {
-                orderBy: [{ careDate: "desc" }, { createdAt: "desc" }],
-                take: 1,
-                select: {
-                  careDate: true,
-                  careType: true,
-                  outcome: true,
-                },
+            advisor: {
+              select: {
+                name: true,
               },
             },
+            student: {
+              select: {
+                id: true,
+                studentId: true,
+                studyYear: true,
+                section: true,
+                email: true,
+                phone: true,
+                guardianPhone: true,
+                name: true,
+                studentAssessments: {
+                  orderBy: [{ assessedAt: "desc" }, { createdAt: "desc" }],
+                  take: 1,
+                  select: {
+                    riskLevel: true,
+                    totalScore: true,
+                    instrument: true,
+                    assessedAt: true,
+                  },
+                },
+              },
+            },
           },
-        },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-        take: 200,
-      }),
-      prisma.surveyWave.findFirst({
-        where: { status: SurveyWaveStatus.OPEN },
-        select: { id: true, label: true },
-        orderBy: { opensAt: "desc" },
-      }),
-      prisma.alert.findMany({
-        where: {
-          recipientUserId: userId,
-          status: AlertStatus.OPEN,
-          type: AlertType.REFERRAL_RECEIVED,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        select: {
-          id: true,
-          title: true,
-          message: true,
-          priority: true,
-          createdAt: true,
-          studentId: true,
-        },
-      }),
-    ]);
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 200,
+        }),
+        prisma.surveyWave.findFirst({
+          where: { status: SurveyWaveStatus.OPEN },
+          select: { id: true, label: true },
+          orderBy: { opensAt: "desc" },
+        }),
+        prisma.alert.findMany({
+          where: {
+            recipientUserId: userId,
+            status: AlertStatus.OPEN,
+            type: AlertType.REFERRAL_RECEIVED,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            title: true,
+            message: true,
+            priority: true,
+            createdAt: true,
+            studentId: true,
+            type: true,
+            sourceType: true,
+            sourceId: true,
+          },
+        }),
+      ]);
 
-    const pendingStudentIds = students
+    const portalAlerts = await filterReferralAlertsForPortalTarget(
+      openAlerts,
+      ReferralTarget.STUDENT_DEVELOPMENT
+    );
+
+    const pendingStudentIds = pendingRows
       .filter(isStudentDevelopmentPendingAssessment)
       .map((student) => student.id);
 
@@ -237,7 +282,7 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
           orderBy: {
             createdAt: "desc",
           },
-          take: Math.min(pendingStudentIds.length * 5, STUDENT_DEVELOPMENT_REMINDER_LOG_MAX_RESULTS),
+          take: Math.min(pendingStudentIds.length * 3, STUDENT_DEVELOPMENT_REMINDER_LOG_MAX_RESULTS),
         })
       : [];
 
@@ -248,22 +293,19 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
       }
     });
 
-    const assessedStudents = students.filter(
-      (student) => !isStudentDevelopmentPendingAssessment(student)
-    );
-    const riskOf = (student: (typeof students)[number]) =>
+    const riskOf = (student: (typeof assessedRows)[number]) =>
       student.surveyResponses[0]?.riskLevel ?? student.studentAssessments[0]?.riskLevel;
-    const normalRiskCount = assessedStudents.filter(
+    const normalRiskCount = assessedRows.filter(
       (student) => normalizeScore(riskOf(student)) === "normal"
     ).length;
-    const mediumRiskCount = assessedStudents.filter(
+    const mediumRiskCount = assessedRows.filter(
       (student) => normalizeScore(riskOf(student)) === "medium"
     ).length;
-    const highRiskCount = assessedStudents.filter(
+    const highRiskCount = assessedRows.filter(
       (student) => normalizeScore(riskOf(student)) === "high"
     ).length;
 
-    const pendingStudents = students
+    const pendingStudents = pendingRows
       .filter(isStudentDevelopmentPendingAssessment)
       .map((student) => {
         const latestReminderAt = latestReminderByStudentId.get(student.id) ?? null;
@@ -284,24 +326,24 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
     const riskInsights = [
       {
         id: "normal",
-        title: "กลุ่มปกติ — ติดตามเชิงส่งเสริม",
+        title: "กลุ่มปกติ",
         tone: "normal",
         count: normalRiskCount,
-        description: "นิสิตที่ประเมินแล้วอยู่ในระดับปกติ ใช้วางกิจกรรมส่งเสริมสุขภาพจิตเชิงป้องกัน",
+        description: "",
       },
       {
         id: "medium",
-        title: "กลุ่มต้องติดตามเชิงป้องกัน",
+        title: "กลุ่มเสี่ยงปานกลาง",
         tone: "attention",
         count: mediumRiskCount,
-        description: "เหมาะกับกิจกรรมกลุ่มเล็กหรือการติดตามร่วมกับอาจารย์ที่ปรึกษา",
+        description: "",
       },
       {
         id: "high",
-        title: "กลุ่มต้องส่งต่อหรือประสานใกล้ชิด",
+        title: "กลุ่มเสี่ยงสูง",
         tone: "critical",
         count: highRiskCount,
-        description: "ใช้ระบุเคสที่ควรจับตาและประสานทีมผู้เชี่ยวชาญอย่างใกล้ชิด",
+        description: "",
       },
     ];
 
@@ -324,10 +366,12 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
           studentCode: formatStudentIdForResponse(referral.student.studentId),
           year: inferStudyYear(referral.student.studentId, referral.student.studyYear),
           section: referral.student.section || "-",
+          email: referral.student.email,
+          phone: referral.student.phone,
+          guardianPhone: referral.student.guardianPhone,
           riskLevel: normalizeScore(referral.student.studentAssessments[0]?.riskLevel),
           latestAssessment: referral.student.studentAssessments[0] ?? null,
         },
-        latestCareRecord: referral.student.studentCareRecords[0] ?? null,
       }))
       .sort((left, right) => {
         const statusRank: Record<ReferralStatus, number> = {
@@ -349,9 +393,8 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
         return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
       });
 
-    const totalTarget = students.length;
-    const completed = assessedStudents.length;
-    const pending = pendingStudents.length;
+    const completed = Math.max(0, totalTarget - pendingCount);
+    const pending = pendingCount;
     const percentage = totalTarget === 0 ? 0 : Math.round((completed / totalTarget) * 100);
 
     res.status(200).json({
@@ -371,7 +414,7 @@ export const getStudentDevelopmentDashboard = async (req: Request, res: Response
       pendingStudents,
       riskInsights,
       supportCases,
-      alerts: openAlerts.map((alert) => ({
+      alerts: portalAlerts.map((alert) => ({
         id: alert.id,
         title: alert.title,
         message: alert.message,
@@ -466,7 +509,7 @@ export const updateStudentDevelopmentReferralStatus = async (
       });
       if (otherAccepted) {
         res.status(409).json({
-          message: "นิสิตคนนี้มีเคสสวัสดิการที่กำลังดูแลอยู่แล้ว ไม่สามารถรับซ้ำได้",
+          message: "นิสิตคนนี้มีเคสสวัสดิการที่กำลังประสานงานอยู่แล้ว ไม่สามารถรับซ้ำได้",
         });
         return;
       }
@@ -479,7 +522,7 @@ export const updateStudentDevelopmentReferralStatus = async (
         : undefined;
 
     if (shouldRequireClosedReason(nextStatus, closedReason)) {
-      res.status(400).json({ message: "กรุณาระบุเหตุผลสั้น ๆ เมื่อปิดงานสวัสดิการ" });
+      res.status(400).json({ message: "กรุณาระบุเหตุผลสั้น ๆ เมื่อปิดเคสสวัสดิการ" });
       return;
     }
 
@@ -488,6 +531,8 @@ export const updateStudentDevelopmentReferralStatus = async (
         id: existingReferral.id,
         target: ReferralTarget.STUDENT_DEVELOPMENT,
         status: existingReferral.status,
+        // รับเคสได้เฉพาะคิวที่ยังไม่มีเจ้าของ — กัน race / แย่งรับ
+        ...(nextStatus === ReferralStatus.ACCEPTED ? { acceptedByUserId: null } : {}),
       },
       data: {
         status: nextStatus,
@@ -503,7 +548,7 @@ export const updateStudentDevelopmentReferralStatus = async (
         select: { status: true },
       });
       if (latest?.status === ReferralStatus.ACCEPTED && nextStatus === ReferralStatus.ACCEPTED) {
-        res.status(409).json({ message: "เคสนี้มีผู้รับแล้ว กรุณารีเฟรชรายการ" });
+        res.status(409).json({ message: "เคสนี้มีผู้รับประสานแล้ว กรุณารีเฟรชรายการ" });
         return;
       }
       if (latest?.status === ReferralStatus.CLOSED) {
@@ -576,6 +621,159 @@ export const updateStudentDevelopmentReferralStatus = async (
   } catch (error) {
     console.error("Update student development referral status error:", error);
     res.status(500).json({ message: "อัปเดตสถานะไม่สำเร็จ กรุณาลองใหม่" });
+  }
+};
+
+/** รับช่วงเคสสวัสดิการที่กำลังประสานของเพื่อนร่วมทีม — อัปเดต acceptedBy เป็นผู้ล็อกอิน */
+export const claimStudentDevelopmentReferral = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId || !hasAssignedRole(req.user, Role.STUDENT_DEVELOPMENT)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedParams = referralParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ message: "Invalid referral id" });
+    return;
+  }
+
+  try {
+    const existingReferral = await prisma.caseReferral.findFirst({
+      where: {
+        id: parsedParams.data.referralId,
+        target: ReferralTarget.STUDENT_DEVELOPMENT,
+      },
+      select: {
+        id: true,
+        status: true,
+        reason: true,
+        acceptedByUserId: true,
+        student: {
+          select: {
+            id: true,
+            name: true,
+            studentId: true,
+          },
+        },
+        advisor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        acceptedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!existingReferral) {
+      res.status(404).json({ message: "Referral not found" });
+      return;
+    }
+
+    const decision = decideWelfareClaim(
+      existingReferral.status,
+      existingReferral.acceptedByUserId,
+      userId
+    );
+    if (!decision.ok) {
+      res.status(400).json({ message: decision.message });
+      return;
+    }
+
+    if (decision.alreadyOwner) {
+      res.status(200).json({
+        message: "คุณเป็นผู้ประสานเคสนี้อยู่แล้ว",
+        referral: {
+          id: existingReferral.id,
+          status: existingReferral.status,
+          acceptedByUserId: existingReferral.acceptedByUserId,
+        },
+      });
+      return;
+    }
+
+    const previousOwner = existingReferral.acceptedBy;
+
+    const updated = await prisma.caseReferral.updateMany({
+      where: {
+        id: existingReferral.id,
+        target: ReferralTarget.STUDENT_DEVELOPMENT,
+        status: ReferralStatus.ACCEPTED,
+      },
+      data: {
+        acceptedByUserId: userId,
+      },
+    });
+
+    if (updated.count === 0) {
+      res.status(409).json({ message: "สถานะเคสเปลี่ยนไปแล้ว กรุณารีเฟรชแล้วลองใหม่" });
+      return;
+    }
+
+    const referral = await prisma.caseReferral.findUniqueOrThrow({
+      where: { id: existingReferral.id },
+      select: {
+        id: true,
+        status: true,
+        acceptedByUserId: true,
+        updatedAt: true,
+      },
+    });
+
+    const studentLabel =
+      formatStudentIdForResponse(existingReferral.student.studentId) || existingReferral.student.name;
+
+    if (previousOwner?.id && previousOwner.id !== userId) {
+      await notifyUser({
+        recipientUserId: previousOwner.id,
+        recipientEmail: previousOwner.email,
+        channels: { inApp: true, email: Boolean(previousOwner.email) },
+        alert: {
+          actorUserId: userId,
+          studentId: existingReferral.student.id,
+          type: AlertType.ADVISOR_FOLLOW_UP,
+          priority: AlertPriority.MEDIUM,
+          title: "มีผู้รับช่วงเคสสวัสดิการ",
+          message: `${existingReferral.student.name} (${studentLabel}) · เพื่อนในทีมรับช่วงประสานต่อ`,
+          sourceType: "CaseReferral",
+          sourceId: referral.id,
+        },
+        email: {
+          subject: "NuCare: มีผู้รับช่วงเคสสวัสดิการ",
+          text: `เรียน ${previousOwner.name}\n\nเคสของ ${existingReferral.student.name} (${studentLabel}) ถูกเพื่อนร่วมทีมรับช่วงประสานต่อแล้ว\n`,
+        },
+      });
+    }
+
+    await writeAuditLog({
+      actorUserId: userId,
+      action: "student-development.referral.claim",
+      entityType: "CaseReferral",
+      entityId: referral.id,
+      description: formatAuditMetadata({
+        previousAcceptedByUserId: existingReferral.acceptedByUserId,
+      }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "รับช่วงเคสสำเร็จ",
+      referral,
+    });
+  } catch (error) {
+    console.error("Claim student development referral error:", error);
+    res.status(500).json({ message: "รับช่วงเคสไม่สำเร็จ กรุณาลองใหม่" });
   }
 };
 

@@ -806,7 +806,7 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
                     </div>
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700" htmlFor="rule-sections">
-                        เซค / กลุ่ม (คั่นด้วยจุลภาค)
+                        เซค / section (คั่นด้วยจุลภาค)
                       </label>
                       <input
                         id="rule-sections"
@@ -828,7 +828,7 @@ export function SurveyEditorView(props: SurveyEditorViewProps) {
                         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                       />
                       <p className="mt-1.5 text-xs text-slate-500">
-                        คือกลุ่ม/เซคของนิสิตในระบบ (เช่น A, B) ไม่ใช่ช่วงเวลาเรียน
+                        คือเซค (section) ของนิสิตในระบบ เช่น A, B — ไม่ใช่ช่วงเวลาเรียน
                       </p>
                     </div>
                   </div>

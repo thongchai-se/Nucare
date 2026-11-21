@@ -9,11 +9,16 @@ import {
   listConsultationRequests,
   listConsultationTeachers,
   submitAssessment,
+  updateStudentContacts,
 } from "../controllers/student.controller";
 import {
   acceptConsultationScheduleOffer,
   createConsultationScheduleOffer,
 } from "../controllers/consultation-schedule.controller";
+import {
+  acceptMentalHealthScheduleOffer,
+  createStudentMentalHealthScheduleOffer,
+} from "../controllers/mental-health-schedule.controller";
 import {
   getStudentChatMemoryGreeting,
   listStudentChatPersonas,
@@ -66,6 +71,17 @@ router.post(
   consultationRequestRateLimit,
   acceptConsultationScheduleOffer
 );
+router.post(
+  "/mental-health-referrals/:referralId/schedule-offers",
+  consultationRequestRateLimit,
+  createStudentMentalHealthScheduleOffer
+);
+router.post(
+  "/mental-health-referrals/:referralId/schedule-offers/:offerId/accept",
+  consultationRequestRateLimit,
+  acceptMentalHealthScheduleOffer
+);
 router.post("/sos", sosRateLimit, createSosCase);
+router.patch("/contacts", consultationRequestRateLimit, updateStudentContacts);
 
 export default router;

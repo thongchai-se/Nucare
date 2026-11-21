@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { Router } from "express";
 import {
+  claimStudentDevelopmentReferral,
   createStudentDevelopmentReminder,
   getStudentDevelopmentDashboard,
   updateStudentDevelopmentReferralStatus,
@@ -27,6 +28,7 @@ router.use(authenticateToken, authorizeRoles(Role.STUDENT_DEVELOPMENT));
 router.get("/dashboard", getStudentDevelopmentDashboard);
 router.post("/screening-reminders", createStudentDevelopmentReminder);
 router.patch("/referrals/:referralId/status", updateStudentDevelopmentReferralStatus);
+router.post("/referrals/:referralId/claim", claimStudentDevelopmentReferral);
 
 /** คิวทบทวนผลคัดกรอง MEDIUM/HIGH — ส่งต่อได้เฉพาะเมื่อเจ้าหน้าที่กดเอง ไม่สร้างอัตโนมัติ */
 router.get("/screening-reviews", makeListScreeningReviews("staff"));

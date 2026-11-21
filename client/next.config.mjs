@@ -51,6 +51,8 @@ const nextConfig = {
     ];
   },
   async redirects() {
+    const kkuPdpaPolicyUrl =
+      "https://pdp.kku.ac.th/policy/680656708694016000?lang=th";
     return [
       {
         source: "/dashboard",
@@ -61,6 +63,26 @@ const nextConfig = {
         source: "/dashboard/:path*",
         destination: "/:path*",
         permanent: true,
+      },
+      {
+        source: "/privacy",
+        destination: kkuPdpaPolicyUrl,
+        permanent: false,
+      },
+      {
+        source: "/privacy/:path*",
+        destination: kkuPdpaPolicyUrl,
+        permanent: false,
+      },
+      {
+        source: "/terms",
+        destination: kkuPdpaPolicyUrl,
+        permanent: false,
+      },
+      {
+        source: "/terms/:path*",
+        destination: kkuPdpaPolicyUrl,
+        permanent: false,
       },
     ];
   },

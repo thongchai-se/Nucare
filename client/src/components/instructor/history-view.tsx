@@ -1,10 +1,16 @@
 "use client";
 
-import { useId, useState } from "react";
-import { AlertCircle, BookOpen, Calendar, ChevronRight, Search, Users, X } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+import { AlertCircle, BookOpen, Calendar, ChevronRight, Users, X } from "lucide-react";
 import { ObservationRoadmap } from "@/components/advisor/observation-roadmap";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import { StaffModalOverlay } from "@/components/ui/staff-modal-overlay";
+import {
+  RosterSearchInput,
+  RosterSelectFilter,
+  RosterTableCard,
+  RosterToolbarEnd,
+} from "@/components/ui/roster-table";
 import { useListPagination } from "@/hooks/use-list-pagination";
 import type { BehaviorRecord, BehaviorRecordStatus } from "./types";
 
@@ -28,7 +34,17 @@ export function HistoryView({
 }: HistoryViewProps) {
   const detailTitleId = useId();
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
-  const pagination = useListPagination(filteredHistory, historySearch, {
+  const [statusFilter, setStatusFilter] = useState<"ALL" | BehaviorRecordStatus>("ALL");
+
+  const statusFiltered = useMemo(
+    () =>
+      statusFilter === "ALL"
+        ? filteredHistory
+        : filteredHistory.filter((record) => record.status === statusFilter),
+    [filteredHistory, statusFilter]
+  );
+
+  const pagination = useListPagination(statusFiltered, `${historySearch}:${statusFilter}`, {
     fixedRowsPerPage: 8,
   });
   const selectedRecord =
@@ -47,19 +63,32 @@ export function HistoryView({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex gap-4 border-b border-slate-100 bg-slate-50/50 p-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
+      <RosterTableCard
+        toolbar={
+          <>
+            <RosterSearchInput
               value={historySearch}
-              onChange={(event) => onHistorySearchChange(event.target.value)}
+              onChange={onHistorySearchChange}
               placeholder="ค้นหาประวัติ..."
-              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="ค้นหาประวัติข้อสังเกต"
             />
-          </div>
-        </div>
+            <RosterToolbarEnd>
+              <RosterSelectFilter
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as "ALL" | BehaviorRecordStatus)}
+                aria-label="กรองสถานะ"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                {(Object.keys(statusLabelMap) as BehaviorRecordStatus[]).map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabelMap[status]}
+                  </option>
+                ))}
+              </RosterSelectFilter>
+            </RosterToolbarEnd>
+          </>
+        }
+      >
         <div className="divide-y divide-slate-100">
           {pagination.pageItems.length > 0 ? (
             pagination.pageItems.map((record) => {
@@ -118,7 +147,7 @@ export function HistoryView({
             <div className="p-10 text-center text-sm text-slate-500">ยังไม่มีประวัติการแจ้งเรื่อง</div>
           )}
         </div>
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}
@@ -130,7 +159,7 @@ export function HistoryView({
             onNext={() => pagination.setCurrentPage((prev) => prev + 1)}
           />
         ) : null}
-      </div>
+      </RosterTableCard>
 
       {selectedRecord ? (
         <StaffModalOverlay panelClassName="max-w-2xl">

@@ -8,6 +8,7 @@ import { buildExecutiveDashboardStats } from "../lib/executive-analytics";
 import { normalizePersonNameForRole } from "../lib/name-prefix";
 import { prisma } from "../lib/prisma";
 import {
+  buildActiveAdminCountWhere,
   buildUserHasRoleWhere,
   getAssignedRoles,
   hasAssignedRole,
@@ -18,6 +19,10 @@ import {
 import { MAX_STUDY_YEAR, MIN_STUDY_YEAR, normalizeStudyYear } from "../lib/study-year";
 import { createTemporaryPassword } from "../lib/temporary-password";
 import { formatStudentIdForResponse } from "../lib/user-format";
+import {
+  buildAuditLogCreatedAtFilter,
+  listAuditLogsQuerySchema,
+} from "../validators/audit-logs";
 
 const DEFAULT_IMPORT_BCRYPT_ROUNDS = 10;
 const DEFAULT_IMPORT_CONCURRENCY = 12;
@@ -104,9 +109,6 @@ const listUsersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
 });
 
-const listAuditLogsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-});
 
 const studentStatusSchema = z.enum(["active", "inactive"]);
 const managedRoleSchema = z.nativeEnum(Role);
@@ -114,14 +116,16 @@ const managedStaffRoleSchema = z.enum(managedStaffRoleValues);
 
 const instructorIdsSchema = z.array(z.string().trim().min(1)).max(20);
 
-const createStudentSchema = z.object({
-  studentId: z.string().trim().min(1),
-  name: z.string().trim().min(2).max(120),
-  email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
-  section: z.string().trim().min(1).max(50),
-  status: studentStatusSchema,
-});
+const createStudentSchema = z
+  .object({
+    studentId: z.string().trim().min(1),
+    name: z.string().trim().min(2).max(120),
+    email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+    studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
+    section: z.string().trim().min(1).max(50),
+    status: studentStatusSchema,
+  })
+  .strict();
 
 const managedUserSchema = z
   .object({
@@ -137,6 +141,7 @@ const managedUserSchema = z
     email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
     status: studentStatusSchema,
   })
+  .strict()
   .superRefine((data, context) => {
     const explicitRole = data.role;
     const selectedRoles = data.roles || (explicitRole ? [explicitRole as ManagedStaffRole] : []);
@@ -161,38 +166,50 @@ const managedUserSchema = z
     }
   });
 
-const updateStudentSchema = z.object({
-  studentId: z.string().trim().min(1),
-  name: z.string().trim().min(2).max(120),
-  email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
-  studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
-  section: z.string().trim().min(1).max(50),
-  status: studentStatusSchema,
-});
+const updateStudentSchema = z
+  .object({
+    studentId: z.string().trim().min(1),
+    name: z.string().trim().min(2).max(120),
+    email: z.union([z.string().trim().email(), z.literal(""), z.undefined()]).optional(),
+    studyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
+    section: z.string().trim().min(1).max(50),
+    status: studentStatusSchema,
+  })
+  .strict();
 
-const assignAdvisorStudentsSchema = z.object({
-  advisorId: z.string().trim().min(1),
-  studentIds: z.array(z.string().trim().min(1)).min(1).max(500),
-});
+const assignAdvisorStudentsSchema = z
+  .object({
+    advisorId: z.string().trim().min(1),
+    studentIds: z.array(z.string().trim().min(1)).min(1).max(500),
+  })
+  .strict();
 
-const bulkUpdateStudentStudyYearSchema = z.object({
-  fromStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
-  toStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
-});
+const bulkUpdateStudentStudyYearSchema = z
+  .object({
+    fromStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
+    toStudyYear: z.coerce.number().int().min(MIN_STUDY_YEAR).max(MAX_STUDY_YEAR),
+  })
+  .strict();
 
-const importStaffRowSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  email: z.string().trim().email(),
-  roles: z.array(managedStaffRoleSchema).min(1).max(managedStaffRoleValues.length),
-});
+const importStaffRowSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    email: z.string().trim().email(),
+    roles: z.array(managedStaffRoleSchema).min(1).max(managedStaffRoleValues.length),
+  })
+  .strict();
 
-const importStaffUsersSchema = z.object({
-  rows: z.array(importStaffRowSchema).min(1).max(2000),
-});
+const importStaffUsersSchema = z
+  .object({
+    rows: z.array(importStaffRowSchema).min(1).max(2000),
+  })
+  .strict();
 
-const checkExistingStaffUsersSchema = z.object({
-  emails: z.array(z.string().trim().email()).min(1).max(2000),
-});
+const checkExistingStaffUsersSchema = z
+  .object({
+    emails: z.array(z.string().trim().email()).min(1).max(2000),
+  })
+  .strict();
 
 type StudentRecord = {
   id: string;
@@ -714,10 +731,7 @@ const parseManagedUserPayload = (
 
 const countActiveAdmins = async (): Promise<number> =>
   prisma.user.count({
-    where: {
-      role: Role.ADMIN,
-      isActive: true,
-    },
+    where: buildActiveAdminCountWhere(),
   });
 
 const getStudentDependencyCount = async (studentUserId: string): Promise<number> => {
@@ -962,7 +976,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
         section,
         role: Role.STUDENT,
         password: passwordHash,
-        mustChangePassword: true,
+        mustChangePassword: false,
         isActive: parsed.data.status === "active",
       },
       select: {
@@ -1079,7 +1093,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
               section: payload.section,
               isActive: payload.isActive,
               password: passwordHash,
-              mustChangePassword: true,
+              mustChangePassword: false,
             },
             select: {
               id: true,
@@ -1338,16 +1352,18 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (actorUserId === userId && (payload.role !== Role.ADMIN || !payload.isActive)) {
+    const existingHasAdmin = hasAssignedRole(existing, Role.ADMIN);
+    const payloadHasAdmin = hasAssignedRole(
+      { role: payload.role, additionalRoles: payload.additionalRoles },
+      Role.ADMIN
+    );
+
+    if (actorUserId === userId && (!payloadHasAdmin || !payload.isActive)) {
       res.status(409).json({ message: "Cannot demote or deactivate the current admin account" });
       return;
     }
 
-    if (
-      existing.role === Role.ADMIN &&
-      existing.isActive &&
-      (payload.role !== Role.ADMIN || !payload.isActive)
-    ) {
+    if (existingHasAdmin && existing.isActive && (!payloadHasAdmin || !payload.isActive)) {
       const activeAdminCount = await countActiveAdmins();
       if (activeAdminCount <= 1) {
         res.status(409).json({ message: "At least one active admin account is required" });
@@ -1561,7 +1577,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    if (existing.role === Role.ADMIN && existing.isActive) {
+    if (hasAssignedRole(existing, Role.ADMIN) && existing.isActive) {
       const activeAdminCount = await countActiveAdmins();
       if (activeAdminCount <= 1) {
         res.status(409).json({ message: "At least one active admin account is required" });
@@ -1880,7 +1896,7 @@ export const importStudents = async (req: Request, res: Response): Promise<void>
             section: row.section,
             role: Role.STUDENT,
             password: passwordHash,
-            mustChangePassword: true,
+            mustChangePassword: false,
             isActive: true,
           },
         });
@@ -2265,7 +2281,7 @@ export const importStaffUsers = async (req: Request, res: Response): Promise<voi
               additionalRoles: nextRoles.additionalRoles,
               employeeId,
               password: passwordHash,
-              mustChangePassword: true,
+              mustChangePassword: false,
               isActive: true,
             },
             select: {
@@ -2504,10 +2520,15 @@ export const listAuditLogs = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const limit = parsed.data.limit ?? 100;
+  const limit = parsed.data.limit ?? 200;
+  const createdAt = buildAuditLogCreatedAtFilter({
+    from: parsed.data.from,
+    to: parsed.data.to,
+  });
 
   try {
     const auditLogs = await prisma.auditLog.findMany({
+      where: createdAt ? { createdAt } : undefined,
       orderBy: {
         createdAt: "desc",
       },

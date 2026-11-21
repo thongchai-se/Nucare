@@ -1,6 +1,10 @@
-import type { ReactNode } from "react";
-
-export type ActiveView = "dashboard" | "tracking" | "wellness" | "welfare" | "publicity";
+export type ActiveView =
+  | "dashboard"
+  | "tracking"
+  | "wellness"
+  | "welfare"
+  | "publicity"
+  | "messages";
 
 export type PendingStudent = {
   id: string;
@@ -19,8 +23,8 @@ export type RiskInsightCard = {
   id: string;
   name: string;
   date: string;
+  /** จำนวนนิสิตในกลุ่มนี้ */
   registered: number;
-  max: number;
   status: "กลุ่มเสี่ยงสูง" | "กลุ่มเสี่ยงปานกลาง" | "กลุ่มปกติ";
   focus: string;
 };
@@ -32,17 +36,27 @@ export type WelfareReferralStatus = "PENDING" | "ACCEPTED" | "CLOSED";
 
 export type WelfareTask = {
   id: string;
+  /** @deprecated ใช้ studentName + studentCode */
   title: string;
+  studentName: string;
+  studentCode: string;
+  year: string;
   owner: string;
-  status: "กำลังประสานงาน" | "รอรับงาน" | "ปิดงานแล้ว";
+  status: "กำลังประสานงาน" | "รอประสานงาน" | "ปิดเคสแล้ว";
   referralStatus: WelfareReferralStatus;
   updatedAt: string;
+  updatedAtRaw?: string;
   note: string;
+  /** รหัสผู้ใช้นิสิต — ใช้เปิดคุยสั้น */
+  studentUserId?: string | null;
   isUrgent?: boolean;
   acceptedByUserId?: string | null;
   acceptedByName?: string | null;
   staffNote?: string | null;
   closedReason?: string | null;
+  phone?: string | null;
+  guardianPhone?: string | null;
+  email?: string | null;
 };
 
 export type ScreeningStats = {
@@ -67,10 +81,4 @@ export type StudentDevelopmentAlert = {
   priority: string;
   createdAt: string;
   studentId: string | null;
-};
-
-export type CampaignHighlight = {
-  title: string;
-  description: string;
-  icon: ReactNode;
 };

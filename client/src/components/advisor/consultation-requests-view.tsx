@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
+import { FilterSummaryChip } from "@/components/ui/filter-summary-chip";
 import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
 import {
   RosterMobileCard,
@@ -14,12 +14,12 @@ import {
   RosterTd,
 } from "@/components/ui/roster-table";
 import { useListPagination } from "@/hooks/use-list-pagination";
+import { STATUS_BADGE_COMPACT } from "@/lib/status-badge";
 import { formatStudentIdDisplay } from "@/lib/student-id";
 import {
   UI_ACTION_PRIMARY_COMPACT,
   UI_ACTION_SCHEDULE_COMPACT,
   UI_ACTION_SECONDARY_COMPACT,
-  UI_BUTTON_SECONDARY,
 } from "@/lib/ui-classes";
 import {
   CANCELLED_CASE_LABEL,
@@ -48,19 +48,20 @@ type ConsultationRequestsViewProps = {
   activeTab: ConsultationTab;
   onTabChange: (tab: ConsultationTab) => void;
   formatThaiDateTime: (value: string | null) => string;
-  onRefresh: () => void;
   onAcceptRequest: (requestId: string) => void;
   onProposeSchedule: (requestId: string) => void;
   onAcceptOffer: (requestId: string, offerId: string) => void;
   onCloseRequest: (requestId: string) => void;
   onConfirmCancel: (requestId: string) => void;
   onDirectCancel: (requestId: string) => void;
+  /** เปิดแผงคุยสั้นกับนิสิต (ฟีเจอร์เสริม ไม่ใช่เมนู) */
+  onOpenChat?: (studentId: string) => void;
 };
 
 type AcceptedFilter = "all" | NegotiateLane;
 
 const TAB_META: Array<{ id: ConsultationTab; label: string; empty: string }> = [
-  { id: "pending", label: "รอรับ", empty: "ไม่มีคำขอที่รอรับ" },
+  { id: "pending", label: "รอรับคำขอ", empty: "ไม่มีคำขอที่รอรับ" },
   { id: "accepted", label: "รอเจรจานัด", empty: "ไม่มีคำขอที่รอเจรจานัด" },
   { id: "scheduled", label: "นัดหมายแล้ว", empty: "ยังไม่มีนัดที่ยืนยันแล้ว" },
   { id: "closed", label: "ปิด/ยกเลิก", empty: "ยังไม่มีคำขอที่ปิดหรือยกเลิก" },
@@ -131,13 +132,13 @@ export function ConsultationRequestsView({
   activeTab,
   onTabChange,
   formatThaiDateTime,
-  onRefresh,
   onAcceptRequest,
   onProposeSchedule,
   onAcceptOffer,
   onCloseRequest,
   onConfirmCancel,
   onDirectCancel,
+  onOpenChat,
 }: ConsultationRequestsViewProps) {
   const [acceptedFilter, setAcceptedFilter] = useState<AcceptedFilter>("all");
 
@@ -253,25 +254,19 @@ export function ConsultationRequestsView({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">คำขอปรึกษา</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            นิสิตขอคุยกับคุณโดยตรง — แยกจากเมนูสัญญาณเข้า (ที่อาจารย์ท่านอื่นแจ้งมา)
+          <h2 className="text-2xl font-bold text-slate-900">คำขอปรึกษา</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            นิสิตขอคุยกับคุณโดยตรง
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {loadingConsultationRequests ? (
-            <span className="loader h-3.5 w-3.5 text-blue-600" aria-label="กำลังโหลด" />
-          ) : null}
-          <button type="button" onClick={onRefresh} className={UI_BUTTON_SECONDARY}>
-            <RefreshCw className={`h-4 w-4 ${loadingConsultationRequests ? "animate-spin" : ""}`} />
-            รีเฟรช
-          </button>
-        </div>
+        {loadingConsultationRequests ? (
+          <span className="loader h-3.5 w-3.5 text-blue-600" aria-label="กำลังโหลด" />
+        ) : null}
       </div>
 
       <div className={tabGridClass} role="tablist" aria-label="สถานะคำขอปรึกษา">
         {TAB_META.map((tab) => (
-          <SummaryChip
+          <FilterSummaryChip
             key={tab.id}
             label={tab.label}
             value={countByTab[tab.id]}
@@ -289,27 +284,14 @@ export function ConsultationRequestsView({
           {ACCEPTED_FILTERS.map((filter) => {
             const selected = acceptedFilter === filter.id;
             return (
-              <button
+              <FilterSummaryChip
                 key={filter.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
+                density="compact"
+                label={filter.label}
+                value={acceptedFilterCount[filter.id]}
+                selected={selected}
                 onClick={() => setAcceptedFilter(filter.id)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  selected
-                    ? "border-slate-800 bg-slate-800 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <span>{filter.label}</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
-                    selected ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {acceptedFilterCount[filter.id]}
-                </span>
-              </button>
+              />
             );
           })}
         </div>
@@ -332,6 +314,7 @@ export function ConsultationRequestsView({
                 onConfirmCancel={onConfirmCancel}
                 onDirectCancel={onDirectCancel}
                 onAcceptRequest={onAcceptRequest}
+                onOpenChat={onOpenChat}
                 showActions={showActionsColumn}
               />
             ) : (
@@ -346,6 +329,7 @@ export function ConsultationRequestsView({
                 onCloseRequest={onCloseRequest}
                 onConfirmCancel={onConfirmCancel}
                 onDirectCancel={onDirectCancel}
+                onOpenChat={onOpenChat}
                 showNegotiateLane={activeTab === "accepted"}
                 showActions={showActionsColumn}
               />
@@ -366,6 +350,7 @@ export function ConsultationRequestsView({
               onCloseRequest={onCloseRequest}
               onConfirmCancel={onConfirmCancel}
               onDirectCancel={onDirectCancel}
+              onOpenChat={onOpenChat}
               showNegotiateLane={activeTab === "accepted"}
               emphasizeSchedule={activeTab === "scheduled"}
               showActions={showActionsColumn}
@@ -373,7 +358,7 @@ export function ConsultationRequestsView({
           ))}
         </RosterMobileList>
 
-        {pagination.total > pagination.rowsPerPage ? (
+        {pagination.total > 0 ? (
           <ListPaginationFooter
             total={pagination.total}
             rangeStart={pagination.rangeStart}
@@ -400,6 +385,7 @@ type RowActionsProps = {
   onCloseRequest: (requestId: string) => void;
   onConfirmCancel: (requestId: string) => void;
   onDirectCancel: (requestId: string) => void;
+  onOpenChat?: (studentId: string) => void;
   showNegotiateLane?: boolean;
   emphasizeSchedule?: boolean;
   showActions?: boolean;
@@ -438,12 +424,26 @@ function ConsultationActions({
   onCloseRequest,
   onConfirmCancel,
   onDirectCancel,
+  onOpenChat,
 }: Omit<RowActionsProps, "consultationStatusMap" | "formatThaiDateTime" | "showNegotiateLane" | "emphasizeSchedule">) {
   const pendingOffer = request.latestPendingOffer ?? null;
   const waitingOnAdvisor = pendingOffer?.waitingOn === "ADVISOR";
+  const canChat =
+    Boolean(onOpenChat) &&
+    request.status !== "CLOSED" &&
+    request.status !== "CANCELLED";
 
   return (
     <div className="flex flex-wrap gap-2 sm:justify-end">
+      {canChat ? (
+        <button
+          type="button"
+          onClick={() => onOpenChat?.(request.studentId)}
+          className={UI_ACTION_SECONDARY_COMPACT}
+        >
+          คุยสั้น
+        </button>
+      ) : null}
       {request.status === "PENDING" ? (
         <button type="button" onClick={() => onAcceptRequest(request.id)} className={UI_ACTION_PRIMARY_COMPACT}>
           <ConfirmSubmitLabel>รับคำขอ</ConfirmSubmitLabel>
@@ -471,7 +471,8 @@ function ConsultationActions({
         </>
       ) : null}
 
-      {request.status === "SCHEDULED" ? (
+      {request.status === "SCHEDULED" ||
+      (request.status === "ACCEPTED" && request.preferredChannel === "MESSAGE") ? (
         <button type="button" onClick={() => onCloseRequest(request.id)} className={UI_ACTION_SECONDARY_COMPACT}>
           ปิดเคส
         </button>
@@ -532,7 +533,7 @@ function NegotiateLaneBadge({ request }: { request: AdvisorConsultationRequestIt
   const lane = getNegotiateLane(request);
   const meta = LANE_BADGE[lane];
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${meta.className}`}>{meta.label}</span>
+    <span className={`${STATUS_BADGE_COMPACT} ${meta.className}`}>{meta.label}</span>
   );
 }
 
@@ -545,6 +546,7 @@ function ScheduledTableRow({
   onCloseRequest,
   onConfirmCancel,
   onDirectCancel,
+  onOpenChat,
   showActions = true,
 }: Omit<RowActionsProps, "consultationStatusMap" | "showNegotiateLane" | "emphasizeSchedule">) {
   const code = formatStudentIdDisplay(request.studentCode);
@@ -571,7 +573,14 @@ function ScheduledTableRow({
       <RosterTd>
         <p className="font-medium text-slate-800">{request.topic}</p>
         <p className="mt-1 text-xs text-slate-500">
-          {request.scheduleLocation || request.preferredChannelLabel}
+          {request.scheduleLocation ||
+            (request.preferredChannel === "IN_PERSON"
+              ? "ออนไซต์"
+              : request.preferredChannel === "ONLINE"
+                ? "ออนไลน์"
+                : request.preferredChannel === "MESSAGE"
+                  ? "ข้อความในระบบ"
+                  : request.preferredChannelLabel)}
         </p>
       </RosterTd>
       {showActions ? (
@@ -584,6 +593,7 @@ function ScheduledTableRow({
             onCloseRequest={onCloseRequest}
             onConfirmCancel={onConfirmCancel}
             onDirectCancel={onDirectCancel}
+            onOpenChat={onOpenChat}
           />
         </RosterTd>
       ) : null}
@@ -601,6 +611,7 @@ function ConsultationTableRow({
   onCloseRequest,
   onConfirmCancel,
   onDirectCancel,
+  onOpenChat,
   showNegotiateLane = false,
   showActions = true,
 }: RowActionsProps) {
@@ -618,7 +629,15 @@ function ConsultationTableRow({
       </RosterTd>
       <RosterTd>
         <p className="font-medium text-slate-800">{request.topic}</p>
-        <p className="mt-1 text-xs text-slate-500">{request.preferredChannelLabel}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {request.preferredChannel === "IN_PERSON"
+            ? "ออนไซต์"
+            : request.preferredChannel === "ONLINE"
+              ? "ออนไลน์"
+              : request.preferredChannel === "MESSAGE"
+                ? "ข้อความในระบบ"
+                : request.preferredChannelLabel}
+        </p>
         {request.note ? (
           <p className="mt-1 line-clamp-2 text-xs text-slate-600">
             {stripSeedMarkers(request.note) || request.note}
@@ -627,9 +646,7 @@ function ConsultationTableRow({
       </RosterTd>
       <RosterTd>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${statusMeta.className}`}>
-            {statusMeta.label}
-          </span>
+          <span className={`${STATUS_BADGE_COMPACT} ${statusMeta.className}`}>{statusMeta.label}</span>
           {showNegotiateLane && request.status !== "CANCEL_REQUESTED" ? (
             <NegotiateLaneBadge request={request} />
           ) : null}
@@ -660,6 +677,7 @@ function ConsultationTableRow({
             onCloseRequest={onCloseRequest}
             onConfirmCancel={onConfirmCancel}
             onDirectCancel={onDirectCancel}
+            onOpenChat={onOpenChat}
           />
         </RosterTd>
       ) : null}
@@ -677,6 +695,7 @@ function ConsultationMobileCard({
   onCloseRequest,
   onConfirmCancel,
   onDirectCancel,
+  onOpenChat,
   showNegotiateLane = false,
   emphasizeSchedule = false,
   showActions = true,
@@ -693,9 +712,7 @@ function ConsultationMobileCard({
           avatarText={code}
         />
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${statusMeta.className}`}>
-            {statusMeta.label}
-          </span>
+          <span className={`${STATUS_BADGE_COMPACT} ${statusMeta.className}`}>{statusMeta.label}</span>
           {showNegotiateLane && request.status !== "CANCEL_REQUESTED" ? (
             <NegotiateLaneBadge request={request} />
           ) : null}
@@ -704,7 +721,16 @@ function ConsultationMobileCard({
       {emphasizeSchedule && request.scheduledAt ? (
         <p className="mt-3 text-sm font-bold text-slate-900">นัด: {formatThaiDateTime(request.scheduledAt)}</p>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">รูปแบบ: {request.preferredChannelLabel}</p>
+        <p className="mt-3 text-sm text-slate-500">
+          รูปแบบ:{" "}
+          {request.preferredChannel === "IN_PERSON"
+            ? "ออนไซต์"
+            : request.preferredChannel === "ONLINE"
+              ? "ออนไลน์"
+              : request.preferredChannel === "MESSAGE"
+                ? "ข้อความในระบบ"
+                : request.preferredChannelLabel}
+        </p>
       )}
       {request.scheduleLocation ? (
         <p className="mt-1 text-sm text-slate-600">{request.scheduleLocation}</p>
@@ -738,38 +764,10 @@ function ConsultationMobileCard({
             onCloseRequest={onCloseRequest}
             onConfirmCancel={onConfirmCancel}
             onDirectCancel={onDirectCancel}
+            onOpenChat={onOpenChat}
           />
         </div>
       ) : null}
     </RosterMobileCard>
-  );
-}
-
-function SummaryChip({
-  label,
-  value,
-  selected = false,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  selected?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      onClick={onClick}
-      className={`rounded-2xl border px-4 py-3 text-left shadow-sm transition-colors ${
-        selected
-          ? "border-slate-300 bg-slate-50 ring-1 ring-slate-200"
-          : "border-slate-200 bg-white hover:bg-slate-50"
-      }`}
-    >
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950">{value}</p>
-    </button>
   );
 }

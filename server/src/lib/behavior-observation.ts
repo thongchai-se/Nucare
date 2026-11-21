@@ -10,7 +10,9 @@ import { getBehaviorRecordFollowUpStatus } from "./behavior-follow-up";
 import { buildObservationRoadmap } from "./observation-roadmap";
 import { formatStudentIdForResponse } from "./user-format";
 
-export const OBSERVATION_STUDENT_SEARCH_MAX = 50;
+export const OBSERVATION_STUDENT_SEARCH_MAX = 20;
+/** ความยาวคำค้นขั้นต่ำก่อนแสดงรายชื่อ — กัน enumeration ทั้งคณะ */
+export const OBSERVATION_STUDENT_SEARCH_MIN_CHARS = 2;
 export const OBSERVATION_RECORD_LIST_MAX = 300;
 
 export type CreateObservationInput = {
@@ -108,18 +110,18 @@ export async function assertActiveStudentTarget(studentId: string): Promise<
  * (เมนูนี้สำหรับแจ้งเด็กของอาจารย์คนอื่น)
  */
 export async function searchStudentsForObservation(search?: string, reporterUserId?: string) {
-  const normalized = search?.trim();
+  const normalized = search?.trim() ?? "";
+  if (normalized.length < OBSERVATION_STUDENT_SEARCH_MIN_CHARS) {
+    return [];
+  }
+
   const where: Prisma.UserWhereInput = {
     role: Role.STUDENT,
     isActive: true,
-    ...(normalized
-      ? {
-          OR: [
-            { name: { contains: normalized, mode: "insensitive" } },
-            { studentId: { contains: normalized, mode: "insensitive" } },
-          ],
-        }
-      : {}),
+    OR: [
+      { name: { contains: normalized, mode: "insensitive" } },
+      { studentId: { contains: normalized, mode: "insensitive" } },
+    ],
     ...(reporterUserId
       ? {
           NOT: {

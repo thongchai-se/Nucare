@@ -85,16 +85,52 @@ export const defaultConsultationTopics = [
   "อื่น ๆ",
 ];
 
-/** ช่องทางที่นิสิตเลือกตอนส่งคำขอ — แค่ออนไลน์หรือพบตัว */
+/** ช่องทางที่นิสิตเลือกตอนส่งคำขอ — แค่ออนไลน์หรือออนไซต์ */
 export const defaultPreferredChannels: Record<string, string> = {
   ONLINE: "ออนไลน์",
-  IN_PERSON: "พบตัว / ที่คณะ",
+  IN_PERSON: "ออนไซต์",
 };
+
+const LEGACY_IN_PERSON_LABELS = new Set(["พบตัว / ที่คณะ", "พบที่คณะ", "พบตัว"]);
+
+/**
+ * บังคับป้ายช่องทางให้ตรงชุดปัจจุบัน
+ * — ไม่เชื่อป้ายเก่าจาก API/แคช
+ */
+export function resolvePreferredChannelLabel(channel: string, label?: string | null): string {
+  if (channel === "ONLINE") {
+    return defaultPreferredChannels.ONLINE;
+  }
+  if (channel === "MESSAGE") {
+    // ค่าเก่าในประวัติคำขอ — ไม่เปิดเลือกใหม่
+    return "ข้อความในระบบ";
+  }
+  if (channel === "IN_PERSON" || (label && LEGACY_IN_PERSON_LABELS.has(label))) {
+    return defaultPreferredChannels.IN_PERSON;
+  }
+  return label?.trim() || channel;
+}
+
+/** สร้างตัวเลือกช่องทางจาก API โดยใช้ป้ายมาตรฐานฝั่ง client */
+export function normalizePreferredChannelOptions(
+  channels: Record<string, string> | null | undefined
+): Record<string, string> {
+  const keys = Object.keys(channels || {}).filter(
+    (key) => key === "ONLINE" || key === "IN_PERSON"
+  );
+  if (keys.length === 0) {
+    return { ...defaultPreferredChannels };
+  }
+  return Object.fromEntries(keys.map((key) => [key, resolvePreferredChannelLabel(key, channels?.[key])]));
+}
 
 /** คำใบ้ช่องกรอกสถานที่ตอนเสนอนัด (ฝั่งอาจารย์) */
 export function scheduleLocationPlaceholder(channel: string): string {
   if (channel === "ONLINE") {
     return "เช่น Microsoft Teams / Zoom พร้อมลิงก์";
+  }
+  if (channel === "MESSAGE") {
+    return "แชทในระบบ NUCare (ไม่ต้องกรอกลิงก์)";
   }
   return "เช่น ห้องที่ปรึกษาชั้น 2";
 }

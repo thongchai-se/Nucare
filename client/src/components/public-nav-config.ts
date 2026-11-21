@@ -1,12 +1,12 @@
 export type PublicNavItem = {
-  id: "media" | "support" | "resources" | "emergency";
+  id: "media" | "support" | "pathways" | "emergency";
   label: string;
 };
 
 export const PUBLIC_NAV_ITEMS: PublicNavItem[] = [
   { id: "media", label: "กิจกรรม" },
   { id: "support", label: "การดูแล" },
-  { id: "resources", label: "คลังฮีลใจ" },
+  { id: "pathways", label: "เส้นทางดูแล" },
   { id: "emergency", label: "เหตุฉุกเฉิน" },
 ];
 

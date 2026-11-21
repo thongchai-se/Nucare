@@ -138,3 +138,8 @@ export const buildUserHasRoleWhere = (role: Role): Prisma.UserWhereInput => {
     ]),
   };
 };
+
+/** เงื่อนไขนับแอดมินที่ยังใช้งาน — รวมบทบาทหลักและบทบาทเพิ่มเติม */
+export const buildActiveAdminCountWhere = (): Prisma.UserWhereInput => ({
+  AND: [buildUserHasRoleWhere(Role.ADMIN), { isActive: true }],
+});

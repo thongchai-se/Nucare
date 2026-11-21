@@ -15,15 +15,20 @@ type ChatThreadProps = {
 };
 
 export function ChatThread({ persona, messages, sending = false }: ChatThreadProps) {
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const isMale = persona.gender === "male";
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    list.scrollTop = list.scrollHeight;
   }, [messages.length, sending]);
 
   return (
     <div
+      ref={listRef}
       className={`relative flex min-h-[22rem] flex-1 flex-col gap-3 overflow-y-auto px-3 py-4 sm:px-5 ${
         isMale
           ? "bg-[linear-gradient(180deg,#f0f9ff_0%,#f8fafc_42%,#ffffff_100%)]"
@@ -91,8 +96,6 @@ export function ChatThread({ persona, messages, sending = false }: ChatThreadPro
           </div>
         </div>
       ) : null}
-
-      <div ref={bottomRef} />
     </div>
   );
 }

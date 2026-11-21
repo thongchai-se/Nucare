@@ -1,6 +1,16 @@
 "use client";
 
 import { Download } from "lucide-react";
+import { ListPaginationFooter } from "@/components/ui/list-pagination-footer";
+import {
+  RosterSearchInput,
+  RosterSelectFilter,
+  RosterToolbarEnd,
+} from "@/components/ui/roster-table";
+import {
+  AUDIT_DISPLAY_STATUS_FILTER_OPTIONS,
+  type AuditDisplayStatus,
+} from "@/lib/audit-status";
 import type { Role } from "@/types/auth";
 import type { AdminAuditLog } from "./types";
 
@@ -8,6 +18,10 @@ type AuditLogViewProps = {
   filteredAuditLogs: AdminAuditLog[];
   paginatedAuditLogs: AdminAuditLog[];
   searchQuery: string;
+  auditStatusFilter: "ALL" | AuditDisplayStatus;
+  auditFromDate: string;
+  auditToDate: string;
+  auditLoading?: boolean;
   auditStartItemIndex: number;
   auditEndItemIndex: number;
   auditCurrentPage: number;
@@ -15,11 +29,16 @@ type AuditLogViewProps = {
   canGoNextAudit: boolean;
   roleLabelMap: Record<Role, string>;
   onSearchQueryChange: (value: string) => void;
+  onAuditStatusFilterChange: (value: "ALL" | AuditDisplayStatus) => void;
+  onAuditFromDateChange: (value: string) => void;
+  onAuditToDateChange: (value: string) => void;
+  onReloadAudit: () => void;
   onExport: () => void;
   onPrevPage: () => void;
   onNextPage: () => void;
-  getAuditStatus: (log: AdminAuditLog) => "Success" | "Partial" | "Failed";
-  getAuditStatusLabel: (status: "Success" | "Partial" | "Failed") => string;
+  getAuditStatus: (log: AdminAuditLog) => AuditDisplayStatus;
+  getAuditStatusLabel: (status: AuditDisplayStatus) => string;
+  getAuditStatusClassName: (status: AuditDisplayStatus) => string;
   getAuditActionLabel: (log: AdminAuditLog) => string;
   getAuditActorName: (log: AdminAuditLog) => string;
   getAuditTargetLabel: (log: AdminAuditLog) => string;
@@ -36,6 +55,10 @@ export function AuditLogView(props: AuditLogViewProps) {
     filteredAuditLogs,
     paginatedAuditLogs,
     searchQuery,
+    auditStatusFilter,
+    auditFromDate,
+    auditToDate,
+    auditLoading = false,
     auditStartItemIndex,
     auditEndItemIndex,
     auditCurrentPage,
@@ -43,11 +66,16 @@ export function AuditLogView(props: AuditLogViewProps) {
     canGoNextAudit,
     roleLabelMap,
     onSearchQueryChange,
+    onAuditStatusFilterChange,
+    onAuditFromDateChange,
+    onAuditToDateChange,
+    onReloadAudit,
     onExport,
     onPrevPage,
     onNextPage,
     getAuditStatus,
     getAuditStatusLabel,
+    getAuditStatusClassName,
     getAuditActionLabel,
     getAuditActorName,
     getAuditTargetLabel,
@@ -79,15 +107,57 @@ export function AuditLogView(props: AuditLogViewProps) {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 bg-slate-50 p-4">
-          <div className="relative">
-            <input
-              type="text"
+        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <RosterSearchInput
               value={searchQuery}
-              onChange={(event) => onSearchQueryChange(event.target.value)}
+              onChange={onSearchQueryChange}
               placeholder="ค้นหาตามผู้ใช้งาน, กิจกรรม, หรือ IP..."
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none transition focus:ring-2 focus:ring-blue-500"
+              aria-label="ค้นหาบันทึกระบบ"
             />
+            <RosterToolbarEnd>
+              <RosterSelectFilter
+                value={auditStatusFilter}
+                onChange={(value) => onAuditStatusFilterChange(value as "ALL" | AuditDisplayStatus)}
+                aria-label="กรองสถานะบันทึก"
+              >
+                <option value="ALL">ทุกสถานะ</option>
+                {AUDIT_DISPLAY_STATUS_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </RosterSelectFilter>
+            </RosterToolbarEnd>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="text-xs font-semibold text-slate-600">
+              จากวันที่
+              <input
+                type="date"
+                value={auditFromDate}
+                onChange={(event) => onAuditFromDateChange(event.target.value)}
+                className="mt-1 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">
+              ถึงวันที่
+              <input
+                type="date"
+                value={auditToDate}
+                onChange={(event) => onAuditToDateChange(event.target.value)}
+                className="mt-1 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={onReloadAudit}
+              disabled={auditLoading}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
+            >
+              {auditLoading ? "กำลังโหลด..." : "โหลดตามช่วงวัน"}
+            </button>
+            <p className="self-center text-xs text-slate-500">ดึงได้สูงสุด 500 รายการล่าสุดในช่วงที่เลือก</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -153,13 +223,7 @@ export function AuditLogView(props: AuditLogViewProps) {
                     </td>
                     <td className="p-4 align-top">
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                          status === "Success"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : status === "Partial"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-red-100 text-red-700"
-                        }`}
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${getAuditStatusClassName(status)}`}
                       >
                         {getAuditStatusLabel(status)}
                       </span>
@@ -177,41 +241,16 @@ export function AuditLogView(props: AuditLogViewProps) {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <span className="text-sm tabular-nums text-slate-500">
-            แสดง{" "}
-            <span className="font-medium text-slate-800">
-              {filteredAuditLogs.length === 0 ? 0 : auditStartItemIndex + 1}
-            </span>
-            -
-            <span className="font-medium text-slate-800">{auditEndItemIndex}</span> จาก
-            <span className="font-medium text-slate-800"> {filteredAuditLogs.length}</span> รายการ
-          </span>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              disabled={!canGoPrevAudit}
-              onClick={onPrevPage}
-              className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            >
-              ก่อนหน้า
-            </button>
-            <button
-              type="button"
-              className="min-w-[42px] rounded border border-slate-200 bg-slate-900 px-3 py-1 text-center font-medium tabular-nums text-white"
-            >
-              {auditCurrentPage}
-            </button>
-            <button
-              type="button"
-              disabled={!canGoNextAudit}
-              onClick={onNextPage}
-              className="min-w-[82px] rounded border border-slate-200 bg-white px-3 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            >
-              ถัดไป
-            </button>
-          </div>
-        </div>
+        <ListPaginationFooter
+          total={filteredAuditLogs.length}
+          rangeStart={filteredAuditLogs.length === 0 ? 0 : auditStartItemIndex + 1}
+          rangeEnd={auditEndItemIndex}
+          currentPage={auditCurrentPage}
+          canGoPrev={canGoPrevAudit}
+          canGoNext={canGoNextAudit}
+          onPrev={onPrevPage}
+          onNext={onNextPage}
+        />
       </div>
     </div>
   );

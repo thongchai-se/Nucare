@@ -719,7 +719,7 @@ export function SiteMediaManager({
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex justify-center gap-2">
               <button
                 type="button"
                 disabled={saving}

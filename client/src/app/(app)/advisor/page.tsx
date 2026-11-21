@@ -4,24 +4,26 @@ import { FormEvent, ReactNode, Suspense, useCallback, useEffect, useMemo, useSta
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
-  ChevronRight,
   ClipboardList,
   Flag,
   LayoutDashboard,
-  Menu,
+  MessageCircle,
   Send,
   Users,
   X,
 } from "lucide-react";
+import { EphemeralChatPanel } from "@/components/ephemeral-chat/ephemeral-chat-panel";
+import { StaffMessagesView } from "@/components/ephemeral-chat/staff-messages-view";
 import { useAuth } from "@/context/auth.context";
 import { AppBrand } from "@/components/app-brand";
 import { useDashboardToast } from "@/context/dashboard-toast.context";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
 import { StaffSidebarNavButton } from "@/components/staff-sidebar-nav-item";
 import { StaffSidebarSection } from "@/components/staff-sidebar-section";
+import { StaffTopBar } from "@/components/staff-top-bar";
+import { useEphemeralChatUnread } from "@/hooks/use-ephemeral-chat-unread";
 import api from "@/lib/axios";
 import { getApiErrorMessage } from "@/lib/api-error";
-import { getNameInitials } from "@/lib/name-prefix";
 import { getRoleHomePath, hasRole, roleLabelMap } from "@/lib/roles";
 import { UNAUTHENTICATED_PATH } from "@/lib/auth-routes";
 import { AcademicSignalsView } from "@/components/advisor/academic-signals-view";
@@ -64,6 +66,11 @@ import {
   resolveActionToastPresentation,
 } from "@/lib/expandable-toast";
 import { formatStudentIdDisplay } from "@/lib/student-id";
+import {
+  isScheduleAtOnOrAfterNow,
+  scheduleDatetimeInputMin,
+} from "@/lib/schedule-datetime";
+import { REFERRAL_TARGET_LABEL } from "@/lib/referral-labels";
 import { scheduleLocationPlaceholder } from "@/lib/student-dashboard";
 import {
   STAFF_SIDEBAR_ASIDE,
@@ -94,6 +101,7 @@ type ActiveView =
   | "dashboard"
   | "advisees"
   | "consultations"
+  | "messages"
   | "referrals"
   | "academic"
   | "observations";
@@ -132,6 +140,7 @@ const isAdvisorView = (value: string | null): value is ActiveView =>
   value === "dashboard" ||
   value === "advisees" ||
   value === "consultations" ||
+  value === "messages" ||
   value === "referrals" ||
   value === "academic" ||
   value === "observations";
@@ -313,7 +322,7 @@ const referralStatusMap: Record<
   }
 > = {
   PENDING: {
-    label: "รอผู้เชี่ยวชาญรับเคส",
+    label: "รอรับเคส",
     className: UI_STATUS_PENDING,
   },
   ACCEPTED: {
@@ -360,8 +369,8 @@ const consultationStatusMap: Record<
 };
 
 const referralTargetMap: Record<ReferralTarget, string> = {
-  STUDENT_DEVELOPMENT: "ฝ่ายพัฒนานักศึกษา",
-  COUNSELING_CENTER: "ทีมสุขภาพจิต",
+  STUDENT_DEVELOPMENT: REFERRAL_TARGET_LABEL.STUDENT_DEVELOPMENT,
+  COUNSELING_CENTER: REFERRAL_TARGET_LABEL.COUNSELING_CENTER,
 };
 
 const urgencyOptions: Array<{
@@ -412,8 +421,6 @@ const formatThaiDateTime = (value: string | null): string => {
 
 const getErrorMessage = (error: unknown): string =>
   getApiErrorMessage(error, "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
-
-const getInitials = (name: string, fallback = "อจ"): string => getNameInitials(name, fallback);
 
 const formatAssessmentSummary = (student: AdvisorStudent): string => {
   if (!student.latestInstrument) {
@@ -488,6 +495,10 @@ function AdvisorDashboardContent() {
   const [pendingCloseConsultationId, setPendingCloseConsultationId] = useState<string | null>(null);
   const [pendingAlertCloseId, setPendingAlertCloseId] = useState<string | null>(null);
   const [closingAlert, setClosingAlert] = useState(false);
+  const [chatPeerId, setChatPeerId] = useState<string | null>(null);
+  const { unreadCount: chatUnreadCount, refreshUnreadCount } = useEphemeralChatUnread(
+    Boolean(user && isAuthenticated)
+  );
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.id === selectedStudentId) ?? null,
@@ -639,21 +650,6 @@ function AdvisorDashboardContent() {
     rawActiveView === "advisees" && !hasAdvisees && !loadingStudents ? "dashboard" : rawActiveView;
 
   const showingAdviseeDetail = activeView === "advisees" && Boolean(studentQueryId);
-
-  const currentViewLabel =
-    activeView === "dashboard"
-      ? "งานวันนี้"
-      : showingAdviseeDetail
-        ? "รายละเอียดนักศึกษา"
-        : activeView === "advisees"
-          ? "นักศึกษาในที่ปรึกษา"
-          : activeView === "consultations"
-            ? "คำขอปรึกษา"
-            : activeView === "referrals"
-              ? "ติดตามการส่งต่อ"
-              : activeView === "observations"
-                ? "ข้อสังเกตที่แจ้ง"
-                : "สัญญาณเข้า";
 
   const latestUpdatedStudents = useMemo(() => {
     return [...students]
@@ -938,7 +934,7 @@ function AdvisorDashboardContent() {
         action === "acknowledge"
           ? "รับเรื่องแล้ว"
           : options?.dismissOnly
-            ? "ปิดการแจ้งเตือนแล้ว — สัญญาณยังอยู่ในประวัตินักศึกษา"
+            ? "ปิดการแจ้งเตือนแล้ว"
             : "ปิดเรื่องเรียบร้อยแล้ว",
         "success"
       );
@@ -1018,7 +1014,7 @@ function AdvisorDashboardContent() {
       showToast(
         latestReferral.status === "ACCEPTED"
           ? "นิสิตคนนี้มีเคสที่กำลังดูแลอยู่แล้ว ไม่สามารถส่งต่อซ้ำได้"
-          : "นิสิตคนนี้มีเคสส่งต่อที่รอรับอยู่แล้ว ไม่สามารถส่งต่อซ้ำได้",
+          : "นิสิตคนนี้มีเคสส่งต่อที่รอรับเคสอยู่แล้ว ไม่สามารถส่งต่อซ้ำได้",
         "error"
       );
       return;
@@ -1098,8 +1094,8 @@ function AdvisorDashboardContent() {
 
     const formData = new FormData(event.currentTarget);
     const reason = String(formData.get("reason") || "").trim();
-    if (reason.length < 20) {
-      setServerError("กรุณาเขียนข้อมูลส่งต่ออย่างน้อย 20 ตัวอักษร ให้ผู้เชี่ยวชาญเข้าใจก่อนนัดนิสิต");
+    if (!reason) {
+      setServerError("กรุณาเขียนข้อมูลส่งต่อสั้น ๆ ให้ทีมรับเคสเข้าใจบริบท");
       return;
     }
 
@@ -1111,7 +1107,7 @@ function AdvisorDashboardContent() {
       });
 
       setShowReferralModal(false);
-      showToast("ส่งต่อเคสเรียบร้อยแล้ว สามารถติดตามสถานะได้ในเมนูติดตามการส่งต่อ", "success");
+      showToast("ส่งต่อเคสแล้ว ติดตามสถานะได้ที่เมนูติดตามการส่งต่อ", "success");
       await Promise.all([
         fetchReferrals(),
         fetchStudentHistory(selectedStudent.id),
@@ -1228,11 +1224,14 @@ function AdvisorDashboardContent() {
 
   const handleConsultationCloseOpen = (requestId: string) => {
     const request = consultationRequests.find((item) => item.id === requestId);
-    if (request?.status !== "SCHEDULED") {
+    const canCloseScheduled = request?.status === "SCHEDULED";
+    const canCloseMessageAccepted =
+      request?.status === "ACCEPTED" && request.preferredChannel === "MESSAGE";
+    if (!canCloseScheduled && !canCloseMessageAccepted) {
       setServerError("ปิดเคสได้เมื่อมีนัดยืนยันแล้ว — หากนิสิตต้องการเลิกคิว ให้รอให้นิสิตกดยกเลิกก่อน");
       return;
     }
-    if (request.latestPendingOffer) {
+    if (request?.latestPendingOffer) {
       setPendingCloseConsultationId(requestId);
       return;
     }
@@ -1335,6 +1334,10 @@ function AdvisorDashboardContent() {
         setServerError("วันเวลานัดหมายไม่ถูกต้อง");
         return;
       }
+      if (!isScheduleAtOnOrAfterNow(scheduledAt)) {
+        setServerError("เลือกวันเวลาตั้งแต่ตอนนี้เป็นต้นไป");
+        return;
+      }
 
       const conflict = findClientConsultationScheduleConflict(scheduledAt, proposeBusySlots);
       if (conflict.conflict) {
@@ -1357,7 +1360,7 @@ function AdvisorDashboardContent() {
         setScheduleLocationLocal("");
         setScheduleNoteLocal("");
         setConsultationTab("accepted");
-        showToast("ส่งข้อเสนอนัดแล้ว รอนิสิตตอบกลับ", "success");
+        showToast("เสนอนัดแล้ว", "success");
       } catch (error) {
         setServerError(getErrorMessage(error));
       } finally {
@@ -1412,8 +1415,6 @@ function AdvisorDashboardContent() {
     return null;
   }
 
-  const advisorInitials = getInitials(user.name);
-
   const openConsultationsPreferTab = (): ConsultationTab => {
     const cancelInPending = cancellingConsultationCount - cancelRequestedInAcceptedCount;
     if (pendingConsultationCount > 0 || cancelInPending > 0) return "pending";
@@ -1449,6 +1450,13 @@ function AdvisorDashboardContent() {
           icon={<ClipboardList size={20} />}
           label="คำขอปรึกษา"
           onClick={() => navigateTo("consultations", { tab: openConsultationsPreferTab() })}
+        />
+        <StaffSidebarNavButton
+          active={activeView === "messages"}
+          badge={chatUnreadCount || undefined}
+          icon={<MessageCircle size={20} />}
+          label="ข้อความ"
+          onClick={() => navigateTo("messages")}
         />
         <StaffSidebarNavButton
           active={activeView === "academic"}
@@ -1492,36 +1500,7 @@ function AdvisorDashboardContent() {
   );
 
   const TopHeader = () => (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
-      <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setIsMobileMenuOpen((current) => !current)}
-          aria-label="เปิดหรือปิดเมนู"
-          className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
-        >
-          <Menu size={20} />
-        </button>
-
-        <div className="hidden items-center gap-2 text-sm font-medium text-slate-500 lg:flex">
-          <span>อาจารย์ที่ปรึกษา</span>
-          <ChevronRight className="h-4 w-4 text-slate-400" />
-          <span className="font-bold text-slate-800">{currentViewLabel}</span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 sm:gap-5">
-        <div className="flex items-center gap-3">
-          <div className="hidden max-w-[12rem] overflow-hidden text-right sm:block">
-            <p className="truncate whitespace-nowrap text-sm font-bold leading-none text-slate-800" title={user.name}>{user.name}</p>
-            <p className="mt-0.5 text-[10px] text-slate-500">อาจารย์ที่ปรึกษา</p>
-          </div>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-100 text-sm font-bold text-blue-700">
-            {advisorInitials}
-          </div>
-        </div>
-      </div>
-    </header>
+    <StaffTopBar onOpenMenu={() => setIsMobileMenuOpen((current) => !current)} />
   );
 
   return (
@@ -1722,10 +1701,16 @@ function AdvisorDashboardContent() {
                     onConfirmCancel={handleConsultationConfirmCancelOpen}
                     onDirectCancel={handleConsultationDirectCancelOpen}
                     onProposeSchedule={handleConsultationProposeOpen}
-                    onRefresh={() => {
-                      void fetchConsultationRequests();
-                    }}
+                    onOpenChat={(studentId) => setChatPeerId(studentId)}
                     onTabChange={setConsultationTab}
+                  />
+                )}
+                {activeView === "messages" && (
+                  <StaffMessagesView
+                    onOpenChat={(peerUserId) => setChatPeerId(peerUserId)}
+                    onUnreadCountChange={() => {
+                      void refreshUnreadCount();
+                    }}
                   />
                 )}
                 {activeView === "referrals" && (
@@ -1742,14 +1727,10 @@ function AdvisorDashboardContent() {
                   <ObservationReportView
                     formatThaiDateTime={formatThaiDateTime}
                     records={observationRecords}
-                    refreshing={loadingObservationRecords}
                     search={observationSearch}
                     statusBadgeMap={observationStatusBadgeMap}
                     statusLabelMap={observationStatusLabelMap}
                     onOpenCompose={openObservationModal}
-                    onRefresh={() => {
-                      void fetchObservationRecords();
-                    }}
                     onSearchChange={setObservationSearch}
                   />
                 )}
@@ -1869,7 +1850,7 @@ function AdvisorDashboardContent() {
               </div>
             </div>
 
-            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
+            <div className="flex flex-col-reverse justify-center gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
               <button type="button" onClick={() => setShowSoapModal(false)} className={`${UI_BUTTON_GHOST} w-full sm:w-auto`}>
                 ยกเลิก
               </button>
@@ -1947,7 +1928,9 @@ function AdvisorDashboardContent() {
                     className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500"
                   />
                   <div>
-                    <p className="text-sm font-bold text-slate-800">ทีมสุขภาพจิต / ศูนย์ให้คำปรึกษา</p>
+                    <p className="text-sm font-bold text-slate-800">
+                      {REFERRAL_TARGET_LABEL.COUNSELING_CENTER}
+                    </p>
                     <p className="mt-1 text-xs leading-5 text-slate-500">
                       เหมาะสำหรับเคสที่มีความเครียดสูง ซึมเศร้า เสี่ยงทำร้ายตนเอง หรือควรรับการประเมินเชิงลึก
                     </p>
@@ -1961,7 +1944,9 @@ function AdvisorDashboardContent() {
                     className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500"
                   />
                   <div>
-                    <p className="text-sm font-bold text-slate-800">ฝ่ายพัฒนานักศึกษา</p>
+                    <p className="text-sm font-bold text-slate-800">
+                      {REFERRAL_TARGET_LABEL.STUDENT_DEVELOPMENT}
+                    </p>
                     <p className="mt-1 text-xs leading-5 text-slate-500">
                       เหมาะสำหรับประเด็นการปรับตัว สวัสดิการ ทุน หรือความช่วยเหลือเชิงระบบอื่น ๆ
                     </p>
@@ -1975,24 +1960,24 @@ function AdvisorDashboardContent() {
                 </label>
                 <textarea
                   name="reason"
-                  rows={5}
+                  rows={4}
                   required
-                  minLength={20}
-                  placeholder="เขียนให้ผู้เชี่ยวชาญเข้าใจก่อนนัดนิสิต เช่น สังเกตอะไร / พูดคุยแล้วพบอะไร / ต้องการความช่วยเหลือด้านใด / สิ่งที่ควรระวัง..."
+                  minLength={1}
+                  placeholder="สั้น ๆ ก็ได้ เช่น สังเกตอะไร / พูดคุยแล้วพบอะไร / ต้องการความช่วยเหลือด้านใด"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-[11px] text-slate-500">อย่างน้อย 20 ตัวอักษร — ใช้เป็นบริบทก่อนนัดจริง</p>
+                <p className="text-[11px] text-slate-500">ใช้เป็นบริบทให้ทีมรับเคสก่อนติดต่อนิสิต</p>
               </div>
 
               <div className={`flex items-start gap-2 ${UI_CALLOUT_INFO}`}>
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
                 <p className="text-[11px] font-medium leading-5 text-slate-700">
-                  ส่งต่อได้แม้ไม่ใช่เคสวิกฤต — ทีมรับช่วงจะอ่านข้อความนี้ก่อนติดต่อนิสิต และคุณติดตามสถานะได้ที่เมนูติดตามการส่งต่อ
+                  ส่งต่อได้ทุกกรณีที่ต้องการความช่วยเหลือเพิ่ม ทีมรับช่วงจะอ่านข้อความนี้ก่อนติดต่อนิสิต
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
+            <div className="flex flex-col-reverse justify-center gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
               <button type="button" onClick={() => setShowReferralModal(false)} className={`${UI_BUTTON_GHOST} w-full sm:w-auto`}>
                 ยกเลิก
               </button>
@@ -2042,11 +2027,15 @@ function AdvisorDashboardContent() {
                       ? "ส่งวัน/สถานที่ใหม่ให้นิสิต — นัดจะอัปเดตเมื่ออีกฝ่ายกดยอมรับ"
                       : "ส่งข้อเสนอให้นิสิต — นัดจะยืนยันเมื่ออีกฝ่ายกดยอมรับ หรือขอเปลี่ยนวันจนกว่าจะตกลงกัน"}
                   </p>
-                  {consultationAction.preferredChannelLabel ? (
+                  {consultationAction.preferredChannelLabel || consultationAction.preferredChannel ? (
                     <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                       นิสิตสะดวกแบบ:{" "}
                       <span className="font-semibold text-slate-800">
-                        {consultationAction.preferredChannelLabel}
+                        {consultationAction.preferredChannel === "IN_PERSON"
+                          ? "ออนไซต์"
+                          : consultationAction.preferredChannel === "ONLINE"
+                            ? "ออนไลน์"
+                            : consultationAction.preferredChannelLabel}
                       </span>
                       {" — "}คุณระบุห้องหรือลิงก์ที่สะดวกด้านล่าง
                     </p>
@@ -2082,6 +2071,7 @@ function AdvisorDashboardContent() {
                       id="consultation-scheduled-at"
                       type="datetime-local"
                       required
+                      min={scheduleDatetimeInputMin()}
                       value={scheduledAtLocal}
                       onChange={(event) => setScheduledAtLocal(event.target.value)}
                       disabled={isUpdatingConsultation}
@@ -2194,7 +2184,7 @@ function AdvisorDashboardContent() {
               )}
             </div>
 
-            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
+            <div className="flex flex-col-reverse justify-center gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
               <button
                 type="button"
                 onClick={closeConsultationActionModal}
@@ -2330,7 +2320,7 @@ function AdvisorDashboardContent() {
             </div>
             {observationError ? <InlineAlert className="p-3">{observationError}</InlineAlert> : null}
           </div>
-          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row sm:justify-end">
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row sm:justify-center">
             <button
               type="button"
               disabled={submittingObservation}
@@ -2351,6 +2341,18 @@ function AdvisorDashboardContent() {
             </button>
           </div>
         </StaffModalOverlay>
+      ) : null}
+
+      {user ? (
+        <EphemeralChatPanel
+          open={Boolean(chatPeerId)}
+          currentUserId={user.id}
+          peerUserId={chatPeerId}
+          onClose={() => {
+            setChatPeerId(null);
+            void refreshUnreadCount();
+          }}
+        />
       ) : null}
     </div>
   );

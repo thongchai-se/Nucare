@@ -429,7 +429,7 @@ export function ExecutiveScreeningComparison({ yearFilter }: ExecutiveScreeningC
                   })}
                 </tbody>
               </table>
-              {pagination.total > pagination.rowsPerPage ? (
+              {pagination.total > 0 ? (
                 <ListPaginationFooter
                   total={pagination.total}
                   rangeStart={pagination.rangeStart}

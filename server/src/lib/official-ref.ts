@@ -41,6 +41,7 @@ const ENTITY_KIND_MAP: Record<string, OfficialRefKind> = {
   ConsultationScheduleOffer: "APT",
   Appointment: "APT",
   StudentChat: "CHAT",
+  EphemeralChatSession: "CHAT",
   Reminder: "REF",
 };
 

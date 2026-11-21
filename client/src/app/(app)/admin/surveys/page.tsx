@@ -689,7 +689,8 @@ export default function AdminSurveysPage() {
     window.setTimeout(() => {
       document.getElementById("survey-question-editor")?.scrollIntoView({
         behavior: "smooth",
-        block: "start",
+        block: "nearest",
+        inline: "nearest",
       });
     }, 60);
   };

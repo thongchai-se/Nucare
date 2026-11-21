@@ -19,6 +19,10 @@ export type SensitiveStudentCard = {
   name: string;
   image: string;
   year: string;
+  section: string | null;
+  email: string | null;
+  phone: string | null;
+  guardianPhone: string | null;
   riskLevel: ReturnType<typeof normalizeRiskLevel>;
   lastAssessment: Date | string | null;
   careRecordCount: number;
@@ -28,6 +32,33 @@ export type SensitiveStudentCard = {
   wellnessSignals: StudentWellnessSignalDto[];
   hasCrisisWellnessSignal: boolean;
 };
+
+const studentCardSelect = {
+  id: true,
+  studentId: true,
+  studyYear: true,
+  section: true,
+  email: true,
+  phone: true,
+  guardianPhone: true,
+  name: true,
+  studentAssessments: {
+    orderBy: { assessedAt: "desc" as const },
+    take: 1,
+    select: {
+      riskLevel: true,
+      assessedAt: true,
+      totalScore: true,
+      instrument: true,
+    },
+  },
+  _count: {
+    select: {
+      studentCareRecords: true,
+      studentBehaviorRecords: true,
+    },
+  },
+} as const;
 
 const LIST_MAX = 1000;
 
@@ -51,28 +82,7 @@ export const listSensitiveStudentCards = async (
           }
         : {}),
     },
-    select: {
-      id: true,
-      studentId: true,
-      studyYear: true,
-      name: true,
-      studentAssessments: {
-        orderBy: { assessedAt: "desc" as const },
-        take: 1,
-        select: {
-          riskLevel: true,
-          assessedAt: true,
-          totalScore: true,
-          instrument: true,
-        },
-      },
-      _count: {
-        select: {
-          studentCareRecords: true,
-          studentBehaviorRecords: true,
-        },
-      },
-    },
+    select: studentCardSelect,
     orderBy: [{ studentId: "asc" }, { createdAt: "desc" }],
     take: LIST_MAX,
   });
@@ -93,6 +103,10 @@ export const listSensitiveStudentCards = async (
       name: student.name,
       image: getUserInitials(student.name, "นศ"),
       year: inferStudyYear(student.studentId, student.studyYear),
+      section: student.section?.trim() || null,
+      email: student.email,
+      phone: student.phone,
+      guardianPhone: student.guardianPhone,
       riskLevel: normalizeRiskLevel(latestSurvey?.riskLevel ?? latestAssessment?.riskLevel ?? RiskLevel.NORMAL),
       lastAssessment: latestSurvey?.assessedAt ?? latestAssessment?.assessedAt ?? null,
       careRecordCount: student._count.studentCareRecords,
@@ -105,42 +119,14 @@ export const listSensitiveStudentCards = async (
   });
 };
 
-/** รายละเอียดนิสิตรายคน (ผลละเอียดอ่อน) หลังผ่าน canAccessStudent */
-export const getSensitiveStudentCard = async (
+/** โหลดการ์ดนิสิตจาก DB โดยไม่ตรวจสิทธิ์ — เรียกเฉพาะหลัง authorize แล้ว */
+export const loadSensitiveStudentCardById = async (
   db: PrismaClient,
-  role: Role | Role[],
-  userId: string,
   studentUserId: string
-): Promise<"forbidden" | "not_found" | SensitiveStudentCard> => {
-  const allowed = await canAccessStudent(role, userId, studentUserId);
-  if (!allowed) {
-    return "forbidden";
-  }
-
+): Promise<"not_found" | SensitiveStudentCard> => {
   const student = await db.user.findFirst({
     where: { id: studentUserId, role: Role.STUDENT, isActive: true },
-    select: {
-      id: true,
-      studentId: true,
-      studyYear: true,
-      name: true,
-      studentAssessments: {
-        orderBy: { assessedAt: "desc" as const },
-        take: 1,
-        select: {
-          riskLevel: true,
-          assessedAt: true,
-          totalScore: true,
-          instrument: true,
-        },
-      },
-      _count: {
-        select: {
-          studentCareRecords: true,
-          studentBehaviorRecords: true,
-        },
-      },
-    },
+    select: studentCardSelect,
   });
 
   if (!student) {
@@ -161,6 +147,10 @@ export const getSensitiveStudentCard = async (
     name: student.name,
     image: getUserInitials(student.name, "นศ"),
     year: inferStudyYear(student.studentId, student.studyYear),
+    section: student.section?.trim() || null,
+    email: student.email,
+    phone: student.phone,
+    guardianPhone: student.guardianPhone,
     riskLevel: normalizeRiskLevel(latestSurvey?.riskLevel ?? latestAssessment?.riskLevel ?? RiskLevel.NORMAL),
     lastAssessment: latestSurvey?.assessedAt ?? latestAssessment?.assessedAt ?? null,
     careRecordCount: student._count.studentCareRecords,
@@ -170,4 +160,19 @@ export const getSensitiveStudentCard = async (
     wellnessSignals,
     hasCrisisWellnessSignal: hasCrisisWellnessSignal(wellnessSignals),
   };
+};
+
+/** รายละเอียดนิสิตรายคน (ผลละเอียดอ่อน) หลังผ่าน canAccessStudent */
+export const getSensitiveStudentCard = async (
+  db: PrismaClient,
+  role: Role | Role[],
+  userId: string,
+  studentUserId: string
+): Promise<"forbidden" | "not_found" | SensitiveStudentCard> => {
+  const allowed = await canAccessStudent(role, userId, studentUserId);
+  if (!allowed) {
+    return "forbidden";
+  }
+
+  return loadSensitiveStudentCardById(db, studentUserId);
 };

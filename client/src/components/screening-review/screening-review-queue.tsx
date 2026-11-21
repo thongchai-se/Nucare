@@ -8,6 +8,7 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { StaffModalOverlay } from "@/components/ui/staff-modal-overlay";
 import { getApiErrorMessage } from "@/lib/api-error";
 import api from "@/lib/axios";
+import { REFERRAL_TARGET_LABEL } from "@/lib/referral-labels";
 import {
   UI_ACTION_PRIMARY_COMPACT,
   UI_ACTION_SECONDARY_COMPACT,
@@ -50,14 +51,14 @@ type ScreeningReviewQueueProps = {
 type RiskFilter = "ALL" | "high" | "medium";
 
 const TARGET_LABEL: Record<ReferralTarget, string> = {
-  COUNSELING_CENTER: "ศูนย์ให้คำปรึกษา",
-  STUDENT_DEVELOPMENT: "งานพัฒนานิสิต",
+  COUNSELING_CENTER: REFERRAL_TARGET_LABEL.COUNSELING_CENTER,
+  STUDENT_DEVELOPMENT: REFERRAL_TARGET_LABEL.STUDENT_DEVELOPMENT,
 };
 
 const REFERRAL_STATUS_LABEL: Record<ReferralStatus, string> = {
-  PENDING: "รอรับ",
+  PENDING: "รอรับเคส",
   ACCEPTED: "กำลังดูแล",
-  CLOSED: "ปิดแล้ว",
+  CLOSED: "ปิดเคสแล้ว",
 };
 
 const RISK_FILTERS: Array<{ value: RiskFilter; label: string }> = [
@@ -155,7 +156,7 @@ export function ScreeningReviewQueue({
     <DashboardPanel
       icon={ShieldAlert}
       title="ผลคัดกรองที่ควรทบทวน"
-      description="ระบบไม่ส่งต่ออัตโนมัติ — พิจารณาบริบทของนิสิตแล้วเลือกรับทราบหรือสร้างส่งต่อด้วยตนเอง"
+      description="พิจารณารายการแล้วเลือกรับทราบ หรือสร้างการส่งต่อเอง"
       flush
     >
       <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -324,7 +325,7 @@ function ScreeningReferralModal({
   const [error, setError] = useState("");
 
   const reasonLength = reason.trim().length;
-  const canSubmit = Boolean(target) && reasonLength >= 20 && !submitting;
+  const canSubmit = Boolean(target) && reasonLength >= 1 && !submitting;
 
   const handleClose = () => {
     if (!submitting) {
@@ -421,7 +422,7 @@ function ScreeningReferralModal({
               className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-[11px] text-slate-500">
-              อย่างน้อย 20 ตัวอักษร ({reasonLength}/20) — ไม่ต้องใส่คะแนนหรือคำตอบรายข้อ
+              สั้น ๆ ก็ได้ — ไม่ต้องใส่คะแนนหรือคำตอบรายข้อ
             </p>
           </div>
 
@@ -442,7 +443,7 @@ function ScreeningReferralModal({
           {error ? <InlineAlert>{error}</InlineAlert> : null}
         </div>
 
-        <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
+        <div className="flex flex-col-reverse justify-center gap-2 border-t border-slate-100 bg-slate-50 p-5 sm:flex-row">
           <button type="button" onClick={handleClose} disabled={submitting} className={UI_BUTTON_GHOST}>
             ยกเลิก
           </button>

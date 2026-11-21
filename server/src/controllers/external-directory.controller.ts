@@ -47,6 +47,35 @@ const requestedScope = (req: Request): { faculty: string; programs: string[] } =
   return { faculty, programs };
 };
 
+/** สถานะการตั้งค่า directory จาก env — ไม่เปิดเผย API key และไม่ ping ภายนอก */
+export const getExternalDirectoryStatus = async (_req: Request, res: Response): Promise<void> => {
+  const baseUrl = readEnv("DIRECTORY_API_URL")?.replace(/\/+$/, "");
+  const apiKey = readEnv("DIRECTORY_API_KEY");
+  const configured = Boolean(baseUrl && apiKey);
+  const faculty = readEnv("DIRECTORY_FACULTY") || DEFAULT_FACULTY;
+  const programsRaw = readEnv("DIRECTORY_PROGRAMS") || DEFAULT_PROGRAM;
+  const programs = programsRaw
+    .split(",")
+    .map((program) => program.trim())
+    .filter(Boolean);
+
+  let host: string | null = null;
+  if (baseUrl) {
+    try {
+      host = new URL(baseUrl).host;
+    } catch {
+      host = null;
+    }
+  }
+
+  res.status(200).json({
+    configured,
+    host,
+    faculty,
+    programs,
+  });
+};
+
 export const pullExternalDirectoryCatalog = async (_req: Request, res: Response): Promise<void> => {
   try {
     const body = await readDirectory<DirectoryList<never>>("/api/catalog");

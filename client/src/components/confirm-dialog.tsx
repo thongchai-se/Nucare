@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useId } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AppDialogShell } from "@/components/ui/app-dialog-shell";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
-import { useBodyScrollLock } from "@/hooks/use-body-scroll-lock";
+import {
+  UI_DIALOG_CANCEL,
+  UI_DIALOG_CLOSE,
+  UI_DIALOG_DANGER,
+  UI_DIALOG_PRIMARY,
+} from "@/lib/ui-classes";
 
 type ConfirmDialogProps = {
   cancelLabel?: string;
@@ -20,6 +25,7 @@ type ConfirmDialogProps = {
   title: string;
 };
 
+/** กล่องยืนยันร่วม — จัดชั้น icon → หัวข้อ → รายละเอียด → ปุ่ม */
 export function ConfirmDialog({
   cancelLabel = "ยกเลิก",
   confirmLabel = "ยืนยัน",
@@ -31,106 +37,91 @@ export function ConfirmDialog({
   tone = "danger",
   title,
 }: ConfirmDialogProps) {
-  const [mounted, setMounted] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useBodyScrollLock(open);
-
-  if (!mounted || !open) {
+  if (!open) {
     return null;
   }
 
-  return createPortal(
-    <>
+  const isDanger = tone === "danger";
+
+  return (
+    <AppDialogShell
+      labelledBy={titleId}
+      describedBy={descriptionId}
+      panelClassName="max-w-md"
+      zIndexClassName="z-[10001]"
+      onBackdropClick={loading ? undefined : onCancel}
+    >
       <div
-        className="fixed inset-0 bg-slate-950/45 transition-opacity duration-200"
-        style={{ inset: 0, position: "fixed", zIndex: 10000 }}
-        onClick={() => {
-          if (!loading) {
-            onCancel();
-          }
-        }}
+        className={`pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b to-white ${
+          isDanger ? "from-red-50" : "from-sky-50"
+        }`}
       />
 
-      <div
-        className="fixed inset-0 flex items-center justify-center overflow-hidden p-3 sm:p-4"
-        style={{ inset: 0, position: "fixed", zIndex: 10001 }}
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={loading}
+        className={UI_DIALOG_CLOSE}
+        aria-label="ปิด"
       >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="confirm-dialog-title"
-          className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_-28px_rgba(15,23,42,0.45)] sm:max-h-[calc(100dvh-2rem)]"
-        >
-          <div className="min-h-0 overflow-y-auto border-b border-slate-100 bg-slate-50/70 px-5 py-5 sm:px-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
-                    tone === "danger"
-                      ? "border-red-100 bg-red-50 text-red-600"
-                      : "border-blue-100 bg-blue-50 text-[#0057A8]"
-                  }`}
-                >
-                  <AlertTriangle className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 id="confirm-dialog-title" className="text-lg font-black text-slate-900">
-                    {title}
-                  </h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-                </div>
-              </div>
+        <X className="h-4 w-4" strokeWidth={2} />
+      </button>
 
-              <button
-                type="button"
-                onClick={onCancel}
-                disabled={loading}
-                className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="close confirm dialog"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <div className="relative px-6 pb-6 pt-8 sm:px-8 sm:pb-7 sm:pt-9">
+        <div className="flex flex-col items-center text-center">
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl text-white ${
+              isDanger
+                ? "bg-red-600 shadow-[0_10px_20px_-8px_rgba(220,38,38,0.45)]"
+                : "bg-[#0057A8] shadow-[0_10px_20px_-8px_rgba(0,87,168,0.4)]"
+            }`}
+            aria-hidden
+          >
+            <AlertTriangle className="h-6 w-6" strokeWidth={2.25} />
           </div>
 
-          <div className="flex flex-col-reverse items-center justify-center gap-3 bg-white px-5 py-5 sm:flex-row sm:px-6">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={loading}
-              className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-[112px] sm:w-auto"
-            >
-              {cancelLabel}
-            </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              disabled={loading}
-              className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-70 sm:min-w-[112px] sm:w-auto ${
-                tone === "danger"
-                  ? "bg-red-600 shadow-red-200/60 hover:bg-red-700"
-                  : "bg-[#0057A8] shadow-blue-200/60 hover:bg-[#00468a]"
-              }`}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {confirmLabel}
-                </>
-              ) : tone === "primary" ? (
-                <ConfirmSubmitLabel>{confirmLabel}</ConfirmSubmitLabel>
-              ) : (
-                confirmLabel
-              )}
-            </button>
-          </div>
+          <h2
+            id={titleId}
+            className="mt-5 max-w-[20rem] text-lg font-bold leading-snug tracking-tight text-slate-900 sm:text-xl"
+          >
+            {title}
+          </h2>
+          <p id={descriptionId} className="mt-3 max-w-[22rem] text-sm leading-6 text-slate-600">
+            {description}
+          </p>
+        </div>
+
+        <div className="mt-7 flex flex-col gap-2.5 sm:flex-row-reverse sm:justify-center">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={isDanger ? UI_DIALOG_DANGER : UI_DIALOG_PRIMARY}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {confirmLabel}
+              </>
+            ) : tone === "primary" ? (
+              <ConfirmSubmitLabel>{confirmLabel}</ConfirmSubmitLabel>
+            ) : (
+              confirmLabel
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className={`${UI_DIALOG_CANCEL} sm:min-w-[7rem]`}
+          >
+            {cancelLabel}
+          </button>
         </div>
       </div>
-    </>,
-    document.body
+    </AppDialogShell>
   );
 }

@@ -10,7 +10,6 @@ export const PROTECTED_PATH_PREFIXES = [
   "/executive",
   "/mental-health",
   "/student-development",
-  "/change-password",
 ] as const;
 
 export const isProtectedPath = (pathname: string): boolean =>

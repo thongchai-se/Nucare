@@ -8,12 +8,15 @@ import { AuthTokenPayload } from "../middleware/auth.middleware";
 
 export const CONSENT_POLICY_VERSION = "2026-09-08";
 
-const consentSchema = z.object({
-  anonymousId: z.string().trim().min(8).max(80),
-  status: z.enum(["accepted_all", "necessary_only", "customized"]),
-  analytics: z.boolean(),
-  policyVersion: z.literal(CONSENT_POLICY_VERSION),
-});
+/** สคีมาบันทึกความยินยอมคุกกี้ — ปฏิเสธฟิลด์แปลก (กัน mass assignment เช่น userId) */
+export const consentSchema = z
+  .object({
+    anonymousId: z.string().trim().min(8).max(80),
+    status: z.enum(["accepted_all", "necessary_only", "customized"]),
+    analytics: z.boolean(),
+    policyVersion: z.literal(CONSENT_POLICY_VERSION),
+  })
+  .strict();
 
 const resolveOptionalUserId = (req: Request): string | null => {
   const token = req.cookies?.accessToken as string | undefined;

@@ -121,13 +121,22 @@ export function countStudentActionQueue(
 
 /** สถานที่นัด — ใช้ scheduleLocation ก่อน แล้วค่อยช่องทางที่สะดวก */
 export function resolveAppointmentLocation(
-  request: Pick<StudentConsultationRequest, "scheduleLocation" | "preferredChannelLabel">
+  request: Pick<
+    StudentConsultationRequest,
+    "scheduleLocation" | "preferredChannelLabel" | "preferredChannel"
+  >
 ): string {
   const location = request.scheduleLocation?.trim();
   if (location) return location;
-  return request.preferredChannelLabel?.trim() || "";
+  const label = request.preferredChannelLabel?.trim() || "";
+  if (request.preferredChannel === "IN_PERSON" || label === "พบตัว / ที่คณะ" || label === "พบที่คณะ") {
+    return "ออนไซต์";
+  }
+  if (request.preferredChannel === "ONLINE") {
+    return "ออนไลน์";
+  }
+  return label;
 }
-
 /**
  * ซ่อน marker ชุด demo จากข้อความที่โชว์ให้นิสิต
  * — ไม่แก้ข้อมูลต้นทางใน DB
@@ -160,6 +169,64 @@ export const STUDENT_LIST_PREVIEW_LIMIT = 5;
 /** นัดใกล้ถึงบนหน้าหลัก — ไม่ให้เลื่อนยาว */
 export const STUDENT_HOME_UPCOMING_LIMIT = 3;
 
+export type StudentMentalHealthAppointmentPreview = {
+  id: string;
+  scheduledAt: string;
+  location: string | null;
+  providerName: string;
+};
+
+export type UpcomingAppointmentPreviewItem =
+  | { kind: "mh"; appointment: StudentMentalHealthAppointmentPreview }
+  | { kind: "consult"; request: StudentConsultationRequest };
+
+/**
+ * รวมนัดที่ปรึกษา + นัดผู้เชี่ยวชาญ เรียงวันเวลาแล้วตัดตาม limit
+ * — หน้าแรกกับหน้าที่ปรึกษาต้องใช้ชุดเดียวกัน
+ */
+export function buildUpcomingAppointmentPreview(
+  consultations: StudentConsultationRequest[],
+  mentalHealth: StudentMentalHealthAppointmentPreview[],
+  now = new Date(),
+  limit = STUDENT_HOME_UPCOMING_LIMIT
+): { items: UpcomingAppointmentPreviewItem[]; total: number } {
+  const upcomingConsultations = listUpcomingConsultations(consultations, now);
+  const upcomingMentalHealth = listUpcomingTimedAppointments(mentalHealth, now);
+  const merged = [
+    ...upcomingMentalHealth.map((appointment) => ({
+      kind: "mh" as const,
+      appointment,
+      at: new Date(appointment.scheduledAt).getTime(),
+    })),
+    ...upcomingConsultations.map((request) => ({
+      kind: "consult" as const,
+      request,
+      at: request.scheduledAt ? new Date(request.scheduledAt).getTime() : Number.POSITIVE_INFINITY,
+    })),
+  ].sort((left, right) => left.at - right.at);
+
+  return {
+    total: merged.length,
+    items: merged.slice(0, limit).map(({ at: _at, ...item }) => item),
+  };
+}
+
+/**
+ * นับงาน actionable บนแดชบอร์ดนิสิต รวมนัดผู้เชี่ยวชาญใกล้ถึง
+ */
+export function countStudentDashboardActions(
+  requests: StudentConsultationRequest[],
+  mentalHealth: TimedAppointment[] = [],
+  now = new Date()
+): StudentActionCounts {
+  const base = countStudentActionQueue(requests, now);
+  const mhUpcoming = listUpcomingTimedAppointments(mentalHealth, now).length;
+  return {
+    ...base,
+    upcoming: base.upcoming + mhUpcoming,
+  };
+}
+
 /** มีคำขอเปิดอยู่หรือไม่ (PENDING|ACCEPTED|SCHEDULED|CANCEL_REQUESTED) */
 export function hasOpenStudentConsultation(
   requests: Array<{ status: string }>
@@ -171,4 +238,24 @@ export function hasOpenStudentConsultation(
       request.status === "SCHEDULED" ||
       request.status === "CANCEL_REQUESTED"
   );
+}
+
+/**
+ * แยก peer ที่ทักหาได้ในทีมดูแล กับรายชื่ออื่นที่อยู่นอกทีม — O(n+m) ด้วย Set
+ */
+export function splitChatPeersByCareTeam<T extends { id: string }>(
+  careTeamIds: readonly string[],
+  peers: readonly T[]
+): { chatableCareTeamIds: Set<string>; otherPeers: T[] } {
+  const careSet = new Set(careTeamIds);
+  const chatableCareTeamIds = new Set<string>();
+  const otherPeers: T[] = [];
+  for (const peer of peers) {
+    if (careSet.has(peer.id)) {
+      chatableCareTeamIds.add(peer.id);
+    } else {
+      otherPeers.push(peer);
+    }
+  }
+  return { chatableCareTeamIds, otherPeers };
 }

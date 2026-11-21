@@ -1,7 +1,49 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MentalHealthAppointmentStatus } from "@prisma/client";
-import { mergeMentalHealthHistoryActivity } from "./mental-health-student-history";
+import {
+  includesClinicalCareContent,
+  includesScreeningHistory,
+  mergeMentalHealthHistoryActivity,
+  shapeTriageStudentCard,
+} from "./mental-health-student-history";
+import type { SensitiveStudentCard } from "./sensitive-student-detail";
+
+describe("MH history access shaping", () => {
+  it("MHH-02 คิว triage ได้ประวัติคัดกรอง แต่ยังไม่เปิดเนื้อหาคลินิก", () => {
+    assert.equal(includesScreeningHistory("triage"), true);
+    assert.equal(includesScreeningHistory("clinical"), true);
+    assert.equal(includesScreeningHistory("none"), false);
+    assert.equal(includesClinicalCareContent("triage"), false);
+    assert.equal(includesClinicalCareContent("clinical"), true);
+  });
+
+  it("MHH-03 การ์ด triage คงคะแนน/ความเสี่ยง แต่ตัดช่องทางติดต่อ", () => {
+    const card = {
+      id: "s1",
+      name: "นิสิต",
+      studentId: "681100001-1",
+      year: "1",
+      email: "a@example.com",
+      phone: "0811111111",
+      guardianPhone: "0822222222",
+      riskLevel: "high",
+      latestScore: 42,
+      latestInstrument: "GHQ-28",
+      wellnessSignals: [{ id: "w1" }],
+      hasCrisisWellnessSignal: true,
+    } as unknown as SensitiveStudentCard;
+
+    const shaped = shapeTriageStudentCard(card);
+    assert.equal(shaped.latestScore, 42);
+    assert.equal(shaped.latestInstrument, "GHQ-28");
+    assert.equal(shaped.riskLevel, "high");
+    assert.equal(shaped.hasCrisisWellnessSignal, true);
+    assert.equal(shaped.phone, null);
+    assert.equal(shaped.email, null);
+    assert.equal(shaped.guardianPhone, null);
+  });
+});
 
 describe("mergeMentalHealthHistoryActivity", () => {
   it("MHH-01 เรียงนัดและบันทึกผู้เชี่ยวชาญใหม่สุดก่อน", () => {

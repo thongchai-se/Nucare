@@ -80,7 +80,7 @@ export function StudentSearchPicker({
             type="button"
             onClick={() => {
               onSelect(null);
-              window.setTimeout(() => inputRef.current?.focus(), 0);
+              window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
             }}
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
           >
@@ -162,7 +162,7 @@ export function StudentSearchPicker({
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-[#0057A8]">{student.name}</p>
                       <p className="truncate text-xs text-slate-500">
-                        {[student.studentId || "-", student.studyYear ? `ปี ${student.studyYear}` : null, student.section ? `ตอน ${student.section}` : null]
+                        {[student.studentId || "-", student.studyYear ? `ปี ${student.studyYear}` : null, student.section ? `เซค ${student.section}` : null]
                           .filter(Boolean)
                           .join(" · ")}
                       </p>

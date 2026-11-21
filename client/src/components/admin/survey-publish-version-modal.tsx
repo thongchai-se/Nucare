@@ -122,10 +122,10 @@ export function SurveyPublishVersionModal({
         aria-label="เผยแพร่เวอร์ชันใหม่"
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 p-5">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">เผยแพร่เวอร์ชันใหม่</h3>
-            <p className="mt-1 text-sm text-slate-500">
+        <div className="relative flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-b from-sky-50/80 to-white p-5 sm:p-6">
+          <div className="min-w-0 pr-2">
+            <h3 className="text-lg font-bold tracking-tight text-slate-900">เผยแพร่เวอร์ชันใหม่</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
               บันทึกคำถามที่บันทึกไว้ล่าสุดเป็นเวอร์ชันที่ตรึงไว้ — การแก้ไขที่ยังไม่ได้บันทึกจะไม่ถูกรวม
             </p>
           </div>
@@ -133,10 +133,10 @@ export function SurveyPublishVersionModal({
             type="button"
             onClick={onCancel}
             disabled={publishing}
-            className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
             aria-label="ปิด"
           >
-            <X size={18} />
+            <X className="h-4 w-4" strokeWidth={2} />
           </button>
         </div>
 
@@ -248,7 +248,7 @@ export function SurveyPublishVersionModal({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 p-4 sm:flex-row sm:justify-end">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 p-4 sm:flex-row sm:justify-center">
           <button
             type="button"
             onClick={onCancel}

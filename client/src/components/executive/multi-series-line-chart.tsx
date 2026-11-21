@@ -17,7 +17,7 @@ type MultiSeriesLineChartProps = {
   emptyMessage?: string;
 };
 
-const CHART_PAD = { top: 16, right: 16, bottom: 36, left: 40 };
+const CHART_PAD = { top: 20, right: 20, bottom: 40, left: 44 };
 
 const buildPolylinePath = (points: Array<{ x: number; y: number | null }>): string[] => {
   const segments: string[] = [];
@@ -45,7 +45,7 @@ const buildPolylinePath = (points: Array<{ x: number; y: number | null }>): stri
 export function MultiSeriesLineChart({
   labels,
   series,
-  height = 240,
+  height = 360,
   yLabel,
   emptyMessage = "ยังไม่มีข้อมูลพอสำหรับกราฟ",
 }: MultiSeriesLineChartProps) {
@@ -58,7 +58,8 @@ export function MultiSeriesLineChart({
     const rawMax = numericValues.length > 0 ? Math.max(...numericValues) : 1;
     const rawMin = numericValues.length > 0 ? Math.min(...numericValues, 0) : 0;
     const paddedMax = rawMax === rawMin ? rawMax + 1 : rawMax;
-    const width = Math.max(320, pointCount * 72);
+    // พิกัดภายใน — SVG ยืดเต็มความกว้างของ section เดิม (ไม่ขยายทั้งหน้า)
+    const width = Math.max(720, pointCount * 96);
     const plotWidth = width - CHART_PAD.left - CHART_PAD.right;
     const plotHeight = height - CHART_PAD.top - CHART_PAD.bottom;
 
@@ -100,7 +101,7 @@ export function MultiSeriesLineChart({
 
   if (chartModel.pointCount === 0 || chartModel.visibleSeries.length === 0) {
     return (
-      <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-center">
+      <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-12 text-center">
         <p className="text-sm font-medium text-slate-500">{emptyMessage}</p>
       </div>
     );
@@ -126,13 +127,13 @@ export function MultiSeriesLineChart({
         ))}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="w-full">
         <svg
           role="img"
           aria-label={yLabel ? `กราฟเส้น ${yLabel}` : "กราฟเส้นหลายชุด"}
-          width={chartModel.width}
-          height={height}
-          className="min-w-full"
+          viewBox={`0 0 ${chartModel.width} ${height}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="block h-auto w-full"
         >
           {yTicks.map((tick) => (
             <g key={`grid-${tick.y}`}>

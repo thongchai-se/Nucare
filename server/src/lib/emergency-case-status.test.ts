@@ -45,7 +45,7 @@ describe("emergency-case status transitions", () => {
   });
 
   it("ECS-04 ป้ายสถานะภาษาไทย", () => {
-    assert.equal(emergencyCaseStatusLabel(EmergencyCaseStatus.OPEN), "รอรับ");
+    assert.equal(emergencyCaseStatusLabel(EmergencyCaseStatus.OPEN), "รอรับเรื่อง");
     assert.equal(emergencyCaseStatusLabel(EmergencyCaseStatus.IN_PROGRESS), "กำลังดำเนินการ");
     assert.equal(emergencyCaseStatusLabel(EmergencyCaseStatus.RESOLVED), "ปิดแล้ว");
   });

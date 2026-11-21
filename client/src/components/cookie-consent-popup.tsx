@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { Cookie, Settings, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmSubmitLabel } from "@/components/ui/confirm-submit-label";
 import { acquireBodyScrollLock } from "@/lib/body-scroll-lock";
 import api from "@/lib/axios";
+import { KKU_PDPA_POLICY_URL } from "@/lib/legal-links";
 
 const COOKIE_CONSENT_KEY = "nucare_cookie_consent_v1";
 const COOKIE_PREFERENCES_KEY = "nucare_cookie_preferences_v1";
@@ -92,7 +92,7 @@ export default function CookieConsentPopup() {
         focusableSelector
       );
       const firstFocusableElement = focusableElements?.[0];
-      (firstFocusableElement ?? settingsDialogRef.current)?.focus();
+      (firstFocusableElement ?? settingsDialogRef.current)?.focus({ preventScroll: true });
     }, 0);
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -111,7 +111,7 @@ export default function CookieConsentPopup() {
 
       if (focusableElements.length === 0) {
         event.preventDefault();
-        settingsDialogRef.current.focus();
+        settingsDialogRef.current.focus({ preventScroll: true });
         return;
       }
 
@@ -120,10 +120,10 @@ export default function CookieConsentPopup() {
 
       if (event.shiftKey && document.activeElement === firstFocusableElement) {
         event.preventDefault();
-        lastFocusableElement.focus();
+        lastFocusableElement.focus({ preventScroll: true });
       } else if (!event.shiftKey && document.activeElement === lastFocusableElement) {
         event.preventDefault();
-        firstFocusableElement.focus();
+        firstFocusableElement.focus({ preventScroll: true });
       }
     };
 
@@ -132,7 +132,7 @@ export default function CookieConsentPopup() {
     return () => {
       releaseScrollLock();
       window.removeEventListener("keydown", onKeyDown);
-      previousActiveElement?.focus();
+      previousActiveElement?.focus({ preventScroll: true });
     };
   }, [isSettingsOpen]);
 
@@ -173,9 +173,14 @@ export default function CookieConsentPopup() {
                 <p id="cookie-banner-description" className="max-w-3xl text-xs leading-relaxed text-slate-300">
                   ระบบ Nucare ใช้คุกกี้เพื่อจดจำการเข้าสู่ระบบและพัฒนาประสบการณ์ใช้งาน ข้อมูลของคุณจะถูกดูแลอย่างปลอดภัยตาม
                   {" "}
-                  <Link href="/privacy#cookies" className="text-cyan-300 underline transition-colors hover:text-white">
-                    นโยบายคุกกี้
-                  </Link>
+                  <a
+                    href={KKU_PDPA_POLICY_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-300 underline transition-colors hover:text-white"
+                  >
+                    นโยบายความเป็นส่วนตัว
+                  </a>
                 </p>
               </div>
             </div>
@@ -212,94 +217,107 @@ export default function CookieConsentPopup() {
       )}
 
       {isSettingsOpen && (
-        <div className="fixed inset-0 z-[200]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden p-4 sm:p-6">
           <button
             type="button"
             aria-label="close cookie settings"
-            className="fixed inset-0 bg-slate-900/50"
+            className="absolute inset-0 bg-slate-900/45"
             onClick={() => setIsSettingsOpen(false)}
           />
 
-          <div className="fixed inset-0 z-10 flex items-center justify-center overflow-hidden p-3 sm:p-4">
-            <div
-              id="cookie-settings-dialog"
-              ref={settingsDialogRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="cookie-settings-title"
-              aria-describedby="cookie-settings-description"
-              tabIndex={-1}
-              className="flex min-h-0 max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
+          <div
+            id="cookie-settings-dialog"
+            ref={settingsDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cookie-settings-title"
+            aria-describedby="cookie-settings-description"
+            tabIndex={-1}
+            className="relative flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-20px_rgba(15,23,42,0.35),0_8px_16px_-8px_rgba(15,23,42,0.12)] outline-none"
+            style={{ animation: "toast-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both" }}
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-sky-50 to-white" />
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(false)}
+              className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              aria-label="close cookie settings modal"
             >
-              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-5">
-                <h3 id="cookie-settings-title" className="flex items-center gap-2 text-lg font-bold text-slate-800">
-                  <Settings className="h-5 w-5 text-blue-600" /> ตั้งค่าความเป็นส่วนตัว
+              <X className="h-4 w-4" strokeWidth={2} />
+            </button>
+
+            <div className="relative px-6 pb-2 pt-8 sm:px-8 sm:pt-9">
+              <div className="flex flex-col items-center text-center">
+                <div
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0057A8] text-white shadow-[0_10px_20px_-8px_rgba(0,87,168,0.4)]"
+                  aria-hidden
+                >
+                  <Settings className="h-5 w-5" strokeWidth={2.25} />
+                </div>
+                <h3 id="cookie-settings-title" className="mt-4 text-lg font-bold text-slate-900">
+                  ตั้งค่าความเป็นส่วนตัว
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(false)}
-                  className="text-slate-400 transition-colors hover:text-slate-600"
-                  aria-label="close cookie settings modal"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-                <p id="cookie-settings-description" className="text-sm leading-relaxed text-slate-600">
-                  คุณสามารถเลือกเปิดหรือปิดคุกกี้แต่ละประเภทได้ ยกเว้นคุกกี้ที่จำเป็นต่อการทำงานของระบบซึ่งไม่สามารถปิดได้
+                <p id="cookie-settings-description" className="mt-2 text-sm leading-6 text-slate-600">
+                  เลือกเปิดหรือปิดคุกกี้แต่ละประเภทได้ ยกเว้นคุกกี้ที่จำเป็นซึ่งปิดไม่ได้
                 </p>
+              </div>
+            </div>
 
-                <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div>
-                    <h4 className="mb-1 text-sm font-bold text-slate-800">คุกกี้ที่จำเป็นอย่างยิ่ง (Strictly Necessary)</h4>
-                    <p className="text-xs leading-relaxed text-slate-500">
-                      ใช้สำหรับการเข้าสู่ระบบ session และความปลอดภัยพื้นฐานของเว็บไซต์
-                    </p>
-                  </div>
-                  <div className="mt-1 shrink-0">
-                    <span className="rounded-md bg-blue-100 px-2 py-1 text-[11px] font-bold text-blue-700">เปิดใช้งานเสมอ</span>
-                  </div>
+            <div className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4 sm:px-8">
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <h4 className="mb-1 text-sm font-semibold text-slate-800">คุกกี้ที่จำเป็น</h4>
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    ใช้สำหรับเข้าสู่ระบบ session และความปลอดภัยพื้นฐาน
+                  </p>
                 </div>
-
-                <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4">
-                  <div>
-                    <h4 id="cookie-analytics-title" className="mb-1 text-sm font-bold text-slate-800">คุกกี้เพื่อการวิเคราะห์ (Analytics Cookies)</h4>
-                    <p id="cookie-analytics-description" className="text-xs leading-relaxed text-slate-500">
-                      ช่วยให้เราเข้าใจการใช้งานโดยรวม เพื่อปรับปรุงประสิทธิภาพและประสบการณ์ใช้งานของระบบ
-                    </p>
-                  </div>
-                  <label htmlFor="cookie-analytics-preference" className="mt-1 inline-flex shrink-0 cursor-pointer items-center">
-                    <input
-                      id="cookie-analytics-preference"
-                      type="checkbox"
-                      checked={allowAnalytics}
-                      onChange={(event) => setAllowAnalytics(event.target.checked)}
-                      className="peer sr-only"
-                      aria-labelledby="cookie-analytics-title"
-                      aria-describedby="cookie-analytics-description"
-                    />
-                    <span className="relative h-6 w-11 rounded-full bg-slate-200 transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white" />
-                  </label>
-                </div>
+                <span className="mt-0.5 shrink-0 rounded-md bg-[#0057A8]/10 px-2 py-1 text-[11px] font-semibold text-[#0057A8]">
+                  เปิดเสมอ
+                </span>
               </div>
 
-              <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white p-6 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handleSaveSettings}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-800"
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4">
+                <div>
+                  <h4 id="cookie-analytics-title" className="mb-1 text-sm font-semibold text-slate-800">
+                    คุกกี้เพื่อการวิเคราะห์
+                  </h4>
+                  <p id="cookie-analytics-description" className="text-xs leading-relaxed text-slate-500">
+                    ช่วยเข้าใจการใช้งานโดยรวม เพื่อปรับปรุงระบบ
+                  </p>
+                </div>
+                <label
+                  htmlFor="cookie-analytics-preference"
+                  className="mt-1 inline-flex shrink-0 cursor-pointer items-center"
                 >
-                  <ConfirmSubmitLabel>บันทึกการตั้งค่า</ConfirmSubmitLabel>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAcceptNecessaryOnly}
-                  className="flex-1 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200"
-                >
-                  ยอมรับเฉพาะจำเป็น
-                </button>
+                  <input
+                    id="cookie-analytics-preference"
+                    type="checkbox"
+                    checked={allowAnalytics}
+                    onChange={(event) => setAllowAnalytics(event.target.checked)}
+                    className="peer sr-only"
+                    aria-labelledby="cookie-analytics-title"
+                    aria-describedby="cookie-analytics-description"
+                  />
+                  <span className="relative h-6 w-11 rounded-full bg-slate-200 transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[#0057A8] peer-checked:after:translate-x-full peer-checked:after:border-white" />
+                </label>
               </div>
+            </div>
+
+            <div className="relative flex flex-col-reverse gap-2.5 px-6 pb-6 pt-2 sm:flex-row sm:justify-center sm:px-8 sm:pb-7">
+              <button
+                type="button"
+                onClick={handleAcceptNecessaryOnly}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 sm:w-auto"
+              >
+                ยอมรับเฉพาะจำเป็น
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0057A8] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#00468a] sm:w-auto"
+              >
+                <ConfirmSubmitLabel>บันทึกการตั้งค่า</ConfirmSubmitLabel>
+              </button>
             </div>
           </div>
         </div>
