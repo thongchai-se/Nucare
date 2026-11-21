@@ -14,6 +14,7 @@ import { runEphemeralChatRetention } from "./lib/ephemeral-chat/sessions";
 import { purgeStaleStudentChatMemories } from "./lib/student-chat/memory";
 import { materializeDueWaves } from "./lib/survey-auto-schedule";
 import { assertChatReadyForEnvironment } from "./lib/student-chat/provider";
+import { resolveAuthCookieSecure } from "./lib/auth-cookie";
 import { isUnsafeMethodOriginAllowed } from "./lib/request-origin";
 import { purgeExpiredTrafficLogs, trafficLogMiddleware } from "./lib/traffic-log";
 import adminRoutes from "./routes/admin.routes";
@@ -146,16 +147,21 @@ export const ensureAppReady = async (
 app.disable("x-powered-by");
 app.set("trust proxy", trustProxyHops);
 
-app.use((req: Request, res: Response, next: NextFunction) => {
+const authCookieSecure = resolveAuthCookieSecure();
+
+app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  // COOP/HSTS ใช้ได้จริงบน HTTPS เท่านั้น — ข้ามตอน faculty HTTP เพื่อไม่สับสนใน console
+  if (authCookieSecure) {
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  }
   res.setHeader("Cross-Origin-Resource-Policy", "same-site");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
 
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production" && authCookieSecure) {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
 
@@ -350,6 +356,9 @@ const startServer = async (): Promise<void> => {
 
   app.listen(port, () => {
     console.log(`NuCare server listening on http://localhost:${port}`);
+    console.log(
+      `[auth] cookieSecure=${authCookieSecure} (HTTP faculty ต้องเป็น false — ตรวจ AUTH_COOKIE_ALLOW_INSECURE)`
+    );
   });
 };
 
