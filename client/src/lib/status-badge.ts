@@ -5,7 +5,10 @@ import {
   UI_STATUS_PENDING,
 } from "@/lib/ui-classes";
 
-/** รูปทรงแบดจ์สถานะ/เร่งด่วนในรายการเคส — ใช้ร่วมทุกบทบาท */
+/**
+ * รูปทรงแบดจ์สถานะ/เร่งด่วนในรายการเคส — ใช้ร่วมทุกบทบาท
+ * คู่สีต้องเป็นทึบ + text-white เท่านั้น (UI_STATUS_*) ห้าม pastel
+ */
 export const STATUS_BADGE_COMPACT =
   "inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white";
 

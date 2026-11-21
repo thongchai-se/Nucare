@@ -2,9 +2,11 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Ban,
   CalendarDays,
   ClipboardList,
   FileText,
+  MessageCircle,
   Search,
   Users,
   XCircle,
@@ -118,11 +120,16 @@ type CasesViewProps = {
   formatQueueWait: (createdAt: string) => string;
   openCareModal: (item: MentalHealthCase) => void;
   openAppointmentModal: (item?: MentalHealthCase) => void;
+  /** ยกเลิกข้อเสนอนัดที่รอนิสิตตอบ — เปิดทางเสนอใหม่ได้ */
+  onCancelScheduleOffer?: (referralId: string, offerId: string) => void | Promise<void>;
+  /** ยอมรับข้อเสนอเวลานัดจากนิสิต */
+  onAcceptScheduleOffer?: (referralId: string, offerId: string) => void | Promise<void>;
   onAcceptCase: (referralId: string) => void | Promise<void>;
   onCloseCase: (referralId: string) => void | Promise<void>;
   /** เปิดแผงคุยสั้นกับนิสิต */
   onOpenChat?: (studentId: string) => void;
   busyReferralId?: string | null;
+  busyScheduleOfferId?: string | null;
   initialReferralId?: string | null;
 };
 
@@ -169,15 +176,18 @@ export function CasesView({
   formatQueueWait,
   openCareModal,
   openAppointmentModal,
+  onCancelScheduleOffer,
+  onAcceptScheduleOffer,
   onAcceptCase,
   onCloseCase,
   onOpenChat,
   busyReferralId = null,
+  busyScheduleOfferId = null,
   initialReferralId = null,
 }: CasesViewProps) {
   const copy = workspaceCopy[mode];
   const isQueue = mode === "queue";
-  const actionBusy = Boolean(busyReferralId);
+  const actionBusy = Boolean(busyReferralId || busyScheduleOfferId);
   const pagination = useListPagination(filteredActiveCases, searchQuery, {
     fixedRowsPerPage: 12,
   });
@@ -398,7 +408,7 @@ export function CasesView({
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex w-full flex-wrap justify-end gap-2 lg:max-w-[min(100%,28rem)] lg:shrink-0">
                     {isQueue ? (
                       <>
                         <button
@@ -428,6 +438,7 @@ export function CasesView({
                             onClick={() => onOpenChat(selectedCase.studentId)}
                             className={`${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
                           >
+                            <MessageCircle className="h-4 w-4" />
                             คุยสั้น
                           </button>
                         ) : null}
@@ -439,14 +450,72 @@ export function CasesView({
                           <FileText className="h-4 w-4" />
                           บันทึกผล
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => openAppointmentModal(selectedCase)}
-                          className={`${UI_ACTION_PRIMARY_COMPACT} px-3 py-2`}
-                        >
-                          <CalendarDays className="h-4 w-4" />
-                          นัดหมาย
-                        </button>
+                        {(() => {
+                          const pending = selectedCase.latestPendingScheduleOffer ?? null;
+                          const waitingOnStudent = pending?.waitingOn === "STUDENT";
+                          const waitingOnExpert = pending?.waitingOn === "MENTAL_HEALTH";
+
+                          if (waitingOnStudent && pending && onCancelScheduleOffer) {
+                            return (
+                              <button
+                                type="button"
+                                disabled={actionBusy}
+                                onClick={() =>
+                                  void onCancelScheduleOffer(selectedCase.referralId, pending.id)
+                                }
+                                className={`${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
+                              >
+                                {busyScheduleOfferId === pending.id ? (
+                                  <span className="loader h-4 w-4" aria-hidden />
+                                ) : (
+                                  <Ban className="h-4 w-4" />
+                                )}
+                                {busyScheduleOfferId === pending.id
+                                  ? "กำลังยกเลิก..."
+                                  : "ยกเลิกข้อเสนอ"}
+                              </button>
+                            );
+                          }
+
+                          if (waitingOnExpert && pending && onAcceptScheduleOffer) {
+                            return (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={actionBusy}
+                                  onClick={() =>
+                                    void onAcceptScheduleOffer(selectedCase.referralId, pending.id)
+                                  }
+                                  className={`${UI_ACTION_PRIMARY_COMPACT} px-3 py-2`}
+                                >
+                                  <ConfirmSubmitLabel busy={busyScheduleOfferId === pending.id}>
+                                    ยอมรับข้อเสนอ
+                                  </ConfirmSubmitLabel>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionBusy}
+                                  onClick={() => openAppointmentModal(selectedCase)}
+                                  className={`${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
+                                >
+                                  <CalendarDays className="h-4 w-4" />
+                                  ขอเปลี่ยนวัน/ที่
+                                </button>
+                              </>
+                            );
+                          }
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => openAppointmentModal(selectedCase)}
+                              className={`${UI_ACTION_PRIMARY_COMPACT} px-3 py-2`}
+                            >
+                              <CalendarDays className="h-4 w-4" />
+                              นัดหมาย
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           disabled={actionBusy}
@@ -614,6 +683,84 @@ export function CasesView({
                           title="ยังไม่มีนัดหมาย"
                           description="รับเคสก่อน จึงจะสร้างนัดหมายได้"
                         />
+                      ) : selectedCase.latestPendingScheduleOffer?.waitingOn === "STUDENT" ? (
+                        <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-8 text-center">
+                          <p className="text-sm font-bold text-amber-950">รอนิสิตตอบรับข้อเสนอ</p>
+                          <p className="mt-1 text-xs text-amber-900">
+                            {formatThaiDateTime
+                              ? formatThaiDateTime(selectedCase.latestPendingScheduleOffer.proposedAt)
+                              : formatThaiDate(selectedCase.latestPendingScheduleOffer.proposedAt)}
+                            {" · "}
+                            {selectedCase.latestPendingScheduleOffer.location}
+                          </p>
+                          <p className="mt-2 text-xs text-amber-800">
+                            หากต้องการเปลี่ยนวันเวลา ให้ยกเลิกข้อเสนอเดิมก่อน แล้วเสนอนัดใหม่
+                          </p>
+                          {onCancelScheduleOffer ? (
+                            <button
+                              type="button"
+                              disabled={actionBusy}
+                              onClick={() =>
+                                void onCancelScheduleOffer(
+                                  selectedCase.referralId,
+                                  selectedCase.latestPendingScheduleOffer!.id
+                                )
+                              }
+                              className={`mt-4 ${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
+                            >
+                              <ConfirmSubmitLabel
+                                busy={
+                                  busyScheduleOfferId === selectedCase.latestPendingScheduleOffer.id
+                                }
+                              >
+                                ยกเลิกข้อเสนอ
+                              </ConfirmSubmitLabel>
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : selectedCase.latestPendingScheduleOffer?.waitingOn === "MENTAL_HEALTH" ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
+                          <p className="text-sm font-bold text-slate-900">มีข้อเสนอจากนิสิตรอคุณ</p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {formatThaiDateTime
+                              ? formatThaiDateTime(selectedCase.latestPendingScheduleOffer.proposedAt)
+                              : formatThaiDate(selectedCase.latestPendingScheduleOffer.proposedAt)}
+                            {" · "}
+                            {selectedCase.latestPendingScheduleOffer.location}
+                          </p>
+                          <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            {onAcceptScheduleOffer ? (
+                              <button
+                                type="button"
+                                disabled={actionBusy}
+                                onClick={() =>
+                                  void onAcceptScheduleOffer(
+                                    selectedCase.referralId,
+                                    selectedCase.latestPendingScheduleOffer!.id
+                                  )
+                                }
+                                className={`${UI_ACTION_PRIMARY_COMPACT} px-3 py-2`}
+                              >
+                                <ConfirmSubmitLabel
+                                  busy={
+                                    busyScheduleOfferId ===
+                                    selectedCase.latestPendingScheduleOffer.id
+                                  }
+                                >
+                                  ยอมรับข้อเสนอ
+                                </ConfirmSubmitLabel>
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={actionBusy}
+                              onClick={() => openAppointmentModal(selectedCase)}
+                              className={`${UI_ACTION_SECONDARY_COMPACT} px-3 py-2`}
+                            >
+                              ขอเปลี่ยนวัน/ที่
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                       <EmptyBlock
                         title="ยังไม่มีนัดหมาย"

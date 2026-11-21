@@ -57,6 +57,20 @@ export type MentalHealthEmergencyCase = {
   };
 };
 
+export type MentalHealthScheduleOffer = {
+  id: string;
+  referralId: string;
+  proposedAt: string;
+  location: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  proposedById: string;
+  proposedByName: string;
+  proposedByRole: "MENTAL_HEALTH" | "STUDENT";
+  waitingOn: "MENTAL_HEALTH" | "STUDENT" | null;
+};
+
 export type MentalHealthCase = {
   referralId: string;
   studentId: string;
@@ -76,6 +90,7 @@ export type MentalHealthCase = {
   latestCareSessionAt: string | null;
   recentCareSessions: MentalHealthCareSession[];
   latestAssessment: MentalHealthReferral["student"]["latestAssessment"];
+  latestPendingScheduleOffer?: MentalHealthScheduleOffer | null;
 };
 
 export type MentalHealthAppointmentStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";

@@ -4,6 +4,7 @@ import {
   mapMentalHealthScheduleOffer,
   parseFutureMentalHealthSchedule,
   pickLatestPendingMentalHealthOffer,
+  shouldBlockMentalHealthSchedulePropose,
 } from "./mental-health-schedule-offers";
 
 const baseOffer = {
@@ -75,5 +76,36 @@ describe("mental-health schedule offers", () => {
     );
     assert.equal(parseFutureMentalHealthSchedule("2026-11-15T02:59:59.999Z", now), null);
     assert.equal(parseFutureMentalHealthSchedule("not-a-date", now), null);
+  });
+
+  it("MHSO-06 blocks expert re-propose while waiting on student", () => {
+    assert.equal(
+      shouldBlockMentalHealthSchedulePropose({
+        actor: "MENTAL_HEALTH",
+        pendingWaitingOn: "STUDENT",
+      }),
+      true
+    );
+    assert.equal(
+      shouldBlockMentalHealthSchedulePropose({
+        actor: "MENTAL_HEALTH",
+        pendingWaitingOn: "MENTAL_HEALTH",
+      }),
+      false
+    );
+    assert.equal(
+      shouldBlockMentalHealthSchedulePropose({
+        actor: "MENTAL_HEALTH",
+        pendingWaitingOn: null,
+      }),
+      false
+    );
+    assert.equal(
+      shouldBlockMentalHealthSchedulePropose({
+        actor: "STUDENT",
+        pendingWaitingOn: "STUDENT",
+      }),
+      false
+    );
   });
 });

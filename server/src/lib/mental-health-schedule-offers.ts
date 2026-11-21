@@ -90,3 +90,16 @@ export function parseFutureMentalHealthSchedule(
   }
   return proposedAt;
 }
+
+type ScheduleOfferActor = "MENTAL_HEALTH" | "STUDENT";
+
+/**
+ * บล็อกเสนอนัดซ้ำเมื่อผู้เชี่ยวชาญมีข้อเสนอรอคำตอบจากนิสิตอยู่แล้ว
+ * (ต้องยกเลิกก่อนจึงเสนอใหม่ได้ — กันสแปม)
+ */
+export function shouldBlockMentalHealthSchedulePropose(input: {
+  actor: ScheduleOfferActor;
+  pendingWaitingOn: "MENTAL_HEALTH" | "STUDENT" | null;
+}): boolean {
+  return input.actor === "MENTAL_HEALTH" && input.pendingWaitingOn === "STUDENT";
+}

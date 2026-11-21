@@ -14,18 +14,21 @@ import {
 } from "./consultation-close";
 
 describe("consultation-close (client)", () => {
-  it("CC-C01 ป้ายปิดเคสแล้วเสมอ · โทนเหลืองเมื่อกลางทาง", () => {
+  it("CC-C01 ป้ายยกเลิก/ปิดเคสใช้สีทึบอ่านชัด", () => {
     assert.ok(STUDENT_MID_QUEUE_CLOSE_REASONS.length >= 6);
     assert.equal(isStudentMidQueueCloseReason(STUDENT_MID_QUEUE_CLOSE_REASONS[0]), true);
     assert.equal(consultationClosedStatusLabel(null), CLOSED_CASE_LABEL);
     assert.equal(
       consultationClosedStatusLabel(`${MID_QUEUE_CLOSE_PREFIX}ตารางเวลาไม่สะดวกในช่วงนี้`),
-      CLOSED_CASE_LABEL
+      "ยกเลิก"
     );
-    assert.equal(consultationClosedTone(MID_QUEUE_CLOSE_MARKER), "mid");
+    assert.equal(consultationClosedStatusLabel("CANCEL_REQUESTED"), "นศขอยกเลิก");
+    assert.equal(consultationClosedTone(MID_QUEUE_CLOSE_MARKER), "cancelled");
     assert.equal(consultationClosedTone("คุยจบ"), "done");
-    assert.match(consultationClosedBadgeClassName(MID_QUEUE_CLOSE_MARKER), /amber/);
-    assert.match(consultationClosedBadgeClassName("คุยจบ"), /emerald/);
+    assert.match(consultationClosedBadgeClassName(MID_QUEUE_CLOSE_MARKER), /amber-700/);
+    assert.match(consultationClosedBadgeClassName("คุยจบ"), /emerald-600/);
+    assert.doesNotMatch(consultationClosedBadgeClassName("CANCEL_REQUESTED"), /amber-100/);
+    assert.doesNotMatch(consultationClosedBadgeClassName("CANCELLED"), /amber-100/);
     assert.equal(isMidQueueCloseNote(MID_QUEUE_CLOSE_MARKER), true);
   });
 

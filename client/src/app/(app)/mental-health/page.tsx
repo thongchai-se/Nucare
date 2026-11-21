@@ -314,6 +314,7 @@ function MentalHealthDashboardContent() {
   const [loadingData, setLoadingData] = useState(false);
   const [dashboardError, setDashboardError] = useState(false);
   const [busyReferralId, setBusyReferralId] = useState<string | null>(null);
+  const [busyScheduleOfferId, setBusyScheduleOfferId] = useState<string | null>(null);
   const [busyEmergencyCaseId, setBusyEmergencyCaseId] = useState<string | null>(null);
   const [chatPeerId, setChatPeerId] = useState<string | null>(null);
   const { unreadCount: chatUnreadCount, refreshUnreadCount } = useEphemeralChatUnread(
@@ -481,9 +482,16 @@ function MentalHealthDashboardContent() {
 
   const casesWithoutAppointments = useMemo(
     () =>
-      activeCases.filter(
-        (item) => !scheduledAppointments.some((appointment) => appointment.studentId === item.studentId)
-      ),
+      activeCases.filter((item) => {
+        if (scheduledAppointments.some((appointment) => appointment.studentId === item.studentId)) {
+          return false;
+        }
+        // มีข้อเสนอรอนิสิตแล้ว ไม่จัดเป็น “ยังไม่มีนัด” ที่กดสร้างซ้ำได้
+        if (item.latestPendingScheduleOffer?.waitingOn === "STUDENT") {
+          return false;
+        }
+        return true;
+      }),
     [activeCases, scheduledAppointments]
   );
 
@@ -568,6 +576,13 @@ function MentalHealthDashboardContent() {
         return "มีนัดหมายแล้ว";
       }
 
+      if (item.latestPendingScheduleOffer?.waitingOn === "STUDENT") {
+        return "รอนิสิตตอบนัด";
+      }
+      if (item.latestPendingScheduleOffer?.waitingOn === "MENTAL_HEALTH") {
+        return "รอคุณตอบนัด";
+      }
+
       return "กำลังดูแล";
     },
     [scheduledAppointments]
@@ -576,13 +591,22 @@ function MentalHealthDashboardContent() {
   const getNextAppointmentLabel = useCallback(
     (studentId: string): string => {
       const nextAppointment = upcomingAppointments.find((item) => item.studentId === studentId);
-      if (!nextAppointment) {
-        return "ยังไม่มีนัดหมาย";
+      if (nextAppointment) {
+        return `${formatThaiDate(nextAppointment.date)} • ${formatTime(nextAppointment.time)}`;
       }
 
-      return `${formatThaiDate(nextAppointment.date)} • ${formatTime(nextAppointment.time)}`;
+      const pendingCase = activeCases.find((item) => item.studentId === studentId);
+      const pending = pendingCase?.latestPendingScheduleOffer ?? null;
+      if (pending?.waitingOn === "STUDENT") {
+        return `รอนิสิตตอบ · ${formatThaiDateTime(pending.proposedAt)}`;
+      }
+      if (pending?.waitingOn === "MENTAL_HEALTH") {
+        return `รอคุณตอบ · ${formatThaiDateTime(pending.proposedAt)}`;
+      }
+
+      return "ยังไม่มีนัดหมาย";
     },
-    [upcomingAppointments]
+    [activeCases, upcomingAppointments]
   );
 
   const openCareModal = (item: ActiveCase) => {
@@ -606,6 +630,13 @@ function MentalHealthDashboardContent() {
       setNotice({
         tone: "info",
         message: "รับเคสก่อน จึงจะสร้างนัดหมายได้",
+      });
+      return;
+    }
+    if (item?.latestPendingScheduleOffer?.waitingOn === "STUDENT") {
+      setNotice({
+        tone: "info",
+        message: "มีข้อเสนอรอนิสิตตอบอยู่แล้ว — ยกเลิกข้อเสนอเดิมก่อนจึงเสนอใหม่ได้",
       });
       return;
     }
@@ -875,6 +906,14 @@ function MentalHealthDashboardContent() {
       return;
     }
 
+    if (targetCase.latestPendingScheduleOffer?.waitingOn === "STUDENT") {
+      setNotice({
+        tone: "info",
+        message: "มีข้อเสนอรอนิสิตตอบอยู่แล้ว — ยกเลิกข้อเสนอเดิมก่อนจึงเสนอใหม่ได้",
+      });
+      return;
+    }
+
     const location = appointmentForm.location.trim();
     if (!location) {
       setNotice({
@@ -917,6 +956,10 @@ function MentalHealthDashboardContent() {
   };
 
   const handleAcceptStudentScheduleOffer = async (referralId: string, offerId: string) => {
+    if (busyScheduleOfferId) {
+      return;
+    }
+    setBusyScheduleOfferId(offerId);
     try {
       await api.post(`/api/mental-health/referrals/${referralId}/schedule-offers/${offerId}/accept`);
       await loadDashboard();
@@ -931,6 +974,33 @@ function MentalHealthDashboardContent() {
         tone: "error",
         message: getApiErrorMessage(error, "ไม่สามารถยอมรับข้อเสนอได้"),
       });
+    } finally {
+      setBusyScheduleOfferId(null);
+    }
+  };
+
+  /** ยกเลิกข้อเสนอที่รอนิสิต — เปิดทางเสนอนัดใหม่ได้ */
+  const handleCancelScheduleOffer = async (referralId: string, offerId: string) => {
+    if (busyScheduleOfferId) {
+      return;
+    }
+    setBusyScheduleOfferId(offerId);
+    try {
+      await api.post(`/api/mental-health/referrals/${referralId}/schedule-offers/${offerId}/cancel`);
+      await loadDashboard();
+      setNotice({
+        tone: "success",
+        title: "ยกเลิกข้อเสนอแล้ว",
+        description: "สามารถเสนอนัดใหม่ได้เมื่อพร้อม",
+        message: "ยกเลิกข้อเสนอแล้ว",
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: getApiErrorMessage(error, "ไม่สามารถยกเลิกข้อเสนอได้"),
+      });
+    } finally {
+      setBusyScheduleOfferId(null);
     }
   };
 
@@ -1147,6 +1217,7 @@ function MentalHealthDashboardContent() {
               {activeView === "cases" ? (
                 <CasesView
                   busyReferralId={busyReferralId}
+                  busyScheduleOfferId={busyScheduleOfferId}
                   filteredActiveCases={filteredActiveCases}
                   formatQueueWait={formatQueueWait}
                   formatThaiDate={formatThaiDate}
@@ -1157,6 +1228,12 @@ function MentalHealthDashboardContent() {
                   initialReferralId={focusReferralId}
                   mode="cases"
                   onAcceptCase={(referralId) => void handleUpdateReferral(referralId, "ACCEPTED")}
+                  onAcceptScheduleOffer={(referralId, offerId) =>
+                    void handleAcceptStudentScheduleOffer(referralId, offerId)
+                  }
+                  onCancelScheduleOffer={(referralId, offerId) =>
+                    void handleCancelScheduleOffer(referralId, offerId)
+                  }
                   onCloseCase={(referralId) => void handleUpdateReferral(referralId, "CLOSED")}
                   onOpenChat={(studentId) => setChatPeerId(studentId)}
                   openAppointmentModal={openAppointmentModal}
@@ -1345,6 +1422,17 @@ function MentalHealthDashboardContent() {
               {(() => {
                 const selected = activeCases.find((item) => item.studentId === appointmentForm.studentId);
                 const pending = selected?.latestPendingScheduleOffer;
+                if (pending?.waitingOn === "STUDENT") {
+                  return (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <p className="font-semibold">มีข้อเสนอรอนิสิตตอบอยู่แล้ว</p>
+                      <p className="mt-1">
+                        {formatThaiDateTime(pending.proposedAt)} · {pending.location}
+                      </p>
+                      <p className="mt-1 text-xs">ปิดหน้าต่างนี้ แล้วกด “ยกเลิกข้อเสนอ” ก่อนเสนอใหม่</p>
+                    </div>
+                  );
+                }
                 if (!pending || pending.waitingOn !== "MENTAL_HEALTH") {
                   return null;
                 }
@@ -1424,11 +1512,15 @@ function MentalHealthDashboardContent() {
                 onClick={closeAppointmentModal}
                 className="w-full rounded-xl px-6 py-2.5 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-200 sm:w-auto"
               >
-                ยกเลิก
+                ปิด
               </button>
               <button
                 type="submit"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 sm:w-auto"
+                disabled={
+                  activeCases.find((item) => item.studentId === appointmentForm.studentId)
+                    ?.latestPendingScheduleOffer?.waitingOn === "STUDENT"
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <ConfirmSubmitLabel>ส่งข้อเสนอ</ConfirmSubmitLabel>
               </button>

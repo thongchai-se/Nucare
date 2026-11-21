@@ -355,7 +355,9 @@ export const getMentalHealthDashboard = async (req: Request, res: Response): Pro
           careSessionCount: isOwnedCase ? referral._count.specializedCareRecords : 0,
           latestCareSessionAt: latestCareRecord?.sessionDate ?? null,
           latestPendingScheduleOffer:
-            pickLatestPendingMentalHealthOffer(scheduleOffers),
+            isOwnedCase && referral.status === ReferralStatus.ACCEPTED
+              ? pickLatestPendingMentalHealthOffer(scheduleOffers)
+              : null,
           scheduleOffers:
             isOwnedCase || referral.status === ReferralStatus.PENDING ? scheduleOffers : [],
           recentCareSessions: scopedCareSessions,

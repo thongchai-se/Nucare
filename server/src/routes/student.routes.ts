@@ -17,6 +17,7 @@ import {
 } from "../controllers/consultation-schedule.controller";
 import {
   acceptMentalHealthScheduleOffer,
+  cancelStudentMentalHealthScheduleOffer,
   createStudentMentalHealthScheduleOffer,
 } from "../controllers/mental-health-schedule.controller";
 import {
@@ -80,6 +81,11 @@ router.post(
   "/mental-health-referrals/:referralId/schedule-offers/:offerId/accept",
   consultationRequestRateLimit,
   acceptMentalHealthScheduleOffer
+);
+router.post(
+  "/mental-health-referrals/:referralId/schedule-offers/:offerId/cancel",
+  consultationRequestRateLimit,
+  cancelStudentMentalHealthScheduleOffer
 );
 router.post("/sos", sosRateLimit, createSosCase);
 router.patch("/contacts", consultationRequestRateLimit, updateStudentContacts);

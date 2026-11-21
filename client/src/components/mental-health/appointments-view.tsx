@@ -34,9 +34,9 @@ const statusLabel: Record<MentalHealthAppointmentStatus, string> = {
 
 const statusBadgeClass: Record<MentalHealthAppointmentStatus, string> = {
   SCHEDULED: "bg-[#0057A8] text-white",
-  COMPLETED: "bg-emerald-100 text-emerald-800",
-  CANCELLED: "bg-slate-100 text-slate-600",
-  NO_SHOW: "bg-amber-100 text-amber-800",
+  COMPLETED: "bg-emerald-600 text-white",
+  CANCELLED: "bg-slate-600 text-white",
+  NO_SHOW: "bg-amber-700 text-white",
 };
 
 export function AppointmentsView({

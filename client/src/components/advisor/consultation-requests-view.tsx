@@ -20,6 +20,9 @@ import {
   UI_ACTION_PRIMARY_COMPACT,
   UI_ACTION_SCHEDULE_COMPACT,
   UI_ACTION_SECONDARY_COMPACT,
+  UI_STATUS_DANGER,
+  UI_STATUS_NEUTRAL,
+  UI_STATUS_PENDING,
 } from "@/lib/ui-classes";
 import {
   CANCELLED_CASE_LABEL,
@@ -119,9 +122,9 @@ function sortCancelRequestedFirst(
 }
 
 const LANE_BADGE: Record<NegotiateLane, { label: string; className: string }> = {
-  waiting_advisor: { label: "รอฉันตอบ", className: "bg-red-100 text-red-700" },
-  waiting_student: { label: "รอนิสิต", className: "bg-amber-100 text-amber-800" },
-  no_offer: { label: "ยังไม่เสนอ", className: "bg-slate-100 text-slate-700" },
+  waiting_advisor: { label: "รอฉันตอบ", className: UI_STATUS_DANGER },
+  waiting_student: { label: "รอนิสิต", className: UI_STATUS_PENDING },
+  no_offer: { label: "ยังไม่เสนอ", className: UI_STATUS_NEUTRAL },
 };
 
 /** หน้าคำขอปรึกษา — แยกคิวนัดและเรียงนัดที่ยืนยันตามวันเวลา */
@@ -226,10 +229,10 @@ export function ConsultationRequestsView({
 
   const scheduledColumns = showActionsColumn
     ? [
-        { key: "student", label: "นักศึกษา", width: "28%" },
-        { key: "when", label: "วันเวลานัด", width: "28%" },
-        { key: "topic", label: "หัวข้อ / สถานที่", width: "24%" },
-        { key: "actions", label: "จัดการ", align: "center" as const, width: "20%" },
+        { key: "student", label: "นักศึกษา", width: "22%" },
+        { key: "when", label: "วันเวลานัด", width: "22%" },
+        { key: "topic", label: "หัวข้อ / สถานที่", width: "22%" },
+        { key: "actions", label: "จัดการ", align: "center" as const, width: "34%" },
       ]
     : [
         { key: "student", label: "นักศึกษา", width: "32%" },
@@ -239,10 +242,10 @@ export function ConsultationRequestsView({
 
   const defaultColumns = showActionsColumn
     ? [
-        { key: "student", label: "นักศึกษา", width: "26%" },
-        { key: "topic", label: "หัวข้อ / ช่องทาง", width: "24%" },
-        { key: "status", label: "สถานะ / นัด", width: "24%" },
-        { key: "actions", label: "จัดการ", align: "center" as const, width: "26%" },
+        { key: "student", label: "นักศึกษา", width: "24%" },
+        { key: "topic", label: "หัวข้อ / ช่องทาง", width: "22%" },
+        { key: "status", label: "สถานะ / นัด", width: "22%" },
+        { key: "actions", label: "จัดการ", align: "center" as const, width: "32%" },
       ]
     : [
         { key: "student", label: "นักศึกษา", width: "32%" },
@@ -301,6 +304,7 @@ export function ConsultationRequestsView({
         <RosterTable
           columns={activeTab === "scheduled" ? scheduledColumns : defaultColumns}
           emptyMessage={emptyLabel}
+          minWidthClass={activeTab === "scheduled" ? "min-w-[980px]" : "min-w-[920px]"}
         >
           {pageItems.map((request) =>
             activeTab === "scheduled" ? (
@@ -433,19 +437,25 @@ function ConsultationActions({
     request.status !== "CLOSED" &&
     request.status !== "CANCELLED";
 
+  const compactAction = "whitespace-nowrap px-2.5 py-1.5";
+
   return (
-    <div className="flex flex-wrap gap-2 sm:justify-end">
+    <div className="inline-flex max-w-full flex-nowrap items-center justify-end gap-1.5">
       {canChat ? (
         <button
           type="button"
           onClick={() => onOpenChat?.(request.studentId)}
-          className={UI_ACTION_SECONDARY_COMPACT}
+          className={`${UI_ACTION_SECONDARY_COMPACT} ${compactAction}`}
         >
           คุยสั้น
         </button>
       ) : null}
       {request.status === "PENDING" ? (
-        <button type="button" onClick={() => onAcceptRequest(request.id)} className={UI_ACTION_PRIMARY_COMPACT}>
+        <button
+          type="button"
+          onClick={() => onAcceptRequest(request.id)}
+          className={`${UI_ACTION_PRIMARY_COMPACT} ${compactAction}`}
+        >
           <ConfirmSubmitLabel>รับคำขอ</ConfirmSubmitLabel>
         </button>
       ) : null}
@@ -456,12 +466,16 @@ function ConsultationActions({
             <button
               type="button"
               onClick={() => onAcceptOffer(request.id, pendingOffer.id)}
-              className={UI_ACTION_PRIMARY_COMPACT}
+              className={`${UI_ACTION_PRIMARY_COMPACT} ${compactAction}`}
             >
               <ConfirmSubmitLabel>ยอมรับข้อเสนอ</ConfirmSubmitLabel>
             </button>
           ) : null}
-          <button type="button" onClick={() => onProposeSchedule(request.id)} className={UI_ACTION_SCHEDULE_COMPACT}>
+          <button
+            type="button"
+            onClick={() => onProposeSchedule(request.id)}
+            className={`${UI_ACTION_SCHEDULE_COMPACT} ${compactAction}`}
+          >
             {request.status === "SCHEDULED"
               ? "เลื่อนนัด"
               : pendingOffer
@@ -473,19 +487,31 @@ function ConsultationActions({
 
       {request.status === "SCHEDULED" ||
       (request.status === "ACCEPTED" && request.preferredChannel === "MESSAGE") ? (
-        <button type="button" onClick={() => onCloseRequest(request.id)} className={UI_ACTION_SECONDARY_COMPACT}>
+        <button
+          type="button"
+          onClick={() => onCloseRequest(request.id)}
+          className={`${UI_ACTION_SECONDARY_COMPACT} ${compactAction}`}
+        >
           ปิดเคส
         </button>
       ) : null}
 
       {request.status === "PENDING" || request.status === "ACCEPTED" ? (
-        <button type="button" onClick={() => onDirectCancel(request.id)} className={UI_ACTION_SECONDARY_COMPACT}>
+        <button
+          type="button"
+          onClick={() => onDirectCancel(request.id)}
+          className={`${UI_ACTION_SECONDARY_COMPACT} ${compactAction}`}
+        >
           ยกเลิก
         </button>
       ) : null}
 
       {request.status === "CANCEL_REQUESTED" ? (
-        <button type="button" onClick={() => onConfirmCancel(request.id)} className={UI_ACTION_PRIMARY_COMPACT}>
+        <button
+          type="button"
+          onClick={() => onConfirmCancel(request.id)}
+          className={`${UI_ACTION_PRIMARY_COMPACT} ${compactAction}`}
+        >
           <ConfirmSubmitLabel>ยกเลิก</ConfirmSubmitLabel>
         </button>
       ) : null}

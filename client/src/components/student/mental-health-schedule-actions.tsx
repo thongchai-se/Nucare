@@ -8,7 +8,13 @@ import api from "@/lib/axios";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatThaiDateTime } from "@/lib/student-dashboard";
 import { scheduleDatetimeInputMin } from "@/lib/schedule-datetime";
-import { UI_ACTION_PRIMARY_COMPACT, UI_ACTION_SCHEDULE_COMPACT, UI_BUTTON_PRIMARY, UI_BUTTON_GHOST } from "@/lib/ui-classes";
+import {
+  UI_ACTION_PRIMARY_COMPACT,
+  UI_ACTION_SCHEDULE_COMPACT,
+  UI_ACTION_SECONDARY_COMPACT,
+  UI_BUTTON_PRIMARY,
+  UI_BUTTON_GHOST,
+} from "@/lib/ui-classes";
 
 export type StudentMentalHealthScheduleOffer = {
   id: string;
@@ -87,6 +93,23 @@ export function MentalHealthScheduleActions({
     }
   };
 
+  /** ยกเลิกข้อเสนอของนิสิตเองที่ยังรอผู้เชี่ยวชาญ */
+  const handleCancelOwnOffer = async (offer: StudentMentalHealthScheduleOffer) => {
+    setBusy(true);
+    onError("");
+    try {
+      await api.post(
+        `/api/student/mental-health-referrals/${referral.id}/schedule-offers/${offer.id}/cancel`
+      );
+      await refreshReferral();
+      onToast("ยกเลิกข้อเสนอแล้ว", "สามารถเสนอนัดใหม่ได้เมื่อพร้อม");
+    } catch (error) {
+      onError(getApiErrorMessage(error, "ไม่สามารถยกเลิกข้อเสนอได้"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleCounterSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!proposedAtLocal.trim() || !location.trim()) {
@@ -154,7 +177,7 @@ export function MentalHealthScheduleActions({
           </button>
         ) : null}
 
-        {waitingOnStudent || waitingOnExpert ? (
+        {waitingOnStudent ? (
           <button
             type="button"
             disabled={busy}
@@ -164,8 +187,32 @@ export function MentalHealthScheduleActions({
             }}
             className={UI_ACTION_SCHEDULE_COMPACT}
           >
-            {waitingOnExpert ? "แก้ไขข้อเสนอ" : "ขอเปลี่ยนวัน/ที่"}
+            ขอเปลี่ยนวัน/ที่
           </button>
+        ) : null}
+
+        {waitingOnExpert && pendingOffer ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setLocation(pendingOffer.location || "");
+                setCounterOpen(true);
+              }}
+              className={UI_ACTION_SCHEDULE_COMPACT}
+            >
+              แก้ไขข้อเสนอ
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleCancelOwnOffer(pendingOffer)}
+              className={UI_ACTION_SECONDARY_COMPACT}
+            >
+              {busy ? "กำลังยกเลิก..." : "ยกเลิกข้อเสนอ"}
+            </button>
+          </>
         ) : null}
       </div>
 

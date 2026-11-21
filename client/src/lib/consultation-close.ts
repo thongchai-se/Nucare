@@ -2,6 +2,7 @@
  * คำศัพท์และเหตุผลสำหรับปิด/ยกเลิกเคสปรึกษา (ฝั่ง client)
  * — ต้องสอดคล้องกับ server/src/lib/consultation-close.ts
  */
+import { UI_STATUS_CANCEL, UI_STATUS_DONE } from "@/lib/ui-classes";
 
 /** ป้ายเมื่อปิดหลังพูดคุยจบ */
 export const CLOSED_CASE_LABEL = "ปิดเคสแล้ว";
@@ -113,14 +114,14 @@ export function consultationClosedTone(
   return isCancelRequestNote(statusOrNote) ? "cancelled" : "done";
 }
 
-/** คลาสป้ายตามโทน */
+/** คลาสป้ายตามโทน — ใช้สีทึบเท่านั้น (เข้ากับ STATUS_BADGE_COMPACT ที่เป็น text-white) */
 export function consultationClosedBadgeClassName(
   statusOrNote?: string | null,
   advisorNote?: string | null
 ): string {
   return consultationClosedTone(statusOrNote, advisorNote) === "cancelled"
-    ? "bg-amber-100 text-amber-800"
-    : "bg-emerald-100 text-emerald-800";
+    ? UI_STATUS_CANCEL
+    : UI_STATUS_DONE;
 }
 
 /** ข้อความหมายเหตุการยกเลิก/ปิดที่แสดงนิสิต */

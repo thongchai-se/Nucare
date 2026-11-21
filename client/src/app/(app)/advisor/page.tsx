@@ -90,6 +90,7 @@ import {
   UI_CHOICE_CHIP_SUCCESS,
   UI_CHOICE_CHIP_UNSELECTED,
   UI_STATUS_ACTIVE,
+  UI_STATUS_CANCEL,
   UI_STATUS_DANGER,
   UI_STATUS_DONE,
   UI_STATUS_PENDING,
@@ -356,7 +357,7 @@ const consultationStatusMap: Record<
   },
   CANCEL_REQUESTED: {
     label: "นศขอยกเลิก",
-    className: "bg-amber-100 text-amber-800",
+    className: UI_STATUS_DANGER,
   },
   CLOSED: {
     label: "ปิดเคสแล้ว",
@@ -364,7 +365,7 @@ const consultationStatusMap: Record<
   },
   CANCELLED: {
     label: "ยกเลิก",
-    className: "bg-amber-100 text-amber-800",
+    className: UI_STATUS_CANCEL,
   },
 };
 

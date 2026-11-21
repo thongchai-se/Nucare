@@ -15,7 +15,9 @@ import { serializeMentalHealthAppointment } from "../lib/mental-health-appointme
 import {
   mapMentalHealthScheduleOffer,
   parseFutureMentalHealthSchedule,
+  shouldBlockMentalHealthSchedulePropose,
 } from "../lib/mental-health-schedule-offers";
+import { canMutateAcceptedReferral } from "../lib/mental-health-ownership";
 import { notifyUser } from "../lib/notify-user";
 import { prisma } from "../lib/prisma";
 import { hasAssignedRole } from "../lib/roles";
@@ -62,20 +64,25 @@ type ScheduleActor = "MENTAL_HEALTH" | "STUDENT";
 
 class ScheduleOfferConflictError extends Error {}
 class ScheduleReferralConflictError extends Error {}
+class ScheduleOfferPendingBlockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScheduleOfferPendingBlockError";
+  }
+}
 
-const loadReferralForActor = (
+/** โหลดเคส ACCEPTED ตามบทบาท — ฝั่ง MH ใช้กฎเจ้าของเดียวกับ care/appointment */
+const loadReferralForActor = async (
   referralId: string,
   actorId: string,
   actor: ScheduleActor
-) =>
-  prisma.caseReferral.findFirst({
+) => {
+  const referral = await prisma.caseReferral.findFirst({
     where: {
       id: referralId,
       target: ReferralTarget.COUNSELING_CENTER,
       status: ReferralStatus.ACCEPTED,
-      ...(actor === "MENTAL_HEALTH"
-        ? { acceptedByUserId: actorId }
-        : { studentId: actorId }),
+      ...(actor === "STUDENT" ? { studentId: actorId } : {}),
     },
     select: {
       id: true,
@@ -97,6 +104,20 @@ const loadReferralForActor = (
       },
     },
   });
+
+  if (!referral) {
+    return null;
+  }
+
+  if (
+    actor === "MENTAL_HEALTH" &&
+    !canMutateAcceptedReferral(referral.acceptedByUserId, actorId)
+  ) {
+    return null;
+  }
+
+  return referral;
+};
 
 const formatSchedule = (date: Date): string =>
   date.toLocaleString("th-TH", {
@@ -159,6 +180,29 @@ const createOfferForActor = async (
       });
       if (stillAccepted.count === 0) {
         throw new ScheduleReferralConflictError();
+      }
+
+      const pendingOffers = await tx.mentalHealthScheduleOffer.findMany({
+        where: {
+          referralId: referral.id,
+          status: ConsultationOfferStatus.PENDING,
+        },
+        select: mentalHealthOfferSelect,
+        orderBy: { createdAt: "desc" },
+      });
+      const latestPending = pendingOffers[0] ?? null;
+      if (latestPending) {
+        const mapped = mapMentalHealthScheduleOffer(latestPending, referral.studentId);
+        if (
+          shouldBlockMentalHealthSchedulePropose({
+            actor,
+            pendingWaitingOn: mapped.waitingOn,
+          })
+        ) {
+          throw new ScheduleOfferPendingBlockError(
+            "มีข้อเสนอรอนิสิตตอบอยู่แล้ว กรุณายกเลิกข้อเสนอนั้นก่อนเสนอใหม่"
+          );
+        }
       }
 
       await tx.mentalHealthScheduleOffer.updateMany({
@@ -230,12 +274,137 @@ const createOfferForActor = async (
       offer: mapMentalHealthScheduleOffer(offer, referral.studentId),
     });
   } catch (error) {
+    if (error instanceof ScheduleOfferPendingBlockError) {
+      res.status(409).json({ message: error.message });
+      return;
+    }
     if (error instanceof ScheduleReferralConflictError) {
       res.status(409).json({ message: "สถานะหรือเจ้าของเคสเปลี่ยนไปแล้ว กรุณารีเฟรชข้อมูล" });
       return;
     }
     console.error("Create mental health schedule offer error:", error);
     res.status(500).json({ message: "สร้างข้อเสนอนัดหมายไม่สำเร็จ" });
+  }
+};
+
+const cancelOfferForActor = async (
+  req: Request,
+  res: Response,
+  actor: ScheduleActor
+): Promise<void> => {
+  const actorId = req.user?.userId;
+  if (!actorId) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const parsedParams = offerParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    res.status(400).json({ message: "Invalid payload" });
+    return;
+  }
+
+  try {
+    const referral = await loadReferralForActor(
+      parsedParams.data.referralId,
+      actorId,
+      actor
+    );
+    if (!referral) {
+      res.status(404).json({ message: "ไม่พบเคสที่รับแล้วหรือไม่มีสิทธิ์จัดการเคสนี้" });
+      return;
+    }
+
+    const offer = await prisma.mentalHealthScheduleOffer.findFirst({
+      where: {
+        id: parsedParams.data.offerId,
+        referralId: referral.id,
+        status: ConsultationOfferStatus.PENDING,
+      },
+      select: mentalHealthOfferSelect,
+    });
+    if (!offer) {
+      res.status(404).json({ message: "ไม่พบข้อเสนอนัดหมายที่รอตอบ" });
+      return;
+    }
+
+    // ผู้เชี่ยวชาญยกเลิกข้อเสนอที่รอนิสิตได้; นิสิตยกเลิกได้เฉพาะข้อเสนอของตนเอง
+    if (actor === "STUDENT" && offer.proposedById !== actorId) {
+      res.status(403).json({ message: "ยกเลิกได้เฉพาะข้อเสนอที่คุณส่งเอง" });
+      return;
+    }
+
+    const cancelled = await prisma.mentalHealthScheduleOffer.updateMany({
+      where: {
+        id: offer.id,
+        referralId: referral.id,
+        status: ConsultationOfferStatus.PENDING,
+      },
+      data: {
+        status: ConsultationOfferStatus.CANCELLED,
+      },
+    });
+    if (cancelled.count === 0) {
+      throw new ScheduleOfferConflictError();
+    }
+
+    const counterpart =
+      actor === "MENTAL_HEALTH" ? referral.student : referral.acceptedBy;
+    if (counterpart) {
+      await notifyUser({
+        recipientUserId: counterpart.id,
+        recipientEmail: counterpart.email,
+        channels: { inApp: true, email: Boolean(counterpart.email) },
+        alert: {
+          actorUserId: actorId,
+          studentId: referral.studentId,
+          type: AlertType.ADVISOR_FOLLOW_UP,
+          priority: AlertPriority.LOW,
+          title:
+            actor === "MENTAL_HEALTH"
+              ? "ผู้เชี่ยวชาญยกเลิกข้อเสนอนัดหมาย"
+              : "นิสิตยกเลิกข้อเสนอนัดหมาย",
+          message: `${formatSchedule(offer.proposedAt)} · ${offer.location}`,
+          sourceType: "MentalHealthScheduleOffer",
+          sourceId: offer.id,
+        },
+        email: {
+          subject:
+            actor === "MENTAL_HEALTH"
+              ? "NuCare: ผู้เชี่ยวชาญยกเลิกข้อเสนอนัดหมาย"
+              : "NuCare: นิสิตยกเลิกข้อเสนอนัดหมาย",
+          text: `ข้อเสนอนัดหมายถูกยกเลิกแล้ว\nวันเวลาเดิม: ${formatSchedule(offer.proposedAt)}\nสถานที่: ${offer.location}`,
+        },
+      });
+    }
+
+    await writeAuditLog({
+      actorUserId: actorId,
+      action: "mental-health.schedule-offer.cancel",
+      entityType: "MentalHealthScheduleOffer",
+      entityId: offer.id,
+      description: formatAuditMetadata({
+        op: "cancel",
+        actorRole: actor === "MENTAL_HEALTH" ? "mental_health" : "student",
+        referralId: referral.id,
+      }),
+      ipAddress: getRequestIpAddress(req),
+    });
+
+    res.status(200).json({
+      message: "ยกเลิกข้อเสนอนัดหมายแล้ว",
+      offer: mapMentalHealthScheduleOffer(
+        { ...offer, status: ConsultationOfferStatus.CANCELLED },
+        referral.studentId
+      ),
+    });
+  } catch (error) {
+    if (error instanceof ScheduleOfferConflictError) {
+      res.status(409).json({ message: "ข้อเสนอนี้ถูกตอบหรือยกเลิกไปแล้ว กรุณารีเฟรชข้อมูล" });
+      return;
+    }
+    console.error("Cancel mental health schedule offer error:", error);
+    res.status(500).json({ message: "ยกเลิกข้อเสนอนัดหมายไม่สำเร็จ" });
   }
 };
 
@@ -441,6 +610,18 @@ export const acceptStudentMentalHealthScheduleOffer = async (
   await acceptOfferForActor(req, res, "MENTAL_HEALTH");
 };
 
+/** ผู้เชี่ยวชาญยกเลิกข้อเสนอที่ยังรอคำตอบ เพื่อเปิดทางเสนอใหม่ได้ */
+export const cancelMentalHealthScheduleOffer = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!hasAssignedRole(req.user, Role.MENTAL_HEALTH)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  await cancelOfferForActor(req, res, "MENTAL_HEALTH");
+};
+
 /** นิสิตเสนอวันเวลาใหม่ให้ผู้เชี่ยวชาญเจ้าของเคส */
 export const createStudentMentalHealthScheduleOffer = async (
   req: Request,
@@ -463,5 +644,17 @@ export const acceptMentalHealthScheduleOffer = async (
     return;
   }
   await acceptOfferForActor(req, res, "STUDENT");
+};
+
+/** นิสิตยกเลิกข้อเสนอของตนเองที่ยังรอผู้เชี่ยวชาญตอบ */
+export const cancelStudentMentalHealthScheduleOffer = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!hasAssignedRole(req.user, Role.STUDENT)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  await cancelOfferForActor(req, res, "STUDENT");
 };
 

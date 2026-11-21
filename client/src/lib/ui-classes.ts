@@ -67,8 +67,12 @@ export const UI_STATUS_ACTIVE = "bg-[#0057A8] text-white";
 export const UI_STATUS_SCHEDULED = "bg-[#F15A22] text-white";
 /** สถานะเสร็จ / ปิดเรื่อง */
 export const UI_STATUS_DONE = "bg-emerald-600 text-white";
-/** สถานะเสี่ยง / เร่งด่วน */
+/** สถานะเสี่ยง / เร่งด่วน / ขอยกเลิก */
 export const UI_STATUS_DANGER = "bg-red-600 text-white";
+/** สถานะกลางทาง / ยังไม่เสนอ — เทาทึบ (ห้าม pastel + text-white) */
+export const UI_STATUS_NEUTRAL = "bg-slate-600 text-white";
+/** สถานะเตือนยกเลิกกลางคิว — อำพันทึบแยกจาก pending */
+export const UI_STATUS_CANCEL = "bg-amber-700 text-white";
 
 /** ความเร่งด่วนต่ำ */
 export const UI_SEVERITY_LOW = "bg-emerald-600 text-white";
