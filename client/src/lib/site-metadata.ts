@@ -3,20 +3,44 @@ import { facultyFullName } from "@/lib/brand";
 
 const FALLBACK_SITE_URL = "http://localhost:3000";
 
+/**
+ * เลือก base URL ของเว็บจากค่า env — ถ้าใส่หลาย origin คั่นด้วย comma จะใช้ตัวแรกที่ valid
+ * (metadataBase ของ Next รับได้แค่ URL เดียว)
+ */
+export const resolveSiteUrl = (raw?: string | null): string => {
+  const candidates = (raw ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.origin;
+      }
+    } catch {
+      // ลองค่าถัดไป
+    }
+  }
+
+  return FALLBACK_SITE_URL;
+};
+
 const buildSiteUrl = (): string => {
   const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configuredSiteUrl) {
-    return configuredSiteUrl;
+    return resolveSiteUrl(configuredSiteUrl);
   }
 
   const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   if (vercelProductionUrl) {
-    return `https://${vercelProductionUrl}`;
+    return resolveSiteUrl(`https://${vercelProductionUrl}`);
   }
 
   const vercelDeploymentUrl = process.env.VERCEL_URL?.trim();
   if (vercelDeploymentUrl) {
-    return `https://${vercelDeploymentUrl}`;
+    return resolveSiteUrl(`https://${vercelDeploymentUrl}`);
   }
 
   return FALLBACK_SITE_URL;
