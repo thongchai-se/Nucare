@@ -19,15 +19,16 @@ const managedStaffRolePriority = new Map<ManagedStaffRole, number>(
 export const collapseLegacyStaffRole = (role: Role): Role =>
   role === Role.INSTRUCTOR ? Role.ADVISOR : role;
 
+type RoleBearer = {
+  role: Role;
+  /** JWT-style flattened list */
+  roles?: readonly Role[] | null;
+  /** DB field — merged with primary role when roles is absent */
+  additionalRoles?: readonly Role[] | null;
+};
+
 const toRoleArray = (
-  value:
-    | Role
-    | readonly Role[]
-    | {
-        role: Role;
-        roles?: readonly Role[] | null;
-      }
-    | undefined
+  value: Role | readonly Role[] | RoleBearer | undefined
 ): Role[] => {
   if (!value) {
     return [];
@@ -38,7 +39,8 @@ const toRoleArray = (
   }
 
   if (typeof value === "object" && "role" in value) {
-    return [collapseLegacyStaffRole(value.role), ...(value.roles || []).map(collapseLegacyStaffRole)];
+    const extras = value.roles ?? value.additionalRoles ?? [];
+    return [collapseLegacyStaffRole(value.role), ...extras.map(collapseLegacyStaffRole)];
   }
 
   return [collapseLegacyStaffRole(value as Role)];
@@ -94,14 +96,7 @@ export const getAssignedRoles = (input: {
 
 /** ตรวจว่าผู้ใช้มีบทบาทที่ต้องการเป็นหลัก เป็นเพิ่มเติม หรืออยู่ในรายการ roles */
 export const hasAssignedRole = (
-  input:
-    | Role
-    | readonly Role[]
-    | {
-        role: Role;
-        roles?: readonly Role[] | null;
-      }
-    | undefined,
+  input: Role | readonly Role[] | RoleBearer | undefined,
   expectedRole: Role
 ): boolean => {
   const roles = toRoleArray(input);

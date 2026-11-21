@@ -25,10 +25,6 @@ import {
   studentRequestChannelOptions,
 } from "../lib/consultation-channels";
 import {
-  assertStudentMayOpenChatWithStaff,
-  findOrCreateEphemeralChatSession,
-} from "../lib/ephemeral-chat/sessions";
-import {
   formatStudentCancelRequestNote,
   isStudentCancelReason,
 } from "../lib/consultation-close";
@@ -948,24 +944,6 @@ export const createConsultationRequest = async (req: Request, res: Response): Pr
       }),
       ipAddress: getRequestIpAddress(req),
     });
-
-    if (parsed.data.preferredChannel === ConsultationPreferredChannel.MESSAGE) {
-      try {
-        const studentBearer = {
-          id: userId,
-          role: Role.STUDENT,
-          isActive: true,
-        };
-        await assertStudentMayOpenChatWithStaff(prisma, studentBearer, teacher.id);
-        await findOrCreateEphemeralChatSession(prisma, {
-          studentId: userId,
-          staffId: teacher.id,
-          consultationRequestId: consultationRequest.id,
-        });
-      } catch (chatError) {
-        console.error("Open ephemeral chat for MESSAGE consultation failed:", chatError);
-      }
-    }
 
     res.status(201).json({
       message: "ส่งคำขอรับคำปรึกษาสำเร็จ",

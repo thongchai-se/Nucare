@@ -22,6 +22,17 @@ describe("hasAssignedRole", () => {
     );
   });
 
+  it("RL-02b matches ADMIN in additionalRoles (DB-style payload)", () => {
+    assert.equal(
+      hasAssignedRole({ role: Role.ADVISOR, additionalRoles: [Role.ADMIN] }, Role.ADMIN),
+      true
+    );
+    assert.equal(
+      hasAssignedRole({ role: Role.ADVISOR, additionalRoles: [Role.MENTAL_HEALTH] }, Role.ADMIN),
+      false
+    );
+  });
+
   it("RL-03 rejects missing or empty input", () => {
     assert.equal(hasAssignedRole(undefined, Role.STUDENT), false);
     assert.equal(hasAssignedRole([], Role.STUDENT), false);
