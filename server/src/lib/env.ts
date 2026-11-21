@@ -45,6 +45,22 @@ export const applyFileBackedEnvironmentVariables = (
 
     env[targetName] = fileContents;
   }
+
+  ensureDirectUrlFallback(env);
+};
+
+/**
+ * Prisma schema บังคับ DIRECT_URL — บน Postgres ธรรมดา/faculty ให้ใช้ DATABASE_URL ได้
+ */
+export const ensureDirectUrlFallback = (env: NodeJS.ProcessEnv = process.env): void => {
+  if (env.DIRECT_URL?.trim()) {
+    return;
+  }
+
+  const databaseUrl = env.DATABASE_URL?.trim();
+  if (databaseUrl) {
+    env.DIRECT_URL = databaseUrl;
+  }
 };
 
 const loadFileBackedEnvironmentVariables = (): void => {

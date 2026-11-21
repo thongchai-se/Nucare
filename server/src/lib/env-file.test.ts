@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { applyFileBackedEnvironmentVariables } from "./env";
+import { applyFileBackedEnvironmentVariables, ensureDirectUrlFallback } from "./env";
 
 const tempDirs: string[] = [];
 
@@ -94,6 +94,34 @@ describe("applyFileBackedEnvironmentVariables", () => {
     assert.throws(
       () => applyFileBackedEnvironmentVariables(env),
       /JWT_REFRESH_SECRET_FILE is set but empty/
+    );
+  });
+
+  it("EF-01 sets DIRECT_URL from DATABASE_URL when missing", () => {
+    const databaseUrlPath = createSecretFile(
+      "postgresql://nucare:example@db:5432/nucare?schema=public"
+    );
+    const env: NodeJS.ProcessEnv = {
+      DATABASE_URL_FILE: databaseUrlPath,
+    };
+
+    applyFileBackedEnvironmentVariables(env);
+
+    assert.equal(env.DATABASE_URL, "postgresql://nucare:example@db:5432/nucare?schema=public");
+    assert.equal(env.DIRECT_URL, env.DATABASE_URL);
+  });
+
+  it("EF-02 keeps explicit DIRECT_URL", () => {
+    const env: NodeJS.ProcessEnv = {
+      DATABASE_URL: "postgresql://nucare:example@db:5432/nucare?schema=public",
+      DIRECT_URL: "postgresql://nucare:example@db-direct:5432/nucare?schema=public",
+    };
+
+    ensureDirectUrlFallback(env);
+
+    assert.equal(
+      env.DIRECT_URL,
+      "postgresql://nucare:example@db-direct:5432/nucare?schema=public"
     );
   });
 });

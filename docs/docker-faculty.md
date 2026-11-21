@@ -83,6 +83,8 @@ unset DB_PASS
 
 ถ้า password มีอักขระพิเศษใน URL ให้ URL-encode ก่อนใส่
 
+หมายเหตุ: Prisma ต้องการ `DIRECT_URL` ด้วย — image server จะตั้งให้เท่ากับ `DATABASE_URL` อัตโนมัติเมื่อไม่ได้กำหนด (Postgres ใน Compose ไม่ต้องแยกไฟล์)
+
 ```bash
 chmod 600 secrets/faculty/*
 ```
