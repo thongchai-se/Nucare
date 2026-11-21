@@ -18,6 +18,7 @@ import { StaffMessagesView } from "@/components/ephemeral-chat/staff-messages-vi
 import { AppointmentsView } from "@/components/mental-health/appointments-view";
 import { CasesView } from "@/components/mental-health/cases-view";
 import { DashboardView } from "@/components/mental-health/dashboard-view";
+import type { MentalHealthCase } from "@/components/mental-health/types";
 import { RoleToast } from "@/components/role-toast";
 import { resolveActionToastPresentation } from "@/lib/expandable-toast";
 import { StaffSidebarFooter } from "@/components/staff-sidebar-footer";
@@ -323,7 +324,7 @@ function MentalHealthDashboardContent() {
   const [notice, setNotice] = useState<Notice>(null);
   const [showCareModal, setShowCareModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
-  const [selectedCase, setSelectedCase] = useState<ActiveCase | null>(null);
+  const [selectedCase, setSelectedCase] = useState<MentalHealthCase | null>(null);
   const [careForm, setCareForm] = useState<CareModalState>(emptyCareModalState);
   const [appointmentForm, setAppointmentForm] = useState<AppointmentModalState>(emptyAppointmentModalState);
   const [pendingConfirm, setPendingConfirm] = useState<
@@ -563,7 +564,7 @@ function MentalHealthDashboardContent() {
   const focusReferralId = searchParams.get("referral");
 
   const getCaseStatusLabel = useCallback(
-    (item: ActiveCase): string => {
+    (item: MentalHealthCase): string => {
       if (item.status === "PENDING") {
         return "รอรับเคส";
       }
@@ -609,7 +610,7 @@ function MentalHealthDashboardContent() {
     [activeCases, upcomingAppointments]
   );
 
-  const openCareModal = (item: ActiveCase) => {
+  const openCareModal = (item: MentalHealthCase) => {
     if (item.status !== "ACCEPTED") {
       setNotice({
         tone: "info",
@@ -625,7 +626,7 @@ function MentalHealthDashboardContent() {
     setShowCareModal(true);
   };
 
-  const openAppointmentModal = (item?: ActiveCase) => {
+  const openAppointmentModal = (item?: MentalHealthCase) => {
     if (item && item.status !== "ACCEPTED") {
       setNotice({
         tone: "info",

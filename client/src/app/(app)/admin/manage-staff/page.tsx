@@ -623,8 +623,6 @@ export default function ManageStaffPage() {
       activeNav="staff"
       onLogout={handleLogout}
       title="จัดการบุคลากร"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <RoleToast
         open={showSuccessPopup}

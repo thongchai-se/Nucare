@@ -632,8 +632,6 @@ export default function ManageStudentsPage() {
       activeNav="students"
       onLogout={handleLogout}
       title="จัดการนักศึกษา"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <RoleToast
         open={showSuccessPopup}

@@ -37,15 +37,16 @@ describe("scrollOverflowContainerToBottom", () => {
       parentElement: body as unknown as HTMLElement,
     };
 
-    (globalThis as typeof globalThis & { window: Window }).window = {
+    const windowStub = {
       getComputedStyle: (el: { style: Record<string, string> }) =>
         ({
           overflow: el.style.overflow || "",
           overflowY: el.style.overflowY || el.style.overflow || "",
         }) as CSSStyleDeclaration,
-    } as Window;
+    };
+    (globalThis as unknown as { window: typeof windowStub }).window = windowStub;
 
-    (globalThis as typeof globalThis & { document: Document }).document = {
+    (globalThis as unknown as { document: Document }).document = {
       body,
       documentElement: html,
     } as unknown as Document;

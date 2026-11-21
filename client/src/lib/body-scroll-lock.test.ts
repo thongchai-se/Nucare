@@ -29,8 +29,8 @@ function installDomStub() {
     },
   };
 
-  (globalThis as typeof globalThis & { window: typeof windowStub }).window = windowStub;
-  (globalThis as typeof globalThis & { document: Document }).document = {
+  (globalThis as unknown as { window: typeof windowStub }).window = windowStub;
+  (globalThis as unknown as { document: Document }).document = {
     body: { style: bodyStyle },
     documentElement: { style: htmlStyle, clientWidth: 1008 },
   } as unknown as Document;

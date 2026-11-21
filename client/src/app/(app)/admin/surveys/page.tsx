@@ -1465,8 +1465,6 @@ export default function AdminSurveysPage() {
       activeNav="surveys"
       onLogout={handleLogout}
       title="จัดการแบบสอบถาม"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <RoleToast
         key={toastKey}

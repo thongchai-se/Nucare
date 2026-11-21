@@ -56,8 +56,6 @@ export default function AdminSiteMediaPage() {
     <AdminShell
       activeNav="siteMedia"
       title="จัดการสื่อประชาสัมพันธ์"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ"
       onLogout={logout}
     >
       <SiteMediaManager

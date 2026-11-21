@@ -736,8 +736,6 @@ export default function ImportStudentsPage() {
       activeNav="import"
       onLogout={handleLogout}
       title="นำเข้าข้อมูล"
-      userName={user.name}
-      userRoleLabel="ผู้ดูแลระบบ (System Admin)"
     >
       <div
         className={`fixed inset-0 z-[220] flex items-center justify-center overflow-hidden bg-slate-900/45 p-4 transition-all duration-300 ease-out sm:p-6 ${
