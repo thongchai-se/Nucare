@@ -187,7 +187,8 @@ app.use(
         return;
       }
 
-      callback(new Error("CORS origin not allowed"));
+      // อย่า throw — cors จะกลายเป็น HTTP 500; ปฏิเสธแบบไม่มี ACAO แทน
+      callback(null, false);
     },
     credentials: true,
   })

@@ -190,7 +190,7 @@ docker compose -p nucare --env-file .env.faculty -f docker-compose.faculty.yml e
 ## 8) เมื่อได้โดเมน + HTTPS
 
 1. ตั้ง `NUCARE_PUBLIC_APP_ORIGIN=https://your-domain`
-2. ตั้ง `NUCARE_AUTH_COOKIE_SECURE=true`
+2. ตั้ง `NUCARE_AUTH_COOKIE_SECURE=true` และ `NUCARE_AUTH_COOKIE_ALLOW_INSECURE=false`
 3. ตั้ง `NUCARE_TRUST_PROXY_HOPS=1`
 4. Rebuild client แล้ว recreate server:
    ```bash
